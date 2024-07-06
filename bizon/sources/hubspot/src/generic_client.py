@@ -4,7 +4,7 @@ from bizon.api.auth.auth import Auth
 from bizon.api.client import APIClient
 from .errors import HubspotInvalidAuth
 from .session import HubspotSession
-from .models.config import HubSpotSourceConfig, HubSpotObjects
+from .models.config import HubSpotSourceConfig, HubSpotObjects, HubSpotAuthType
 from .models.hs_object import HubSpotProperty, AllObjectProperties
 from .constants import URL_BASE, URL_GRANTED_SCOPES
 from .auth import HubSpotAuth
@@ -25,8 +25,8 @@ class HubSpotClient(APIClient):
         self.session = HubspotSession()
 
        # Set auth to session
-        auth = self.get_auth()
-        self.session.auth = auth.authenticator
+        self.auth = self.get_auth()
+        self.session.auth = self.auth.authenticator
 
     def __del__(self):
         self.session.close()
@@ -74,7 +74,7 @@ class HubSpotClient(APIClient):
         alive = True
         error_msg = None
         try:
-            objects = self.read()
+            objects = self.get()
         except HTTPError as error:
             alive = False
             error_msg = repr(error)
@@ -86,9 +86,12 @@ class HubSpotClient(APIClient):
             error_msg = repr(e)
         return alive, error_msg
 
-    def get_granted_scopes(self, authenticator):
+    def get_granted_scopes(self) -> List[str]:
         try:
-            response = self.session.get(url=URL_GRANTED_SCOPES)
+            if self.auth.type == HubSpotAuthType.OAUTH:
+                response = self.session.get(url=f"{URL_GRANTED_SCOPES}/{self.auth.authenticator.access_token}")
+            else:
+                raise NotImplementedError("Scope endpoint for API Key are not supported.")
             response.raise_for_status()
             response_json = response.json()
             granted_scopes = response_json["scopes"]

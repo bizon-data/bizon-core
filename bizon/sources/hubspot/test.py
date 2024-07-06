@@ -10,8 +10,15 @@ HubSpotSourceConfig = HubSpotSourceConfig.parse_obj(raw_config["source"])
 client = HubSpotContacts(
     config=HubSpotSourceConfig
 )
-result = client.get()
-print(result)
+
+is_connected, error = client.check_connection()
+assert is_connected
+
+granted_scopes = client.get_granted_scopes()
+print(granted_scopes)
 
 properties = client.list_properties()
 print(properties)
+
+result = client.get()
+print(result)
