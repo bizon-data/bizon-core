@@ -2,7 +2,7 @@ from pydantic import Field
 from enum import StrEnum
 from typing import Optional
 from bizon.api.models.config import SourceConfig, AuthConfig
-from bizon.api.auth.authenticators.models.oauth import OAuthConfig
+from bizon.api.auth.authenticators.models.oauth_config import OAuthConfig
 
 class HubSpotAuthType(StrEnum):
     API_KEY = "API_KEY"

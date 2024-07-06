@@ -1,9 +1,8 @@
-from requests import Request
 from bizon.api.auth.auth import Auth
 from bizon.api.session import Session
 from .models.config import HubSpotAuthConfig, HubSpotAuthType
 from bizon.api.auth.authenticators.oauth import Oauth2Authenticator
-from bizon.api.auth.authenticators.models.oauth import OAuthConfig
+from bizon.api.auth.authenticators.models.oauth_config import OAuthConfig
 from requests import Session
 from .constants import URL_TOKEN_REFRESH
 
@@ -17,6 +16,7 @@ class Oauth2Auth(Auth):
             client_secret=config.oauth.client_secret,
             refresh_token=config.oauth.refresh_token,
         )
+        self.authenticator = Oauth2Authenticator(oauth_config=self.oauth_config)
 
     def authenticate(self, session: Session) -> bool:
         """ Authenticate on HubSpot with OAuth2 """

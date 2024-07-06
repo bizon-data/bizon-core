@@ -2,7 +2,7 @@ from typing import Any, List, Mapping, Sequence, Tuple, Union
 import dpath
 import pendulum
 from .abstract_oauth import AbstractOauth2Authenticator
-from .models.oauth import OAuthConfig
+from .models.oauth_config import OAuthConfig
 
 class Oauth2Authenticator(AbstractOauth2Authenticator):
     """
