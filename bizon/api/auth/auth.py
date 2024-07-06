@@ -27,7 +27,7 @@ class Auth(ABC):
         if hasattr(self.authenticator, "get_auth_header"):
             return self.authenticator.get_auth_header()
         else:
-            raise NotImplementedError("get_auth_header method not implemented in authenticator")
+            raise NotImplementedError(f"get_auth_header method not implemented in authenticator of type {self.type} and class {self.authenticator.__class__.__name__}")
 
     def set_session_auth(self, session: Session):
         """ Set the session auth to the authenticator """
