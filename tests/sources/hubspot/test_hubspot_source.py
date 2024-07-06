@@ -1,4 +1,4 @@
-from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
+from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig, HubSpotAuthType
 from bizon.sources.hubspot.src.clients import HubSpotContacts, HubSpotCompanies
 from bizon.sources.hubspot.src.constants import URL_TOKEN_REFRESH
 
@@ -8,7 +8,7 @@ def test_source_config_valid():
             "name": "hubspot",
             "stream_name": "contacts",
             "authentication": {
-                "type": "OAUTH",
+                "type": "oauth",
                 "oauth": {
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
@@ -18,7 +18,7 @@ def test_source_config_valid():
         }
     }
     source_config = HubSpotSourceConfig.parse_obj(raw_config["source"])
-    assert source_config.authentication.type == "OAUTH"
+    assert source_config.authentication.type == HubSpotAuthType.OAUTH
     assert source_config.authentication.oauth.client_id == "id-12345abcd"
     assert source_config.authentication.oauth.client_secret == "cli-12345abcd"
     assert source_config.authentication.oauth.refresh_token == "fresh-12345abcd"
@@ -31,7 +31,7 @@ def test_source_instanciation_contacts():
             "name": "hubspot",
             "stream_name": "contacts",
             "authentication": {
-                "type": "OAUTH",
+                "type": "oauth",
                 "oauth": {
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
@@ -52,7 +52,7 @@ def test_source_instanciation_companies():
             "name": "hubspot",
             "stream_name": "companies",
             "authentication": {
-                "type": "OAUTH",
+                "type": "oauth",
                 "oauth": {
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
