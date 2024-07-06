@@ -1,8 +1,8 @@
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
-from enum import StrEnum
+from enum import Enum
 
-class FailureType(StrEnum):
+class FailureType(str, Enum):
     SYSTEM_ERROR = "SYSTEM_ERROR"
     CONFIG_ERROR = 'CONFIG_ERROR'
 

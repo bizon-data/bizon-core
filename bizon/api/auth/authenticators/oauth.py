@@ -1,6 +1,7 @@
-from typing import Any, List, Mapping, Sequence, Tuple, Union
+from typing import Any, List, Mapping, Union
 import pendulum
 from .abstract_oauth import AbstractOauth2Authenticator
+from pydantic_extra_types.pendulum_dt import DateTime
 
 class Oauth2Authenticator(AbstractOauth2Authenticator):
     """
@@ -14,7 +15,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         client_secret: str,
         refresh_token: str,
         scopes: List[str] = None,
-        token_expiry_date: pendulum.DateTime = None,
+        token_expiry_date: DateTime = None,
         token_expiry_date_format: str = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
@@ -62,7 +63,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     def get_grant_type(self) -> str:
         return self._grant_type
 
-    def get_token_expiry_date(self) -> pendulum.DateTime:
+    def get_token_expiry_date(self) -> DateTime:
         return self._token_expiry_date
 
     def set_token_expiry_date(self, value: Union[str, int]):

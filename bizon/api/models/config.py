@@ -10,5 +10,5 @@ class AuthConfig(BaseModel, ABC):
 class SourceConfig(BaseModel, ABC):
     name: str
     stream_name: str
-    auth_config: AuthConfig
+    authentication: AuthConfig
     api_config: APIConfig = APIConfig(retry_limit=3)

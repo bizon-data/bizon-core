@@ -1,9 +1,10 @@
 from typing import Any
+from pydantic import Field
 from bizon.common.errors.errors import FailureType, ErrorTraceMessage
 from requests import HTTPError
 
 class HubspotError(ErrorTraceMessage):
-    failure_type = FailureType.SYSTEM_ERROR
+    failure_type: FailureType = Field(FailureType.SYSTEM_ERROR, description='The type of error')
 
 class HubspotTimeout(HTTPError):
     """502/504 HubSpot has processing limits in place to prevent a single client from causing degraded performance,
