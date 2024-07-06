@@ -1,0 +1,2 @@
+# Ignore all config files
+bizon/**/config/*.yml
