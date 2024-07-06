@@ -2,7 +2,7 @@ source:
   name: hubspot
   stream_name: contacts
   authentication:
-    type: OAUTH
+    type: oauth
     oauth:
       client_id: <MY_CLIENT_ID>
       client_secret: <MY_CLIENT_SECRET>

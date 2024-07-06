@@ -6,8 +6,8 @@ from bizon.api.auth.authenticators.models.oauth_config import OAuthConfig
 from bizon.sources.hubspot.src.constants import URL_TOKEN_REFRESH
 
 class HubSpotAuthType(str, Enum):
-    API_KEY = "API_KEY"
-    OAUTH = "OAUTH"
+    API_KEY = "api_key"
+    OAUTH = "oauth"
 
 class HubSpotOAuthConfig(OAuthConfig):
     token_refresh_endpoint: str = Field(URL_TOKEN_REFRESH, description="HubSpot Token refresh endpoint")

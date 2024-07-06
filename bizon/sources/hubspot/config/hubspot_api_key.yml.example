@@ -1,0 +1,6 @@
+source:
+  name: hubspot
+  stream_name: contacts
+  authentication:
+    type: api_key
+    api_key: <MY_API_KEY>
