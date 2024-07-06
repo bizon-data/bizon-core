@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
-from ..models.config import AuthConfig
-from ..session import Session
+from bizon.api.models.config import AuthConfig
+from bizon.api.session import Session
 
 class Auth(ABC):
     def __init__(self, config: AuthConfig):
@@ -12,6 +12,6 @@ class Auth(ABC):
         pass
 
     @abstractmethod
-    def update_authenticated_session(self, session: Session) -> bool:
+    def update_session_with_auth(self, session: Session) -> bool:
         """Check if the session is authenticated and update it if necessary"""
         pass
