@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 
-class HSProperty(BaseModel):
+class HubSpotProperty(BaseModel):
     name: str
     label: str
     field_type: str
@@ -11,21 +11,21 @@ class HSProperty(BaseModel):
     description: Optional[str]
 
 
-class HSObjectProperty(BaseModel):
+class HubSpotObjectProperty(BaseModel):
     value: Any
 
 
 class AllObjectProperties(BaseModel):
-    properties: List[HSProperty]
+    properties: List[HubSpotProperty]
 
     @property
     def names(self) -> List[str]:
         return [hs_property.name for hs_property in self.properties]
 
 
-class HSObject(BaseModel):
+class HubSpotObject(BaseModel):
     id: int
-    properties: Dict[str, HSObjectProperty]
+    properties: Dict[str, HubSpotObjectProperty]
     created_at: datetime
     updated_at: datetime
 
@@ -38,7 +38,7 @@ class HSObject(BaseModel):
         properties = {}
 
         for property_name, property_value in raw_obj.get("properties", {}).items():
-            properties[property_name] = HSObjectProperty(value=property_value)
+            properties[property_name] = HubSpotObjectProperty(value=property_value)
 
         return cls(
             id=raw_obj["id"],
