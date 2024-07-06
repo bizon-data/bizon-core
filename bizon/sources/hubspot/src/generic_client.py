@@ -59,11 +59,7 @@ class HubSpotClient(APIClient):
             data=json.dumps(payload),
             headers=headers,
         )
-        json_response = response.json()
-        results = json_response["results"]
-
-        for result in results:
-            yield result
+        return response.json()
 
     def get(
         self,
@@ -71,7 +67,7 @@ class HubSpotClient(APIClient):
         params = {
             "limit": 100,
         }
-        return list(self._request_api(method="GET", url=self.url_list, params=params))
+        return self._request_api(method="GET", url=self.url_list, params=params)
 
     def check_connection(self) -> Tuple[bool, Optional[Any]]:
         """Check connection"""
