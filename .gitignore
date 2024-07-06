@@ -43,6 +43,8 @@ cover/
 
 # Ignore all config files
 bizon/**/config/*.yml
+# Except example config files
+!bizon/**/config/*.example.yml
 
 # Jupyter Notebook
 .ipynb_checkpoints
