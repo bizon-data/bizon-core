@@ -1,10 +1,14 @@
 from typing import Any
+
 from pydantic import Field
-from bizon.common.errors.errors import FailureType, ErrorTraceMessage
 from requests import HTTPError
 
+from bizon.common.errors.errors import ErrorTraceMessage, FailureType
+
+
 class HubspotError(ErrorTraceMessage):
-    failure_type: FailureType = Field(FailureType.SYSTEM_ERROR, description='The type of error')
+    failure_type: FailureType = Field(FailureType.SYSTEM_ERROR, description="The type of error")
+
 
 class HubspotTimeout(HTTPError):
     """502/504 HubSpot has processing limits in place to prevent a single client from causing degraded performance,
@@ -12,6 +16,7 @@ class HubspotTimeout(HTTPError):
     when making a large number of requests over a sustained period. If you get one of these responses,
     you should pause your requests for a few seconds, then retry.
     """
+
 
 class HubspotInvalidAuth(HubspotError):
     """401 Unauthorized"""

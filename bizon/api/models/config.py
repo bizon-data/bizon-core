@@ -1,11 +1,15 @@
-from pydantic import BaseModel
 from abc import ABC
+
+from pydantic import BaseModel
+
 
 class APIConfig(BaseModel):
     retry_limit: int
 
+
 class AuthConfig(BaseModel, ABC):
     type: str
+
 
 class SourceConfig(BaseModel, ABC):
     name: str

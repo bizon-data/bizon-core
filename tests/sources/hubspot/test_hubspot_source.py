@@ -1,6 +1,7 @@
-from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig, HubSpotAuthType
-from bizon.sources.hubspot.src.clients import HubSpotContacts, HubSpotCompanies
+from bizon.sources.hubspot.src.clients import HubSpotCompanies, HubSpotContacts
 from bizon.sources.hubspot.src.constants import URL_TOKEN_REFRESH
+from bizon.sources.hubspot.src.models.config import HubSpotAuthType, HubSpotSourceConfig
+
 
 def test_source_config_valid():
     raw_config = {
@@ -12,9 +13,9 @@ def test_source_config_valid():
                 "oauth": {
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
-                    "refresh_token": "fresh-12345abcd"
-                }
-            }
+                    "refresh_token": "fresh-12345abcd",
+                },
+            },
         }
     }
     source_config = HubSpotSourceConfig.parse_obj(raw_config["source"])
@@ -35,14 +36,12 @@ def test_source_instanciation_contacts():
                 "oauth": {
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
-                    "refresh_token": "fresh-12345abcd"
-                }
-            }
+                    "refresh_token": "fresh-12345abcd",
+                },
+            },
         }
     }
-    client = HubSpotContacts(
-        config=HubSpotSourceConfig.parse_obj(raw_config["source"])
-    )
+    client = HubSpotContacts(config=HubSpotSourceConfig.parse_obj(raw_config["source"]))
     assert client.object == "contacts"
 
 
@@ -56,12 +55,10 @@ def test_source_instanciation_companies():
                 "oauth": {
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
-                    "refresh_token": "fresh-12345abcd"
-                }
-            }
+                    "refresh_token": "fresh-12345abcd",
+                },
+            },
         }
     }
-    client = HubSpotCompanies(
-        config=HubSpotSourceConfig.parse_obj(raw_config["source"])
-    )
+    client = HubSpotCompanies(config=HubSpotSourceConfig.parse_obj(raw_config["source"]))
     assert client.object == "companies"

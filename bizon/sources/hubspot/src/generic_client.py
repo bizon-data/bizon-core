@@ -1,15 +1,18 @@
+import json
 from http import HTTPStatus
+from typing import Any, Generator, List, Optional, Tuple
+
 from requests import HTTPError
+
 from bizon.api.auth.auth import Auth
 from bizon.api.client import APIClient
-from .errors import HubspotInvalidAuth
-from .session import HubspotSession
-from .models.config import HubSpotSourceConfig, HubSpotObjects, HubSpotAuthType
-from .models.hs_object import HubSpotProperty, AllObjectProperties
-from .constants import URL_BASE, URL_GRANTED_SCOPES
+
 from .auth import HubSpotAuth
-from typing import Generator, List, Optional, Any, Tuple
-import json
+from .constants import URL_BASE, URL_GRANTED_SCOPES
+from .errors import HubspotInvalidAuth
+from .models.config import HubSpotAuthType, HubSpotObjects, HubSpotSourceConfig
+from .models.hs_object import AllObjectProperties, HubSpotProperty
+from .session import HubspotSession
 
 
 class HubSpotClient(APIClient):
@@ -24,7 +27,7 @@ class HubSpotClient(APIClient):
         self.object = object
         self.session = HubspotSession()
 
-       # Set auth to session
+        # Set auth to session
         self.auth = self.get_auth()
         self.session.auth = self.auth.authenticator
 
@@ -80,7 +83,9 @@ class HubSpotClient(APIClient):
             error_msg = repr(error)
             if error.response.status_code == HTTPStatus.BAD_REQUEST:
                 response_json = error.response.json()
-                error_msg = f"400 Bad Request: {response_json['message']}, please check if provided credentials are valid."
+                error_msg = (
+                    f"400 Bad Request: {response_json['message']}, please check if provided credentials are valid."
+                )
         except HubspotInvalidAuth as e:
             alive = False
             error_msg = repr(e)

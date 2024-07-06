@@ -1,16 +1,16 @@
 import logging
+
 import requests
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import HTTPError
+
 
 class Session(requests.Session):
     def __init__(self):
         super().__init__()
 
         # call response.raise_for_status() after every response
-        self.hooks["response"] = [
-            lambda response, *args, **kwargs: response.raise_for_status()
-        ]
+        self.hooks["response"] = [lambda response, *args, **kwargs: response.raise_for_status()]
 
         # Implement basic rety policy if rate-limited
         retries = Retry(

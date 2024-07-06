@@ -1,5 +1,6 @@
 from .abstract_token import AbstractHeaderAuthenticator
 
+
 class TokenAuthenticator(AbstractHeaderAuthenticator):
     """
     Builds auth header, based on the token provided.

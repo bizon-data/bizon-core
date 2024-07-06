@@ -1,7 +1,10 @@
 from typing import Any, List, Mapping, Union
+
 import pendulum
-from .abstract_oauth import AbstractOauth2Authenticator
 from pydantic_extra_types.pendulum_dt import DateTime
+
+from .abstract_oauth import AbstractOauth2Authenticator
+
 
 class Oauth2Authenticator(AbstractOauth2Authenticator):
     """
@@ -9,7 +12,8 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     The generated access token is attached to each request via the Authorization header.
     """
 
-    def __init__(self,
+    def __init__(
+        self,
         token_refresh_endpoint: str,
         client_id: str,
         client_secret: str,
@@ -21,7 +25,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         expires_in_name: str = "expires_in",
         refresh_request_body: Mapping[str, Any] = None,
         grant_type: str = "refresh_token",
-        ):
+    ):
         self._token_refresh_endpoint = token_refresh_endpoint
         self._client_secret = client_secret
         self._client_id = client_id

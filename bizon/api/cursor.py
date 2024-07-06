@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
+
 from .models.state import AbstractState
+
 
 class Cursor(ABC):
     def __init__(self, data: dict):

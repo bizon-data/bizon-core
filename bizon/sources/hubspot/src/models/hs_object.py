@@ -1,6 +1,7 @@
-from typing import Dict, Optional, Any, List
-from pydantic import BaseModel
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel
 
 
 class HubSpotProperty(BaseModel):

@@ -1,8 +1,11 @@
-from pydantic import BaseModel
 from typing import Optional
+
+from pydantic import BaseModel
+
 
 class APIConfig(BaseModel):
     retry_limit: int
+
 
 class DestinationConfig(BaseModel):
     name: str

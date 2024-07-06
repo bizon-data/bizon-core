@@ -1,5 +1,7 @@
 from requests.adapters import HTTPAdapter, Retry
+
 from bizon.api.session import Session
+
 
 class HubspotSession(Session):
     def __init__(self):

@@ -1,14 +1,16 @@
 from .generic_client import HubSpotClient
-from .models.config import HubSpotSourceConfig, HubSpotObjects
+from .models.config import HubSpotObjects, HubSpotSourceConfig
 
 
 class HubSpotContacts(HubSpotClient):
     def __init__(self, config: HubSpotSourceConfig):
         super().__init__(config=config, object=HubSpotObjects.CONTACTS)
 
+
 class HubSpotCompanies(HubSpotClient):
     def __init__(self, config: HubSpotSourceConfig):
         super().__init__(config=config, object=HubSpotObjects.COMPANIES)
+
 
 class HubSpotDeals(HubSpotClient):
     def __init__(self, config: HubSpotSourceConfig):

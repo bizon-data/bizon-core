@@ -1,6 +1,8 @@
 from abc import ABC
-from pydantic import BaseModel
 from datetime import datetime
+
+from pydantic import BaseModel
+
 
 class AbstractState(BaseModel, ABC):
     stream_name: str

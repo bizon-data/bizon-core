@@ -1,12 +1,15 @@
 from requests.auth import AuthBase
+
 from bizon.api.auth.auth import Auth
-from .models.config import HubSpotAuthType
 from bizon.api.auth.authenticators.oauth import Oauth2Authenticator
 from bizon.api.auth.authenticators.token import TokenAuthenticator
+
 from .constants import URL_TOKEN_REFRESH
+from .models.config import HubSpotAuthType
+
 
 class HubSpotAuth(Auth):
-    """ General class to Authenticate on HubSpot """
+    """General class to Authenticate on HubSpot"""
 
     def get_authenticator(self) -> AuthBase:
         # Check the type of authentication and return the correct auth class

@@ -1,6 +1,8 @@
+from typing import Any, List, Mapping
+
 from pydantic import BaseModel, Field
-from typing import List, Mapping, Any
 from pydantic_extra_types.pendulum_dt import DateTime
+
 
 class OAuthConfig(BaseModel):
     token_refresh_endpoint: str = Field(..., description="URL to refresh the token")

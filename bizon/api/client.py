@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Tuple, Any
+from typing import Any, Optional, Tuple
+
 from .auth.auth import Auth
 from .cursor import Cursor
 from .models.config import SourceConfig
 from .session import Session
+
 
 class APIClient(ABC):
 
