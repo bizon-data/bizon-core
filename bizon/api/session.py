@@ -1,0 +1,64 @@
+import logging
+import requests
+from requests.adapters import HTTPAdapter, Retry
+from requests.exceptions import HTTPError
+
+class Session(requests.Session):
+    def __init__(self):
+        super().__init__()
+
+        # call response.raise_for_status() after every response
+        self.hooks["response"] = [
+            lambda response, *args, **kwargs: response.raise_for_status()
+        ]
+
+        # Implement rety policy if rate-limited by HubSpot
+        retries = Retry(
+            total=50,
+            backoff_factor=1,
+            raise_on_status=True,
+            status=30,
+            allowed_methods=["GET", "POST"],
+        )
+
+        self.mount(
+            "https://",
+            HTTPAdapter(
+                max_retries=retries,
+                pool_maxsize=64,
+            ),
+        )
+        self._method_mapping = {
+            "POST": self.post,
+            "GET": self.get,
+        }
+
+    def call(
+        self,
+        method: str,
+        url,
+        content_type: str = "application/json",
+        *args,
+        **kwargs,
+    ) -> requests.Response:
+
+        self.headers.update({"content-type": content_type})
+
+        try:
+            response = self._method_mapping[method](url=url, *args, **kwargs)
+        except HTTPError as e:
+            logging.error(f"Error {e}")
+            logging.error(f"detailed error response: {e.response.json()}")
+            logging.error(f"for request body: {e.request.body}")
+            raise e
+        except Exception as e:
+            logging.error(f"Error {e}")
+            logging.error(
+                f"""for request '{method}' on url='{url}'
+                              with args={args}
+                              and kwargs={kwargs}
+                          """
+            )
+            raise e
+        else:
+            return response
