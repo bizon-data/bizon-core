@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "bizon"
+version = "0.0.1"
+description = "Extract and load your data reliably from API Clients with native fault-tolerant and checkpointing mechanism."
+authors = ["Antoine Balliet <antoine.balliet@gmail.com>", "Anas El Mhamdi <anas.elmhamdi@gmail.com>"]
+readme = "README.md"
+packages = [{include = "bizon"}]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+requests = "^2.28.2"
+pyyaml = "^6.0.1"
+pydantic = "^2.8.2"
+google-cloud-bigquery = "^3.25.0"
+backoff = "^2.2.1"
+pendulum = "^3.0.0"
+dpath = "^2.2.0"
+pydantic-extra-types = "^2.9.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.2.2"
+requests-mock = "^1.10.0"
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
