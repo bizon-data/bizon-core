@@ -11,11 +11,11 @@ class APIClient(ABC):
 
     def __init__(self, config: SourceConfig):
         self.config = config
-        self.session = Session()
+        self.session = self.get_session()
 
-        # Set auth to session
-        auth = self.get_auth()
-        self.session.auth = auth.authenticator
+        # Set authentication in the session
+        self.auth = self.get_auth()
+        self.session.auth = self.auth.authenticator
 
     @abstractmethod
     def get_auth(self) -> Auth:
@@ -28,3 +28,7 @@ class APIClient(ABC):
     @abstractmethod
     def get(self, cursor: Cursor = None) -> Optional[dict]:
         pass
+
+    def get_session(self) -> Session:
+        """Return a new session"""
+        return Session()

@@ -3,16 +3,17 @@ from http import HTTPStatus
 from typing import Any, Generator, List, Optional, Tuple
 
 from requests import HTTPError
+from requests.adapters import HTTPAdapter, Retry
 
 from bizon.api.auth.auth import Auth
 from bizon.api.client import APIClient
+from bizon.api.session import Session
 
 from .auth import HubSpotAuth
 from .constants import URL_BASE, URL_GRANTED_SCOPES
 from .errors import HubspotInvalidAuth
 from .models.config import HubSpotAuthType, HubSpotObjects, HubSpotSourceConfig
 from .models.hs_object import AllObjectProperties, HubSpotProperty
-from .session import HubspotSession
 
 
 class HubSpotClient(APIClient):
@@ -25,14 +26,25 @@ class HubSpotClient(APIClient):
     def __init__(self, config: HubSpotSourceConfig, object: HubSpotObjects):
         super().__init__(config)
         self.object = object
-        self.session = HubspotSession()
-
-        # Set auth to session
-        self.auth = self.get_auth()
-        self.session.auth = self.auth.authenticator
 
     def __del__(self):
         self.session.close()
+
+    def get_session(self) -> Session:
+        """Apply custom strategy for HubSpot"""
+        session = Session()
+
+        # Retry policy if rate-limited by HubSpot
+        retries = Retry(
+            total=50,
+            backoff_factor=1,
+            raise_on_status=True,
+            status_forcelist=[429, 500, 502, 503, 504],
+            status=30,
+            allowed_methods=["GET", "POST"],
+        )
+        session.mount("https://", HTTPAdapter(max_retries=retries, pool_maxsize=64))
+        return session
 
     @property
     def url_list(self) -> str:
