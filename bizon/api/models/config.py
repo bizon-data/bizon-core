@@ -1,6 +1,7 @@
 from abc import ABC
+from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class APIConfig(BaseModel):
@@ -14,5 +15,6 @@ class AuthConfig(BaseModel, ABC):
 class SourceConfig(BaseModel, ABC):
     name: str
     stream_name: str
+    init_pipeline: Optional[bool] = Field(True, description="Whether to initialize the source to run pipeline directly")
     authentication: AuthConfig
     api_config: APIConfig = APIConfig(retry_limit=3)

@@ -1,6 +1,8 @@
 source:
   name: hubspot
   stream_name: contacts
+  properties:
+    strategy: all
   authentication:
     type: oauth
     oauth:

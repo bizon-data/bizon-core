@@ -1,15 +1,13 @@
-import logging
 from abc import abstractmethod
 from typing import Any, List, Mapping, MutableMapping, Tuple, Union
 
 import backoff
 import pendulum
 import requests
+from loguru import logger
 from requests.auth import AuthBase
 
 from bizon.common.errors.backoff import DefaultBackoffException
-
-logger = logging.getLogger(__name__)
 
 
 class AbstractOauth2Authenticator(AuthBase):

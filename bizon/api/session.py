@@ -1,6 +1,5 @@
-import logging
-
 import requests
+from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import HTTPError
 
@@ -47,13 +46,13 @@ class Session(requests.Session):
         try:
             response = self._method_mapping[method](url=url, *args, **kwargs)
         except HTTPError as e:
-            logging.error(f"Error {e}")
-            logging.error(f"detailed error response: {e.response.json()}")
-            logging.error(f"for request body: {e.request.body}")
+            logger.error(f"Error {e}")
+            logger.error(f"detailed error response: {e.response.json()}")
+            logger.error(f"for request body: {e.request.body}")
             raise e
         except Exception as e:
-            logging.error(f"Error {e}")
-            logging.error(
+            logger.error(f"Error {e}")
+            logger.error(
                 f"""for request '{method}' on url='{url}'
                               with args={args}
                               and kwargs={kwargs}

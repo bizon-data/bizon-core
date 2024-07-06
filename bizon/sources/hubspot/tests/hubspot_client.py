@@ -13,11 +13,13 @@ client = HubSpotContacts(config=HubSpotSourceConfig)
 is_connected, error = client.check_connection()
 assert is_connected
 
+total_count = client.get_total_records_count()
+
 granted_scopes = client.get_granted_scopes()
 print(granted_scopes)
 
 properties = client.list_properties()
 print(properties)
 
-result = client.get()
+result, state = client.get()
 print(result)

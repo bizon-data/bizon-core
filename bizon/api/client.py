@@ -29,6 +29,11 @@ class APIClient(ABC):
     def get(self, cursor: Cursor = None) -> Optional[dict]:
         pass
 
+    @abstractmethod
+    def get_total_records_count(self) -> Optional[int]:
+        """Return the total count of records available in the source"""
+        pass
+
     def get_session(self) -> Session:
         """Return a new session"""
         return Session()

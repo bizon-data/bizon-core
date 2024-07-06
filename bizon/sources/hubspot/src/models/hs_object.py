@@ -23,6 +23,11 @@ class AllObjectProperties(BaseModel):
     def names(self) -> List[str]:
         return [hs_property.name for hs_property in self.properties]
 
+    def property_names(
+        self,
+    ) -> List[str]:
+        return [hs_property.name for hs_property in self.properties]
+
 
 class HubSpotObject(BaseModel):
     id: int

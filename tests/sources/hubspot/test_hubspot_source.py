@@ -31,6 +31,7 @@ def test_source_instanciation_contacts():
         "source": {
             "name": "hubspot",
             "stream_name": "contacts",
+            "init_pipeline": False,
             "authentication": {
                 "type": "oauth",
                 "oauth": {
@@ -50,6 +51,7 @@ def test_source_instanciation_companies():
         "source": {
             "name": "hubspot",
             "stream_name": "companies",
+            "init_pipeline": False,
             "authentication": {
                 "type": "oauth",
                 "oauth": {

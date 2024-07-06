@@ -1,7 +1,7 @@
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from bizon.api.auth.authenticators.models.oauth_config import OAuthConfig
 from bizon.api.models.config import AuthConfig, SourceConfig
@@ -29,7 +29,18 @@ class HubSpotObjects(str, Enum):
     DEALS = "deals"
 
 
+class PropertiesStrategy(str, Enum):
+    ALL = "all"
+    SELECTED = "selected"
+
+
+class PropertiesConfig(BaseModel):
+    strategy: PropertiesStrategy
+    selected_properties: Optional[List[str]] = Field([], comment="List of selected properties")
+
+
 class HubSpotSourceConfig(SourceConfig):
     name: str = "hubspot"
     stream_name: HubSpotObjects
+    properties: PropertiesConfig = PropertiesConfig(strategy=PropertiesStrategy.ALL, selected_properties=None)
     authentication: HubSpotAuthConfig
