@@ -5,9 +5,9 @@ from requests.auth import AuthBase
 from typing import Any, Mapping
 
 class Auth(ABC):
-    def __init__(self, config: AuthConfig, type: str):
+    def __init__(self, config: AuthConfig):
         self.config = config
-        self._type = type
+        self._type = config.type
         self._authenticator = self.get_authenticator()
 
     @property

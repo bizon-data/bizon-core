@@ -1,11 +1,13 @@
 from http import HTTPStatus
 from requests import HTTPError
+from bizon.api.auth.auth import Auth
 from bizon.api.client import APIClient
 from .errors import HubspotInvalidAuth
 from .session import HubspotSession
-from .models.config import HubSpotSourceConfig
+from .models.config import HubSpotSourceConfig, HubSpotObjects
 from .models.hs_object import HubSpotProperty, AllObjectProperties
 from .constants import URL_BASE, URL_GRANTED_SCOPES
+from .auth import HubSpotAuth
 from typing import Generator, List, Optional, Any, Tuple
 import json
 
@@ -17,10 +19,14 @@ class HubSpotClient(APIClient):
     object_path = f"crm/{api_version}/objects"
     properties_path = f"crm/{api_version}/properties"
 
-    def __init__(self, config: HubSpotSourceConfig, object: str):
-        self.config = config
-        self.session = HubspotSession()
+    def __init__(self, config: HubSpotSourceConfig, object: HubSpotObjects):
+        super().__init__(config)
         self.object = object
+        self.session = HubspotSession()
+
+       # Set auth to session
+        auth = self.get_auth()
+        self.session.auth = auth.authenticator
 
     def __del__(self):
         self.session.close()
@@ -32,6 +38,9 @@ class HubSpotClient(APIClient):
     @property
     def url_list_properties(self) -> str:
         return f"{URL_BASE}/{self.properties_path}/{self.object}"
+
+    def get_auth(self) -> Auth:
+        return HubSpotAuth(config=self.config.authentication)
 
     def _request_api(
         self,
@@ -56,7 +65,7 @@ class HubSpotClient(APIClient):
         for result in results:
             yield result
 
-    def read(
+    def get(
         self,
     ) -> List[dict]:
         params = {
