@@ -4,6 +4,8 @@ import time
 
 from loguru import logger
 
+from .constants import QUEUE_TERMINATION
+
 
 class PipelineQueue:
     def __init__(self, queue_size: int = 1000):
@@ -27,3 +29,7 @@ class PipelineQueue:
             logger.debug("Queue is empty, waiting for producer to produce data")
             time.sleep(random.random())
             return self.get()
+
+    def terminate(self):
+        self.queue.shutdown()
+        logger.debug("Terminating queue ...")

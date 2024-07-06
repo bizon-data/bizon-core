@@ -9,3 +9,9 @@ source:
       client_id: <MY_CLIENT_ID>
       client_secret: <MY_CLIENT_SECRET>
       refresh_token: <MY_REFRESH_TOKEN>
+
+destination:
+  name: bigquery
+
+pipeline:
+  log_level: DEBUG

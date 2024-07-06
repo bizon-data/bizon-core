@@ -6,3 +6,9 @@ source:
   authentication:
     type: api_key
     api_key: <MY_API_KEY>
+
+destination:
+  name: bigquery
+
+pipeline:
+  log_level: DEBUG
