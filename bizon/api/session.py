@@ -12,9 +12,9 @@ class Session(requests.Session):
             lambda response, *args, **kwargs: response.raise_for_status()
         ]
 
-        # Implement rety policy if rate-limited by HubSpot
+        # Implement basic rety policy if rate-limited
         retries = Retry(
-            total=50,
+            total=20,
             backoff_factor=1,
             raise_on_status=True,
             status=30,
