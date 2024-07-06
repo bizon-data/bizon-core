@@ -1,5 +1,5 @@
 from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
-from bizon.sources.hubspot.src.clients import HubSpotContacts
+from bizon.sources.hubspot.src.clients import HubSpotContacts, HubSpotCompanies
 from bizon.sources.hubspot.src.constants import URL_TOKEN_REFRESH
 
 def test_source_config_valid():
@@ -25,7 +25,7 @@ def test_source_config_valid():
     assert source_config.authentication.oauth.token_refresh_endpoint == URL_TOKEN_REFRESH
 
 
-def test_source_instanciation():
+def test_source_instanciation_contacts():
     raw_config = {
         "source": {
             "name": "hubspot",
@@ -44,3 +44,24 @@ def test_source_instanciation():
         config=HubSpotSourceConfig.parse_obj(raw_config["source"])
     )
     assert client.object == "contacts"
+
+
+def test_source_instanciation_companies():
+    raw_config = {
+        "source": {
+            "name": "hubspot",
+            "stream_name": "companies",
+            "authentication": {
+                "type": "OAUTH",
+                "oauth": {
+                    "client_id": "id-12345abcd",
+                    "client_secret": "cli-12345abcd",
+                    "refresh_token": "fresh-12345abcd"
+                }
+            }
+        }
+    }
+    client = HubSpotCompanies(
+        config=HubSpotSourceConfig.parse_obj(raw_config["source"])
+    )
+    assert client.object == "companies"
