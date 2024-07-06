@@ -98,6 +98,7 @@ class HubSpotClient(APIClient):
 
     def list_properties(self) -> AllObjectProperties:
         response = self._request_api(method="GET", url=self.url_list_properties)
+        proprties = response["results"]
         return AllObjectProperties(
             properties=[
                 HubSpotProperty(
@@ -107,6 +108,6 @@ class HubSpotClient(APIClient):
                     type=hs_property["type"],
                     description=hs_property.get("description"),
                 )
-                for hs_property in response
+                for hs_property in proprties
             ]
         )

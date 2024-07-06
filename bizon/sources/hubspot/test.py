@@ -12,3 +12,6 @@ client = HubSpotContacts(
 )
 result = client.get()
 print(result)
+
+properties = client.list_properties()
+print(properties)
