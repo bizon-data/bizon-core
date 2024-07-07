@@ -18,7 +18,7 @@ def test_source_config_valid():
             },
         }
     }
-    source_config = HubSpotSourceConfig.parse_obj(raw_config["source"])
+    source_config = HubSpotSourceConfig.model_validate(raw_config["source"])
     assert source_config.authentication.type == HubSpotAuthType.OAUTH
     assert source_config.authentication.oauth.client_id == "id-12345abcd"
     assert source_config.authentication.oauth.client_secret == "cli-12345abcd"
@@ -42,7 +42,7 @@ def test_source_instanciation_contacts():
             },
         }
     }
-    client = HubSpotContacts(config=HubSpotSourceConfig.parse_obj(raw_config["source"]))
+    client = HubSpotContacts(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
     assert client.object == "contacts"
 
 
@@ -62,5 +62,5 @@ def test_source_instanciation_companies():
             },
         }
     }
-    client = HubSpotCompanies(config=HubSpotSourceConfig.parse_obj(raw_config["source"]))
+    client = HubSpotCompanies(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
     assert client.object == "companies"

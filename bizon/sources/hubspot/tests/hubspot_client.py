@@ -6,7 +6,7 @@ from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
 
 raw_config = parse_from_yaml(os.path.abspath("bizon/sources/hubspot/config/hubspot.yml"))
 
-HubSpotSourceConfig = HubSpotSourceConfig.parse_obj(raw_config["source"])
+HubSpotSourceConfig = HubSpotSourceConfig.model_validate(raw_config["source"])
 
 client = HubSpotContacts(config=HubSpotSourceConfig)
 
