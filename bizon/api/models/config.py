@@ -19,3 +19,9 @@ class SourceConfig(BaseModel, ABC):
     authentication: AuthConfig
     api_config: APIConfig = APIConfig(retry_limit=3)
     max_iterations: Optional[int] = Field(None, description="Maximum number of iterations when running the pipeline")
+
+
+class DestinationConfig(BaseModel, ABC):
+    name: str
+    api_config: Optional[APIConfig] = None
+    config: dict

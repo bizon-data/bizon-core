@@ -1,0 +1,37 @@
+source:
+  name: hubspot
+  stream_name: contacts
+  properties:
+    strategy: all
+  authentication:
+    type: api_key
+    api_key: <MY_API_KEY>
+
+destination:
+  # Authentication: If empty it will be infered.
+  # Must have the bigquery.jobUser
+  # Must have the bigquery.dataEditor and storage.objectUser on the supplied dataset and bucket
+  name: bigquery
+  config:
+    dataset_id: bizon_test
+    dataset_location: US
+    project_id: my-gcp-project-id
+    gcs_buffer_bucket: bizon-buffer
+    gcs_buffer_format: parquet
+    service_account_key: >-
+      {
+        "type": "service_account",
+        "project_id": "my-gcp-project-id",
+        "private_key_id": "",
+        "private_key": "-----BEGIN PRIVATE KEY-----\n\n-----END PRIVATE KEY-----\n",
+        "client_email": "a-bizon-service-account@my-gcp-project-id.iam.gserviceaccount.com",
+        "client_id": "",
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+        "client_x509_cert_url": "",
+        "universe_domain": "googleapis.com"
+      }
+
+pipeline:
+  log_level: DEBUG
