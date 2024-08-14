@@ -4,7 +4,6 @@ from loguru import logger
 
 from bizon.api.client import APIClient
 from bizon.api.cursor import Cursor
-from bizon.api.models.config import SourceConfig
 
 from .constants import QUEUE_TERMINATION
 from .queue import PipelineQueue
@@ -21,27 +20,26 @@ class SourceThread(Thread):
         # Get the total number of records
         total_records = self.client.get_total_records_count()
 
+        # Initialize the cursor
+        cursor = Cursor(stream_name=self.client.config.stream_name, total_records=total_records)
+
         # First we check if the connection is successful and initialize the cursor
-        data, next_state = self.client.get(state=None)
-        cursor = Cursor(state=next_state, total_records=total_records)
+        check_connection, connection_error = self.client.check_connection()
 
-        # Put the first data in the queue
-        self.queue.put(data, index=cursor.iteration)
+        if not check_connection:
+            logger.error(f"Error while connecting to source: {connection_error}")
+            return
 
-        while cursor.state.is_finished is False:
-
-            # Break if the max iterations is reached
-            if self.client.config.max_iterations is not None and cursor.iteration >= self.client.config.max_iterations:
-                break
+        while not cursor.is_finished and cursor.iteration <= self.client.config.max_iterations:
 
             # Get the next data
-            result, next_state = self.client.get(state=cursor.state)
-
-            # Update the cursor state
-            cursor.update_state(next_state)
+            pagination_dict, records = self.client.get(pagination=cursor.pagination)
 
             # Put the data in the queue
-            self.queue.put(result, index=cursor.iteration)
+            self.queue.put(records=records, index=cursor.iteration)
+
+            # Update the cursor state
+            cursor.update_state(pagination_dict=pagination_dict, nb_records_fetched=len(records))
 
         logger.info("Terminating destination thread ...")
         self.queue.put(QUEUE_TERMINATION, index=cursor.iteration)

@@ -1,24 +1,23 @@
 import queue
 import random
 import time
+from typing import List
 
 from loguru import logger
-
-from .constants import QUEUE_TERMINATION
 
 
 class PipelineQueue:
     def __init__(self, queue_size: int = 1000):
         self.queue = queue.Queue(maxsize=queue_size)
 
-    def put(self, data: dict, index: int):
+    def put(self, records: List[dict], index: int):
         if not self.queue.full():
-            self.queue.put(data)
-            logger.debug("Putting data from index" + str(index) + " : " + str(self.queue.qsize()) + " items in queue")
+            self.queue.put(records)
+            logger.debug(f"Putting data from index {index} ({self.queue.qsize()} items in queue)")
         else:
             logger.debug("Queue is full, waiting for consumer to consume data")
             time.sleep(random.random())
-            self.put(data, index)
+            self.put(records, index)
 
     def get(self) -> dict:
         if not self.queue.empty():

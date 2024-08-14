@@ -2,7 +2,7 @@ from threading import Thread
 
 from loguru import logger
 
-from bizon.destinations.models.config import DestinationConfig
+from bizon.api.models.config import DestinationConfig
 
 from .constants import QUEUE_TERMINATION
 from .queue import PipelineQueue

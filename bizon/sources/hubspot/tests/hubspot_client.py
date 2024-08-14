@@ -21,5 +21,5 @@ print(granted_scopes)
 properties = client.list_properties()
 print(properties)
 
-result, state = client.get()
-print(result)
+next_pagination, data = client.get()
+print(data)

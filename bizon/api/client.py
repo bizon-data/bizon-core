@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from .auth.auth import Auth
-from .cursor import Cursor
 from .models.config import SourceConfig
 from .session import Session
 
@@ -26,7 +25,15 @@ class APIClient(ABC):
         pass
 
     @abstractmethod
-    def get(self, cursor: Cursor = None) -> Optional[dict]:
+    def get(self, pagination: dict = None) -> Tuple[dict, List[dict]]:
+        """Perform next API call to retrieve data and return next pagination.
+
+        If pagination is None, it should return the first page of data.
+        Otherwise, it should return the next page of data.
+
+        - pagination dict
+        - records List[dict]
+        """
         pass
 
     @abstractmethod

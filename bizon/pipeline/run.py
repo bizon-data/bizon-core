@@ -4,7 +4,7 @@ from loguru import logger
 
 from bizon.api.client import APIClient
 from bizon.cli.parser import parse_from_yaml
-from bizon.sources import SOURCES, SourceMap
+from bizon.sources import SOURCES
 
 from .constants import CONSUMER_START_DELAY, IS_ALIVE_CHECK_INTERVAL
 from .consumer import DestinationThread

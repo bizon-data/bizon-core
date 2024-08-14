@@ -8,7 +8,6 @@ from requests.adapters import HTTPAdapter, Retry
 
 from bizon.api.auth.auth import Auth
 from bizon.api.client import APIClient
-from bizon.api.models.state import FetchStatus
 from bizon.api.session import Session
 
 from .auth import HubSpotAuth
@@ -16,7 +15,6 @@ from .constants import URL_BASE, URL_GRANTED_SCOPES
 from .errors import HubspotInvalidAuth
 from .models.config import HubSpotAuthType, HubSpotObjects, HubSpotSourceConfig
 from .models.hs_object import AllObjectProperties, HubSpotProperty
-from .models.state import HubSpotPaging, HubSpotSyncState
 
 
 class HubSpotClient(APIClient):
@@ -120,45 +118,35 @@ class HubSpotClient(APIClient):
 
     def get(
         self,
-        state: HubSpotSyncState = None,
-    ) -> Tuple[Optional[List[dict]], HubSpotSyncState]:
+        pagination: dict = None,
+    ) -> Tuple[dict, Optional[List[dict]]]:
+        """Return the next page of data from HubSpot
+        Returns:
+            dict, Optional[List[dict]]]: Next pagination dict and data
+        """
 
-        if state is None:
+        if not pagination:
             response = self._get()
         else:
-            response = self._get(after=state.paging.after)
+            response = self._get(after=pagination["after"])
 
-        next_state = self.get_next_state(response)
+        return self.parse_response(response)
 
-        return response["results"], next_state
-
-    def get_next_state(self, response: dict) -> HubSpotSyncState:
-        paging = None
-        is_finished = False
-
-        # If no response or no results, we return None
+    def parse_response(self, response: dict) -> Tuple[dict, Optional[List[dict]]]:
+        # If no response or no results, we return empty dict
         if not response or len(response.get("results", [])) == 0:
-            return None, HubSpotSyncState(
-                stream_name=self.object, records_fetched=0, fetch_status=FetchStatus.FAILED, is_finished=is_finished
-            )
+            return dict(), []
 
         # If no next page, we set is_finished to True
-        if response.get("paging", {}).get("next", None) is None:
-            is_finished = True
-        else:
-            # If there is a next page, we set the paging object
-            paging = HubSpotPaging(
-                link=response["paging"]["next"]["link"],
-                after=response["paging"]["next"]["after"],
-            )
+        if response.get("paging", dict()).get("next", None) is None:
+            return dict(), response["results"]
 
-        return HubSpotSyncState(
-            stream_name=self.object,
-            records_fetched=len(response["results"]),
-            fetch_status=FetchStatus.SUCCESS,
-            paging=paging,
-            is_finished=is_finished,
-        )
+        # If there is a next page, we set the paging object
+        next_pagination_dict = {
+            "link": response["paging"]["next"]["link"],
+            "after": response["paging"]["next"]["after"],
+        }
+        return next_pagination_dict, response["results"]
 
     def get_total_records_count(self) -> Optional[int]:
         search_response = self._request_api(
