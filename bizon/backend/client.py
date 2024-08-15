@@ -34,7 +34,12 @@ class BackendClient:
     @property
     def session(self) -> Generator[Session, None, None]:
         """yields a SQLAlchemy connection"""
-        session_ = scoped_session(sessionmaker(bind=self.engine, expire_on_commit=False))
+        session_ = scoped_session(
+            sessionmaker(
+                bind=self.engine,
+                expire_on_commit=False,
+            )
+        )
 
         yield session_
 
@@ -42,7 +47,11 @@ class BackendClient:
 
     def _get_engine(self) -> Engine:
         if self.config.type == SQLAlchemyTypes.SQLITE:
-            return create_engine(f"{self.config.type.value}://", echo=self.config.echoEngine)
+            return create_engine(
+                f"{self.config.type.value}://",
+                echo=self.config.echoEngine,
+                connect_args={"check_same_thread": False},
+            )
 
         if self.config.type == SQLAlchemyTypes.BIGQUERY:
             return create_engine(

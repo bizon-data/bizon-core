@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Any, List, Mapping, Union
+from typing import Any, List, Mapping, Optional, Union
 
 from pydantic import BaseModel, Field
 from pydantic_extra_types.pendulum_dt import DateTime
@@ -42,7 +42,7 @@ class TokenAuthConfig(BaseModel):
 
 class CookiesAuthConfig(BaseModel):
     cookies: Mapping[str, str]
-    headers: Mapping[str, Any]
+    headers: Optional[Mapping[str, Any]] = None
 
 
 class AuthConfig(BaseModel):

@@ -35,7 +35,7 @@ class Session(requests.Session):
     def call(
         self,
         method: str,
-        url,
+        url: str,
         content_type: str = "application/json",
         *args,
         **kwargs,

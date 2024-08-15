@@ -12,6 +12,10 @@ from .dummy.src.source import DummySource
 from .hubspot.src.models.config import HubSpotObjects, HubSpotSourceConfig
 from .hubspot.src.source import HubSpotSource
 
+# Periscope
+from .periscope.src.config import PeriscopeSourceConfig, PeriscopeStreams
+from .periscope.src.source import PeriscopeSource
+
 
 class Stream(BaseModel):
     name: str
@@ -71,6 +75,13 @@ SOURCES = SourceMap(
                 Stream(name=HubSpotObjects.CONTACTS, client=HubSpotSource, config=HubSpotSourceConfig),
                 Stream(name=HubSpotObjects.COMPANIES, client=HubSpotSource, config=HubSpotSourceConfig),
                 Stream(name=HubSpotObjects.DEALS, client=HubSpotSource, config=HubSpotSourceConfig),
+            ],
+        ),
+        Source(
+            name="periscope",
+            streams=[
+                Stream(name=PeriscopeStreams.DASHBOARDS, client=PeriscopeSource, config=PeriscopeSourceConfig),
+                Stream(name=PeriscopeStreams.CHARTS, client=PeriscopeSource, config=PeriscopeSourceConfig),
             ],
         ),
     ]

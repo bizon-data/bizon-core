@@ -1,4 +1,4 @@
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from pydantic import BaseModel, Field
 from requests import PreparedRequest
@@ -7,7 +7,7 @@ from requests.auth import AuthBase
 
 class CookiesAuthParams(BaseModel):
     cookies: Mapping[str, str] = Field(..., description="Cookies to be attached to the request")
-    headers: Mapping[str, Any] = Field(None, description="Headers to be attached to the request")
+    headers: Optional[Mapping[str, Any]] = Field({}, description="Headers to be attached to the request")
 
 
 class CookiesAuthenticator(AuthBase):
