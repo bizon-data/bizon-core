@@ -8,6 +8,7 @@ def my_cursor():
     return Cursor(
         source_name="dummy",
         stream_name="test",
+        job_id="jfd87djkj",
         total_records=100,
     )
 

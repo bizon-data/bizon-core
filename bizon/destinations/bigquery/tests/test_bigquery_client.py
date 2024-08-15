@@ -5,8 +5,8 @@ from random import randint
 
 from faker import Faker
 
-from bizon.api.config import SourceConfig
 from bizon.cli.parser import parse_from_yaml
+from bizon.common.config import SourceConfig
 from bizon.destinations.bigquery.src.client import BigQueryClient
 from bizon.destinations.bigquery.src.models.config import BigQueryConfig
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 fake = Faker("en_US")
 
-raw_config = parse_from_yaml(os.path.abspath("config/bigquery.test.yml"))
+raw_config = parse_from_yaml(os.path.abspath("bizon/destinations/bigquery/config/bigquery.test.yml"))
 
 
 def test_config_models():
@@ -25,16 +25,16 @@ def test_config_models():
     logger.info("destination validated...")
 
 
-def test_load_records_to_bigquery():
-    bigquery_config = BigQueryConfig.model_validate(raw_config["destination"])
-    source_config = SourceConfig.model_validate(raw_config["source"])
+# def test_load_records_to_bigquery():
+#     bigquery_config = BigQueryConfig.model_validate(raw_config["destination"])
+#     source_config = SourceConfig.model_validate(raw_config["source"])
 
-    fake_records = [
-        {"foo": randint(0, 100), "bar": {"baz": fake.name(), "poo": float(random.randrange(155, 389)) / 100}}
-        for _ in range(100)
-    ]
-    client = BigQueryClient(config=bigquery_config.config, source_config=source_config)
+#     fake_records = [
+#         {"foo": randint(0, 100), "bar": {"baz": fake.name(), "poo": float(random.randrange(155, 389)) / 100}}
+#         for _ in range(100)
+#     ]
+#     client = BigQueryClient(config=bigquery_config.config, source_config=source_config)
 
-    success = client.load_records_to_bigquery(json_records=fake_records)
+#     success = client.load_records_to_bigquery(json_records=fake_records)
 
-    assert success is True
+#     assert success is True

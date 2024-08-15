@@ -1,9 +1,9 @@
-from typing import Any, List, Tuple
+from typing import List, Tuple
 
 from bizon.api.source import APISource
 
 from .auth import DummyAuth
-from .config import DummySourceConfig, DummyStreams
+from .config import DummySourceConfig
 from .fake_api import fake_api_call
 
 
@@ -19,9 +19,9 @@ class DummySource(APISource):
     def get_auth(self) -> DummyAuth:
         return DummyAuth(config=self.config.authentication)
 
-    def check_connection(self) -> Tuple[bool | Any | None]:
+    def check_connection(self) -> Tuple[bool, str | None]:
         # Here we could check if the connection is established
-        return True
+        return True, None
 
     def get_total_records_count(self) -> int | None:
         # If available, return total number of records in the source for this stream

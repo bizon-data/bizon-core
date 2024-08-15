@@ -1,12 +1,12 @@
 import json
 from datetime import datetime
-from typing import Optional
+from typing import Generator, Optional
 
 from loguru import logger
 from pytz import UTC
 from sqlalchemy import Result, Select, create_engine, inspect, select, update
 from sqlalchemy.engine import Engine, create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from bizon.common.models import CursorStatus, JobStatus
 
@@ -30,6 +30,15 @@ class BackendClient:
         """Create a BackendClient instance from a raw config dict"""
         backend_config = BackendConfig.model_validate(config)
         return cls(config=backend_config)
+
+    @property
+    def session(self) -> Generator[Session, None, None]:
+        """yields a SQLAlchemy connection"""
+        session_ = scoped_session(sessionmaker(bind=self.engine, expire_on_commit=False))
+
+        yield session_
+
+        session_.close()
 
     def _get_engine(self) -> Engine:
         if self.config.type == SQLAlchemyTypes.SQLITE:
@@ -86,24 +95,14 @@ class BackendClient:
 
     def _add_and_commit(self, obj, session: Optional[Session] = None):
         """Add the object to the session and commit it, return its ID"""
-        obj_id = None
-        if not session:
-            with Session(self.engine) as session:
-                session.add(obj)
-                session.commit()
-                obj_id = str(obj.id)
-        else:
-            session.add(obj)
-            session.commit()
-            obj_id = str(obj.id)
-        return obj_id
+        session = session or next(self.session)
+        session.add(obj)
+        session.commit()
+        return obj
 
-    def _execute_query(self, select: Select, session: Optional[Session] = None) -> Result:
-        if not session:
-            with Session(self.engine) as session:
-                return session.execute(select)
-        else:
-            return session.execute(select)
+    def _execute(self, select: Select, session: Optional[Session] = None) -> Result:
+        session = session or next(self.session)
+        return session.execute(select)
 
     def create_stream_job(
         self,
@@ -112,7 +111,7 @@ class BackendClient:
         total_records_to_fetch: Optional[int] = None,
         job_status: JobStatus = JobStatus.NOT_STARTED,
         session: Optional[Session] = None,
-    ) -> str:
+    ) -> StreamJob:
         """Create new StreamJob record in dbt and return its ID"""
 
         new_stream_job = StreamJob(
@@ -121,9 +120,9 @@ class BackendClient:
             total_records_to_fetch=total_records_to_fetch,
             status=job_status,
         )
-        new_stream_job_id = self._add_and_commit(new_stream_job, session=session)
-        logger.debug(f"New streamJob has been created with id={new_stream_job_id}")
-        return new_stream_job_id
+        new_stream_job = self._add_and_commit(new_stream_job, session=session)
+        logger.debug(f"New streamJob has been created: {new_stream_job}")
+        return new_stream_job
 
     def update_stream_job_status(
         self, job_id: str, job_status: JobStatus, error_message: Optional[str] = None, session: Optional[Session] = None
@@ -135,30 +134,40 @@ class BackendClient:
             .values(status=job_status, error_message=error_message, updated_at=datetime.now(tz=UTC))
             .execution_options(synchronize_session="fetch")
         )
-        self._execute_query(stmt, session=session)
+        self._execute(stmt, session=session)
 
     def get_stream_job_by_id(self, job_id: str, session: Optional[Session] = None) -> Optional[StreamJob]:
         """Get the job by its ID"""
-        smt = select(StreamJob).filter(StreamJob.id == job_id)
-        return self._execute_query(smt, session=session).one_or_none()
 
-    def get_running_job_id(
+        smt = select(StreamJob).filter(
+            StreamJob.id == job_id,
+        )
+
+        results = self._execute(smt, session=session).one_or_none()
+
+        if results:
+            return results[0]
+        logger.warning(f"No job found for id={job_id}")
+        return None
+
+    def get_running_stream_job(
         self, source_name: str, stream_name: str, session: Optional[Session] = None
-    ) -> Optional[str]:
+    ) -> Optional[StreamJob]:
         """Get the job id for the given source and stream name"""
 
-        query = select(StreamJob.id).filter(
+        query = select(StreamJob).filter(
             StreamJob.source_name == source_name,
             StreamJob.stream_name == stream_name,
             StreamJob.status == JobStatus.RUNNING,
         )
-        job_id = self._execute_query(query, session=session).scalar()
 
-        if not job_id:
-            logger.debug(f"No running job found for source={source_name} stream={stream_name}")
+        job = self._execute(query, session=session).scalar_one_or_none()
 
-        job_id = str(job_id) if job_id else None
-        return job_id
+        if job:
+            return job
+
+        logger.debug(f"No running job found for source={source_name} stream={stream_name}")
+        return None
 
     def create_stream_cursor(
         self,
@@ -183,7 +192,7 @@ class BackendClient:
             status=cursor_status,
             error_message=error_message,
         )
-        new_stream_cursor_id = self._add_and_commit(new_stream_cursor, session=session)
+        new_stream_cursor_id = self._add_and_commit(new_stream_cursor, session=session).id
         logger.debug(f"New streamCursor has been created with id={new_stream_cursor_id}")
         return new_stream_cursor_id
 
@@ -201,14 +210,35 @@ class BackendClient:
             .values(status=cursor_status, error_message=error_message, updated_at=datetime.now(tz=UTC))
             .execution_options(synchronize_session="fetch")
         )
-        self._execute_query(stmt, session=session)
+        self._execute(stmt, session=session)
 
     def get_cursor_by_id(self, cursor_id: str, session: Optional[Session] = None) -> Optional[StreamCursor]:
         """Get the cursor by its ID"""
-        smt = select(StreamCursor).filter(StreamCursor.id == cursor_id)
-        return self._execute_query(smt, session=session).one_or_none()
+
+        smt = select(StreamCursor).filter(
+            StreamCursor.id == cursor_id,
+        )
+
+        results = self._execute(smt, session=session).one_or_none()
+        if results:
+            return results[0]
+        logger.warning(f"No cursor found for id={cursor_id}")
+        return None
 
     def get_last_cursor_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[StreamCursor]:
         """Get the last cursor for the given job id"""
-        smt = select(StreamCursor).filter(StreamCursor.job_id == job_id).order_by(StreamCursor.created_at.desc())
-        return self._execute_query(smt, session=session).first()
+
+        smt = (
+            select(StreamCursor)
+            .filter(
+                StreamCursor.job_id == job_id,
+            )
+            .order_by(StreamCursor.created_at.desc())
+        )
+
+        results = self._execute(smt, session=session).first()
+        if results:
+            return results[0]
+
+        logger.warning(f"No last cursor found for job_id={job_id}")
+        return None

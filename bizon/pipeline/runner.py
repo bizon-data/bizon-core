@@ -5,6 +5,7 @@ from loguru import logger
 from bizon.api.source import APISource
 from bizon.backend.client import BackendClient
 from bizon.cli.parser import parse_from_yaml
+from bizon.common.config import SyncConfig
 from bizon.sources import SOURCES
 
 from .constants import CONSUMER_START_DELAY, IS_ALIVE_CHECK_INTERVAL
@@ -15,7 +16,9 @@ from .queue import PipelineQueue
 
 class Runner:
     def __init__(self, config: dict):
-        self.config = config
+        self.raw_config = config
+        self.basic_config_validation()
+        self.config = SyncConfig.model_validate(obj=config)
         self.queue = PipelineQueue()
         self._is_running: bool = False
 
@@ -30,44 +33,37 @@ class Runner:
         config = parse_from_yaml(filepath)
         return cls(config=config)
 
-    def get_source_from_config(self, raw_source_config: dict) -> APISource:
+    def basic_config_validation(self):
+        for key in ["source", "backend", "destination"]:
+            if key not in self.raw_config:
+                raise ValueError(f"Missing {key} in the config, please provide it")
+
+    def get_source(self) -> APISource:
         """Get an instance of the source based on the source config dict"""
 
-        # Get the client and config class
-        source_name = raw_source_config.get("source_name")
-        if not source_name:
-            raise ValueError("source_name is required in the source config")
-
-        stream_name = raw_source_config.get("stream_name")
-        if not stream_name:
-            raise ValueError("stream_name is required in the source config")
-
-        logger.info(f"Creating client for {source_name} - {stream_name} ...")
+        logger.info(f"Creating client for {self.config.source.source_name} - {self.config.source.stream_name} ...")
 
         # Get the client class, validate the config and return the client
-        connector = SOURCES.get_instance(
-            source_name=source_name, stream_name=stream_name, raw_source_config=raw_source_config
+        return SOURCES.get_instance(
+            source_name=self.config.source.source_name,
+            stream_name=self.config.source.stream_name,
+            raw_source_config=self.raw_config["source"],
         )
-        return connector
 
-    def get_backend_from_config(self, raw_backend_config: dict) -> BackendClient:
+    def get_backend(self) -> BackendClient:
         """Get an instance of the backend based on the backend config dict"""
-        return BackendClient.from_raw_config(raw_backend_config)
+        return BackendClient.from_raw_config(self.raw_config["backend"])
 
     def run(self) -> bool:
         """Run the pipeline with dedicated threads for source and destination"""
 
-        for key in ["source", "backend", "destination"]:
-            if key not in self.config:
-                raise ValueError(f"Missing {key} in the config, please provide it")
-
-        # Create the source
-        source = self.get_source_from_config(self.config["source"])
-        source_backend = self.get_backend_from_config(self.config["backend"])
+        # Create the source thread
+        source = self.get_source()
+        source_backend = self.get_backend()
         source_thread = SourceThread(queue=self.queue, source=source, backend=source_backend)
 
-        # Create the destination
-        destination = DestinationThread(queue=self.queue, destination_config=self.config["destination"])
+        # Create the destination thread
+        destination_thread = DestinationThread(queue=self.queue, destination_config=self.config.destination)
 
         # Start the source thread (producer)
         source_thread.start()
@@ -75,7 +71,7 @@ class Runner:
         time.sleep(CONSUMER_START_DELAY)
 
         # Start the destination thread (consumer)
-        destination.start()
+        destination_thread.start()
 
         while source_thread.is_alive():
             time.sleep(IS_ALIVE_CHECK_INTERVAL)

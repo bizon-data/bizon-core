@@ -13,7 +13,7 @@ from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference
 from loguru import logger
 
-from bizon.api.config import SourceConfig
+from bizon.common.config import SourceConfig
 from bizon.common.utils import convert_to_bizon_record
 from bizon.destinations.bigquery.src.models.config import BigQueryAuth
 
@@ -34,7 +34,7 @@ class BigQueryClient:
         self.buffer_format = config.gcs_buffer_format
         self.dataset_id = config.dataset_id
         self.dataset_location = config.dataset_location
-        self.source_name = source_config.name
+        self.source_name = source_config.source_name
         self.stream_name = source_config.stream_name
 
     def convert_and_upload_to_buffer(self, json_records: List[Dict[str, Any]]):

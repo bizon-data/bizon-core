@@ -59,4 +59,4 @@ class StreamCursor(Base):
     updated_at = Column(DateTime, nullable=True, default=None, doc="Timestamp when the job was last updated")
 
     def __repr__(self):
-        return f"<StreamCursor {self.id} {self.stream_name} {self.iteration} {self.rows_fetched} at {self.created_at}>"
+        return f"<StreamCursor {self.stream_name} Iteration: {self.iteration}) - fetched: {self.rows_fetched} at {self.created_at}>"

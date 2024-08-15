@@ -1,3 +1,4 @@
+import ast
 from threading import Thread
 
 from loguru import logger
@@ -5,7 +6,8 @@ from loguru import logger
 from bizon.api.cursor import Cursor
 from bizon.api.source import APISource
 from bizon.backend.client import BackendClient
-from bizon.common.models import CursorStatus
+from bizon.backend.models import StreamJob
+from bizon.common.models import CursorStatus, JobStatus
 
 from .constants import QUEUE_TERMINATION
 from .queue import PipelineQueue
@@ -19,30 +21,32 @@ class SourceThread(Thread):
         self.source = source
         self.backend = backend
 
-    def get_or_create_job(self) -> str:
+    def get_or_create_job(self, session=None) -> StreamJob:
         """Get or create a job for the current stream, return its ID"""
         # Retrieve the last job for this stream
-        job_id = self.backend.get_running_job_id(
-            source_name=self.source.config.source_name, stream_name=self.source.config.stream_name
+        job = self.backend.get_running_stream_job(
+            source_name=self.source.config.source_name,
+            stream_name=self.source.config.stream_name,
+            session=session,
         )
 
-        if job_id:
-            return job_id
+        if job:
+            return job
 
         # If no job is running, we create a new one:
         # Get the total number of records
         total_records = self.source.get_total_records_count()
 
         # Create a new job
-        job_id = self.backend.create_stream_job(
+        job = self.backend.create_stream_job(
             source_name=self.source.config.source_name,
             stream_name=self.source.config.stream_name,
             total_records_to_fetch=total_records,
         )
 
-        return job_id
+        return job
 
-    def get_or_create_cursor(self, job_id: str) -> Cursor:
+    def get_or_create_cursor(self, job_id: str, session=None) -> Cursor:
         """Get or create a cursor for the current stream, return the cursor"""
         # Try to get the cursor from the DB
         cursor_from_bd = self.backend.get_last_cursor_by_job_id(job_id=job_id)
@@ -51,16 +55,19 @@ class SourceThread(Thread):
 
         if cursor_from_bd:
             # Retrieve the job
-            job = self.backend.get_stream_job_by_id(job_id=job_id)
+            job = self.backend.get_stream_job_by_id(job_id=job_id, session=session)
+
+            logger.info(f"Recovering cursor from DB: {cursor_from_bd}")
 
             # Initialize the cursor from the DB
             cursor = Cursor.from_db(
                 source_name=self.source.config.source_name,
                 stream_name=self.source.config.stream_name,
+                job_id=job_id,
                 total_records=job.total_records_to_fetch,
                 iteration=cursor_from_bd.iteration,
                 rows_fetched=cursor_from_bd.rows_fetched,
-                pagination=cursor_from_bd.next_pagination,
+                pagination=ast.literal_eval(cursor_from_bd.next_pagination),
             )
         else:
             # Get the total number of records
@@ -69,9 +76,15 @@ class SourceThread(Thread):
             cursor = Cursor(
                 source_name=self.source.config.source_name,
                 stream_name=self.source.config.stream_name,
+                job_id=job_id,
                 total_records=total_records,
             )
         return cursor
+
+    def send_termination_signal(self, index: int = 0) -> bool:
+        self.queue.put(signal=QUEUE_TERMINATION, records=[], index=index)
+        logger.info("Sent termination signal to destination thread.")
+        return True
 
     def run(self):
 
@@ -87,12 +100,30 @@ class SourceThread(Thread):
             return
 
         # Get or create the job
-        job_id = self.get_or_create_job()
+        job = self.get_or_create_job()
 
         # Get or create the cursor
-        cursor = self.get_or_create_cursor(job_id=job_id)
+        cursor = self.get_or_create_cursor(job_id=job.id)
 
-        while not cursor.is_finished and cursor.iteration <= self.source.config.max_iterations:
+        # Handle the case where last cursor already reach max_iterations
+        if self.source.config.max_iterations and cursor.iteration > self.source.config.max_iterations:
+            logger.warning(
+                f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
+            )
+            self.send_termination_signal(index=cursor.iteration)
+            return
+
+        while not cursor.is_finished:
+
+            if self.source.config.max_iterations and cursor.iteration > self.source.config.max_iterations:
+                logger.warning(
+                    f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
+                )
+                self.send_termination_signal(index=cursor.iteration)
+                return
+
+            # Set job status to running
+            self.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING)
 
             # Get the next data
             pagination_dict, records = self.source.get(pagination=cursor.pagination)
@@ -106,7 +137,7 @@ class SourceThread(Thread):
             if cursor.iteration % self.backend.config.syncCursorInDBEvery == 0:
                 # Create a new cursor in the DB
                 self.backend.create_stream_cursor(
-                    job_id=job_id,
+                    job_id=job.id,
                     source_name=self.source.config.source_name,
                     stream_name=self.source.config.stream_name,
                     iteration=cursor.iteration,
@@ -116,5 +147,4 @@ class SourceThread(Thread):
                 )
 
         logger.info("Terminating destination thread ...")
-        self.queue.put(signal=QUEUE_TERMINATION, records=[], index=cursor.iteration)
-        logger.info("Sent termination signal to destination thread ...")
+        self.send_termination_signal(index=cursor.iteration)

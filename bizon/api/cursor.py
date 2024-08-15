@@ -8,10 +8,11 @@ from bizon.common.models import JobStatus
 
 
 class Cursor:
-    def __init__(self, source_name: str, stream_name: str, total_records: int = None):
+    def __init__(self, source_name: str, stream_name: str, job_id: str, total_records: int = None):
 
         self.source_name: str = source_name
         self.stream_name: str = stream_name
+        self._job_id: str = job_id
         self.iteration: int = 0
         self.rows_fetched: int = 0
         self.total_records = total_records
@@ -23,13 +24,24 @@ class Cursor:
 
     @classmethod
     def from_db(
-        cls, source_name: str, stream_name: str, total_records: int, iteration: int, rows_fetched: int, pagination: dict
+        cls,
+        source_name: str,
+        stream_name: str,
+        job_id: str,
+        total_records: int,
+        iteration: int,
+        rows_fetched: int,
+        pagination: dict,
     ):
-        cursor = cls(source_name=source_name, stream_name=stream_name, total_records=total_records)
+        cursor = cls(source_name=source_name, stream_name=stream_name, job_id=job_id, total_records=total_records)
         cursor.iteration = iteration
         cursor.rows_fetched = rows_fetched
         cursor._pagination = pagination
         return cursor
+
+    @property
+    def job_id(self) -> str:
+        return self._job_id
 
     @property
     def pagination(self) -> dict:
