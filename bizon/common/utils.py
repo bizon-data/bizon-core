@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from pytz import UTC
 
-from bizon.common.models.config import BizonRecord
+from .models import BizonRecord
 
 
 def convert_to_bizon_record(record: Dict[str, Any]) -> BizonRecord:

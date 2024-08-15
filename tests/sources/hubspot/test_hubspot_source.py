@@ -1,12 +1,12 @@
-from bizon.sources.hubspot.src.clients import HubSpotCompanies, HubSpotContacts
 from bizon.sources.hubspot.src.constants import URL_TOKEN_REFRESH
 from bizon.sources.hubspot.src.models.config import HubSpotAuthType, HubSpotSourceConfig
+from bizon.sources.hubspot.src.source import HubSpotSource
 
 
 def test_source_config_valid():
     raw_config = {
         "source": {
-            "name": "hubspot",
+            "source_name": "hubspot",
             "stream_name": "contacts",
             "authentication": {
                 "type": "oauth",
@@ -29,7 +29,7 @@ def test_source_config_valid():
 def test_source_instanciation_contacts():
     raw_config = {
         "source": {
-            "name": "hubspot",
+            "source_name": "hubspot",
             "stream_name": "contacts",
             "init_pipeline": False,
             "authentication": {
@@ -42,14 +42,14 @@ def test_source_instanciation_contacts():
             },
         }
     }
-    client = HubSpotContacts(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
+    client = HubSpotSource(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
     assert client.object == "contacts"
 
 
 def test_source_instanciation_companies():
     raw_config = {
         "source": {
-            "name": "hubspot",
+            "source_name": "hubspot",
             "stream_name": "companies",
             "init_pipeline": False,
             "authentication": {
@@ -62,5 +62,5 @@ def test_source_instanciation_companies():
             },
         }
     }
-    client = HubSpotCompanies(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
+    client = HubSpotSource(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
     assert client.object == "companies"

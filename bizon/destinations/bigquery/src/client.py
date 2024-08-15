@@ -13,7 +13,7 @@ from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference
 from loguru import logger
 
-from bizon.api.models.config import SourceConfig
+from bizon.api.config import SourceConfig
 from bizon.common.utils import convert_to_bizon_record
 from bizon.destinations.bigquery.src.models.config import BigQueryAuth
 

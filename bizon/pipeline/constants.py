@@ -1,4 +1,4 @@
-# Queue
+# Queue Signals
 QUEUE_TERMINATION = "TERMINATION"
 
 ############### Deefault values for pipeline ###############

@@ -1,14 +1,14 @@
 import os
 
 from bizon.cli.parser import parse_from_yaml
-from bizon.sources.hubspot.src.clients import HubSpotContacts
 from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
+from bizon.sources.hubspot.src.source import HubSpotSource
 
 raw_config = parse_from_yaml(os.path.abspath("bizon/sources/hubspot/config/hubspot.yml"))
 
 HubSpotSourceConfig = HubSpotSourceConfig.model_validate(raw_config["source"])
 
-client = HubSpotContacts(config=HubSpotSourceConfig)
+client = HubSpotSource(config=HubSpotSourceConfig)
 
 is_connected, error = client.check_connection()
 assert is_connected

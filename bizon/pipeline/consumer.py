@@ -1,11 +1,12 @@
 from threading import Thread
+from typing import List
 
 from loguru import logger
 
-from bizon.api.models.config import DestinationConfig
+from bizon.common.config import DestinationConfig
 
 from .constants import QUEUE_TERMINATION
-from .queue import PipelineQueue
+from .queue import PipelineQueue, QueueMessage
 
 
 class DestinationThread(Thread):
@@ -16,9 +17,9 @@ class DestinationThread(Thread):
 
     def run(self) -> None:
         while True:
-            message = self.queue.get()
-            print("Consuming data from queue: ", len(message))
+            queue_message: QueueMessage = self.queue.get()
+            print("Consuming data from queue: ", len(queue_message.records))
 
-            if isinstance(message, str) and message == QUEUE_TERMINATION:
+            if queue_message.signal == QUEUE_TERMINATION:
                 logger.info("[Destination] Terminating thread ...")
                 break

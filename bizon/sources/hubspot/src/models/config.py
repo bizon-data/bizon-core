@@ -3,8 +3,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from bizon.api.auth.authenticators.models.oauth_config import OAuthConfig
-from bizon.api.models.config import AuthConfig, SourceConfig
+from bizon.api.auth.config import AuthConfig, OAuthConfig
+from bizon.common.config import SourceConfig
 from bizon.sources.hubspot.src.constants import URL_TOKEN_REFRESH
 
 

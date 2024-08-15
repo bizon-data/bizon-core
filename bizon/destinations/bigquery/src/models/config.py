@@ -1,8 +1,14 @@
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel
 
-from bizon.api.models.config import DestinationConfig
+from bizon.common.config import DestinationConfig
+
+
+class GCSBufferFormat(str, Enum):
+    PARQUET = "parquet"
+    CSV = "csv"
 
 
 class BigQueryAuth(BaseModel):
@@ -10,7 +16,7 @@ class BigQueryAuth(BaseModel):
     dataset_location: Optional[str] = "US"
     project_id: str
     gcs_buffer_bucket: str
-    gcs_buffer_format: Optional[str] = "parquet"
+    gcs_buffer_format: Optional[GCSBufferFormat] = GCSBufferFormat.PARQUET
     service_account_key: Optional[str] = ""  # If empty it will be infered
 
 

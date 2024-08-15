@@ -1,7 +1,24 @@
+from abc import ABC
+from enum import Enum
 from typing import Any, List, Mapping
 
 from pydantic import BaseModel, Field
 from pydantic_extra_types.pendulum_dt import DateTime
+
+
+class AuthType(str, Enum):
+    OAUTH = "oauth"
+    API_KEY = "api_key"
+    BEARER = "bearer"
+    BASIC = "basic"
+    OTHER = "other"
+
+
+class BasicAuthConfig(BaseModel):
+    username: str
+    password: str = ""
+    auth_method: str = "Basic"
+    auth_header: str = "Authorization"
 
 
 class OAuthConfig(BaseModel):
@@ -16,3 +33,13 @@ class OAuthConfig(BaseModel):
     expires_in_name: str = Field("expires_in", description="Name of the expires in")
     refresh_request_body: Mapping[str, Any] = Field(None, description="Request body to refresh the token")
     grant_type: str = Field("refresh_token", description="Grant type")
+
+
+class TokenAuthConfig(BaseModel):
+    token: str
+    auth_method: str = "Bearer"
+    auth_header: str = "Authorization"
+
+
+class AuthConfig(BaseModel, ABC):
+    type: AuthType = Field(..., description="Type of authentication", example="oauth")

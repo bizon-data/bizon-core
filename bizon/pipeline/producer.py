@@ -2,38 +2,100 @@ from threading import Thread
 
 from loguru import logger
 
-from bizon.api.client import APIClient
 from bizon.api.cursor import Cursor
+from bizon.api.source import APISource
+from bizon.backend.client import BackendClient
+from bizon.common.models import CursorStatus
 
 from .constants import QUEUE_TERMINATION
 from .queue import PipelineQueue
 
 
 class SourceThread(Thread):
-    def __init__(self, queue: PipelineQueue, client: APIClient):
+    def __init__(self, queue: PipelineQueue, source: APISource, backend: BackendClient):
         super(SourceThread, self).__init__()
-        self.name = f"source-{client.config.name.lower()}-{client.config.stream_name.lower()}"
+        self.name = f"source-{source.config.source_name.lower()}-{source.config.stream_name.lower()}"
         self.queue = queue
-        self.client = client
+        self.source = source
+        self.backend = backend
+
+    def get_or_create_job(self) -> str:
+        """Get or create a job for the current stream, return its ID"""
+        # Retrieve the last job for this stream
+        job_id = self.backend.get_running_job_id(
+            source_name=self.source.config.source_name, stream_name=self.source.config.stream_name
+        )
+
+        if job_id:
+            return job_id
+
+        # If no job is running, we create a new one:
+        # Get the total number of records
+        total_records = self.source.get_total_records_count()
+
+        # Create a new job
+        job_id = self.backend.create_stream_job(
+            source_name=self.source.config.source_name,
+            stream_name=self.source.config.stream_name,
+            total_records_to_fetch=total_records,
+        )
+
+        return job_id
+
+    def get_or_create_cursor(self, job_id: str) -> Cursor:
+        """Get or create a cursor for the current stream, return the cursor"""
+        # Try to get the cursor from the DB
+        cursor_from_bd = self.backend.get_last_cursor_by_job_id(job_id=job_id)
+
+        cursor = None
+
+        if cursor_from_bd:
+            # Retrieve the job
+            job = self.backend.get_stream_job_by_id(job_id=job_id)
+
+            # Initialize the cursor from the DB
+            cursor = Cursor.from_db(
+                source_name=self.source.config.source_name,
+                stream_name=self.source.config.stream_name,
+                total_records=job.total_records_to_fetch,
+                iteration=cursor_from_bd.iteration,
+                rows_fetched=cursor_from_bd.rows_fetched,
+                pagination=cursor_from_bd.next_pagination,
+            )
+        else:
+            # Get the total number of records
+            total_records = self.source.get_total_records_count()
+            # Initialize the cursor
+            cursor = Cursor(
+                source_name=self.source.config.source_name,
+                stream_name=self.source.config.stream_name,
+                total_records=total_records,
+            )
+        return cursor
 
     def run(self):
-        # Get the total number of records
-        total_records = self.client.get_total_records_count()
 
-        # Initialize the cursor
-        cursor = Cursor(stream_name=self.client.config.stream_name, total_records=total_records)
+        # Init backend to DB
+        self.backend.check_prerequisites()
+        self.backend._create_all_tables()
 
         # First we check if the connection is successful and initialize the cursor
-        check_connection, connection_error = self.client.check_connection()
+        check_connection, connection_error = self.source.check_connection()
 
         if not check_connection:
             logger.error(f"Error while connecting to source: {connection_error}")
             return
 
-        while not cursor.is_finished and cursor.iteration <= self.client.config.max_iterations:
+        # Get or create the job
+        job_id = self.get_or_create_job()
+
+        # Get or create the cursor
+        cursor = self.get_or_create_cursor(job_id=job_id)
+
+        while not cursor.is_finished and cursor.iteration <= self.source.config.max_iterations:
 
             # Get the next data
-            pagination_dict, records = self.client.get(pagination=cursor.pagination)
+            pagination_dict, records = self.source.get(pagination=cursor.pagination)
 
             # Put the data in the queue
             self.queue.put(records=records, index=cursor.iteration)
@@ -41,6 +103,18 @@ class SourceThread(Thread):
             # Update the cursor state
             cursor.update_state(pagination_dict=pagination_dict, nb_records_fetched=len(records))
 
+            if cursor.iteration % self.backend.config.syncCursorInDBEvery == 0:
+                # Create a new cursor in the DB
+                self.backend.create_stream_cursor(
+                    job_id=job_id,
+                    source_name=self.source.config.source_name,
+                    stream_name=self.source.config.stream_name,
+                    iteration=cursor.iteration,
+                    rows_fetched=cursor.rows_fetched,
+                    next_pagination=cursor.pagination,
+                    cursor_status=CursorStatus.NOT_STARTED,
+                )
+
         logger.info("Terminating destination thread ...")
-        self.queue.put(QUEUE_TERMINATION, index=cursor.iteration)
+        self.queue.put(signal=QUEUE_TERMINATION, records=[], index=cursor.iteration)
         logger.info("Sent termination signal to destination thread ...")

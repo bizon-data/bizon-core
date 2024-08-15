@@ -3,8 +3,9 @@ from typing import Any, Mapping
 
 from requests.auth import AuthBase
 
-from bizon.api.models.config import AuthConfig
 from bizon.api.session import Session
+
+from .config import AuthConfig
 
 
 class Auth(ABC):

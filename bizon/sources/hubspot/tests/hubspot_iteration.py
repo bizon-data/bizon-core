@@ -3,8 +3,8 @@ from threading import Thread
 
 from bizon.api.cursor import Cursor
 from bizon.cli.parser import parse_from_yaml
-from bizon.sources.hubspot.src.clients import HubSpotContacts
 from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
+from bizon.sources.hubspot.src.streams import HubSpotContacts
 
 raw_config = parse_from_yaml(os.path.abspath("bizon/sources/hubspot/config/hubspot.yml"))
 

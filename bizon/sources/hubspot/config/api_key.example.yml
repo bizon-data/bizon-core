@@ -1,11 +1,17 @@
 source:
-  name: hubspot
+  source_name: hubspot
   stream_name: contacts
   properties:
     strategy: all
   authentication:
     type: api_key
     api_key: <MY_API_KEY>
+
+backend:
+  type: bigquery
+  database: <MY_GCP_PROJECT>
+  schema: bizon_test
+  syncCursorInDBEvery: 2
 
 destination:
   name: bigquery

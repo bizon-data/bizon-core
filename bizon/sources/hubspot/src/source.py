@@ -6,35 +6,31 @@ from loguru import logger
 from requests import HTTPError
 from requests.adapters import HTTPAdapter, Retry
 
-from bizon.api.auth.auth import Auth
-from bizon.api.client import APIClient
 from bizon.api.session import Session
+from bizon.api.source import APISource
 
 from .auth import HubSpotAuth
 from .constants import URL_BASE, URL_GRANTED_SCOPES
 from .errors import HubspotInvalidAuth
-from .models.config import HubSpotAuthType, HubSpotObjects, HubSpotSourceConfig
+from .models.config import HubSpotAuthType, HubSpotSourceConfig
 from .models.hs_object import AllObjectProperties, HubSpotProperty
 
 
-class HubSpotClient(APIClient):
+class HubSpotSource(APISource):
 
     api_version = "v3"
 
     object_path = f"crm/{api_version}/objects"
     properties_path = f"crm/{api_version}/properties"
 
-    def __init__(self, config: HubSpotSourceConfig, object: HubSpotObjects):
+    def __init__(self, config: HubSpotSourceConfig):
         super().__init__(config)
-        self.object = object
+        self.object = self.config.stream_name
         self.selected_properties = []  # Initialize properties to empty list
 
         # If we are initializing the pipeline, we retrieve the selected properties from HubSpot
         if config.init_pipeline:
             self.selected_properties = self.get_selected_properties()
-
-    def __del__(self):
-        self.session.close()
 
     @property
     def url_list(self) -> str:
@@ -103,7 +99,7 @@ class HubSpotClient(APIClient):
         session.mount("https://", HTTPAdapter(max_retries=retries, pool_maxsize=64))
         return session
 
-    def get_auth(self) -> Auth:
+    def get_auth(self) -> HubSpotAuth:
         return HubSpotAuth(config=self.config.authentication)
 
     def _get(self, after: str = None) -> Optional[dict]:

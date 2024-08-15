@@ -1,30 +1,35 @@
 from datetime import datetime
-from enum import Enum
 from typing import Optional
 
 from loguru import logger
 from pytz import UTC
 
-
-class FetchStatus(str, Enum):
-    NOT_STARTED = "not_started"
-    RUNNING = "running"
-    SUCCESS = "success"
-    FAILED = "failed"
+from bizon.common.models import JobStatus
 
 
 class Cursor:
-    def __init__(self, stream_name: str, total_records: int = None):
+    def __init__(self, source_name: str, stream_name: str, total_records: int = None):
 
+        self.source_name: str = source_name
         self.stream_name: str = stream_name
         self.iteration: int = 0
         self.rows_fetched: int = 0
         self.total_records = total_records
-        self.fetch_status: FetchStatus = FetchStatus.NOT_STARTED
+        self.job_status: JobStatus = JobStatus.NOT_STARTED
         self.created_at: datetime = datetime.now(tz=UTC)
 
         # Instantiate empty pagination
         self._pagination: dict = {}
+
+    @classmethod
+    def from_db(
+        cls, source_name: str, stream_name: str, total_records: int, iteration: int, rows_fetched: int, pagination: dict
+    ):
+        cursor = cls(source_name=source_name, stream_name=stream_name, total_records=total_records)
+        cursor.iteration = iteration
+        cursor.rows_fetched = rows_fetched
+        cursor._pagination = pagination
+        return cursor
 
     @property
     def pagination(self) -> dict:
@@ -39,7 +44,7 @@ class Cursor:
 
     @property
     def is_finished(self) -> bool:
-        if self.fetch_status == FetchStatus.SUCCESS:
+        if self.job_status == JobStatus.SUCCESS:
             return True
         return False
 
@@ -50,27 +55,11 @@ class Cursor:
             return None
         return self.rows_fetched / self.total_records
 
+    @property
+    def source_full_name(self) -> str:
+        return f"{self.source_name}.{self.stream_name}"
+
     def update_state(self, pagination_dict: dict, nb_records_fetched: int):
-
-        # In case pagination is empty, we consider we finished syncing the source
-        if pagination_dict is None or len(pagination_dict) == 0:
-            self.fetch_status = FetchStatus.SUCCESS
-            logger.info(
-                (
-                    f"Source: {self.stream_name} - Iteration {self.iteration} - Finished {percentage_str}."
-                    f"Total records fetched: {self.rows_fetched}"
-                )
-            )
-
-            if self.total_records is not None and self.rows_fetched != self.total_records:
-                logger.warning(
-                    (
-                        f"Source: {self.stream_name} - Iteration {self.iteration} - "
-                        f"Total records fetched: {self.rows_fetched} "
-                        f"does not match the total records available: {self.total_records}"
-                    )
-                )
-            return
 
         # - 1. update the pagination
         self._pagination = pagination_dict
@@ -81,15 +70,39 @@ class Cursor:
         # - 3. update the number of rows fetched
         self.rows_fetched += nb_records_fetched
 
-        # - 4. update the fetch status
-        self.fetch_status = FetchStatus.RUNNING
-
-        # - 5 Log the progress with humanized percentage
+        # - 4 Log the progress with humanized percentage
         percentage_str = f"({self.percentage_fetched:.3%})" if self.percentage_fetched else ""
 
         logger.info(
             (
-                f"Source: {self.stream_name} - Iteration {self.iteration} - "
+                f"Source: {self.source_full_name} - Iteration {self.iteration} - "
                 f"Fetched: {self.rows_fetched} {percentage_str} successfully."
             )
         )
+
+        # - 5 Handle next status depending on the pagination
+
+        # *** In case pagination is empty, we consider we finished syncing the source ****
+        if pagination_dict is None or len(pagination_dict) == 0:
+            self.job_status = JobStatus.SUCCESS
+
+            if self.total_records is not None and self.rows_fetched != self.total_records:
+                logger.warning(
+                    (
+                        f"Source: {self.source_full_name} - Iteration {self.iteration} - "
+                        f"Total records fetched: {self.rows_fetched} "
+                        f"does not match the total records available: {self.total_records}"
+                    )
+                )
+            else:
+                logger.info(
+                    (
+                        f"Source: {self.source_full_name} - Iteration {self.iteration} - "
+                        f"Total records fetched: {self.rows_fetched} "
+                        f"matches the total records available: {self.total_records}"
+                    )
+                )
+            return
+
+        # *** Otherwise, we consider the job is still running ***
+        self.job_status = JobStatus.RUNNING

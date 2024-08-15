@@ -5,7 +5,7 @@ from random import randint
 
 from faker import Faker
 
-from bizon.api.models.config import SourceConfig
+from bizon.api.config import SourceConfig
 from bizon.cli.parser import parse_from_yaml
 from bizon.destinations.bigquery.src.client import BigQueryClient
 from bizon.destinations.bigquery.src.models.config import BigQueryConfig

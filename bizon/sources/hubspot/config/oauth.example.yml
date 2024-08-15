@@ -1,5 +1,5 @@
 source:
-  name: hubspot
+  source_name: hubspot
   stream_name: contacts
   properties:
     strategy: all
@@ -9,6 +9,12 @@ source:
       client_id: <MY_CLIENT_ID>
       client_secret: <MY_CLIENT_SECRET>
       refresh_token: <MY_REFRESH_TOKEN>
+
+backend:
+  type: bigquery
+  database: <MY_GCP_PROJECT>
+  schema: bizon_test
+  syncCursorInDBEvery: 2
 
 destination:
   name: bigquery

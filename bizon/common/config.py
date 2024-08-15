@@ -3,17 +3,14 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-
-class APIConfig(BaseModel):
-    retry_limit: int
-
-
-class AuthConfig(BaseModel, ABC):
-    type: str
+from bizon.api.auth.config import AuthConfig
+from bizon.api.config import APIConfig
+from bizon.backend.config import BackendConfig
+from bizon.pipeline.config import PipelineConfig
 
 
 class SourceConfig(BaseModel, ABC):
-    name: str
+    source_name: str
     stream_name: str
     init_pipeline: Optional[bool] = Field(True, description="Whether to initialize the source to run pipeline directly")
     authentication: AuthConfig
@@ -23,5 +20,11 @@ class SourceConfig(BaseModel, ABC):
 
 class DestinationConfig(BaseModel, ABC):
     name: str
-    api_config: Optional[APIConfig] = None
     config: dict
+
+
+class SyncConfig(BaseModel):
+    source: SourceConfig
+    destination: DestinationConfig
+    pipeline: PipelineConfig
+    backend: BackendConfig

@@ -2,18 +2,23 @@ from typing import List, Type
 
 from pydantic import BaseModel
 
-from bizon.api.client import APIClient
+from bizon.api.source import APISource
 
-from .hubspot.src.clients import HubSpotCompanies, HubSpotContacts, HubSpotDeals
-from .hubspot.src.models.config import HubSpotSourceConfig
+# Dummy
+from .dummy.src.config import DummySourceConfig, DummyStreams
+from .dummy.src.source import DummySource
+
+# HubSpot
+from .hubspot.src.models.config import HubSpotObjects, HubSpotSourceConfig
+from .hubspot.src.source import HubSpotSource
 
 
 class Stream(BaseModel):
     name: str
-    client: Type[APIClient]
+    client: Type[APISource]
     config: Type[BaseModel]
 
-    def get_instance(self, raw_source_config: dict) -> APIClient:
+    def get_instance(self, raw_source_config: dict) -> APISource:
         return self.client(config=self.config.model_validate(raw_source_config))
 
 
@@ -43,9 +48,9 @@ class SourceMap(BaseModel):
         for source in self.sources:
             if source.name == name:
                 return source
-        raise ValueError(f"Source {name} not found. Available sources are {self.available_sources()}")
+        raise ValueError(f"Source {name} not found. Available sources are {self.available_sources}")
 
-    def get_instance(self, source_name: str, stream_name: str, raw_source_config: dict) -> APIClient:
+    def get_instance(self, source_name: str, stream_name: str, raw_source_config: dict) -> APISource:
         source = self.get_source_by_name(source_name)
         stream = source.get_stream_by_name(stream_name)
         return stream.get_instance(raw_source_config)
@@ -54,13 +59,20 @@ class SourceMap(BaseModel):
 SOURCES = SourceMap(
     sources=[
         Source(
+            name="dummy",
+            streams=[
+                Stream(name=DummyStreams.CREATURES, client=DummySource, config=DummySourceConfig),
+                Stream(name=DummyStreams.PLANTS, client=DummySource, config=DummySourceConfig),
+            ],
+        ),
+        Source(
             name="hubspot",
             streams=[
-                Stream(name="contacts", client=HubSpotContacts, config=HubSpotSourceConfig),
-                Stream(name="companies", client=HubSpotCompanies, config=HubSpotSourceConfig),
-                Stream(name="deals", client=HubSpotDeals, config=HubSpotSourceConfig),
+                Stream(name=HubSpotObjects.CONTACTS, client=HubSpotSource, config=HubSpotSourceConfig),
+                Stream(name=HubSpotObjects.COMPANIES, client=HubSpotSource, config=HubSpotSourceConfig),
+                Stream(name=HubSpotObjects.DEALS, client=HubSpotSource, config=HubSpotSourceConfig),
             ],
-        )
+        ),
     ]
 )
 
