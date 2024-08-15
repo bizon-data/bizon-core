@@ -1,9 +1,11 @@
 from enum import Enum
-from typing import List, Literal, Optional
+from typing import Literal, Union
 
 from pydantic import Field
 
-from bizon.api.auth.config import AuthConfig, AuthType, OAuthConfig
+from bizon.api.auth.authenticators.oauth import Oauth2AuthParams
+from bizon.api.auth.authenticators.token import TokenAuthParams
+from bizon.api.auth.config import AuthConfig, AuthType
 from bizon.common.config import SourceConfig
 
 
@@ -14,8 +16,7 @@ class DummyStreams(str, Enum):
 
 class DummyAuthConfig(AuthConfig):
     type: Literal[AuthType.API_KEY, AuthType.OAUTH]
-    api_key: Optional[str] = Field(None, description="API Key that you can get at https://mydummyapi.com/api-key")
-    oauth: Optional[OAuthConfig] = Field(None, description="OAuth configuration")
+    params: Union[TokenAuthParams, Oauth2AuthParams] = Field(None, description="OAuth or API configuration")
 
 
 class DummySourceConfig(SourceConfig):

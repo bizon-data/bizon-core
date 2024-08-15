@@ -5,7 +5,8 @@ source:
     strategy: all
   authentication:
     type: oauth
-    oauth:
+    params:
+      token_refresh_endpoint: https://api.hubapi.com/oauth/v1/token
       client_id: <MY_CLIENT_ID>
       client_secret: <MY_CLIENT_SECRET>
       refresh_token: <MY_REFRESH_TOKEN>

@@ -1,6 +1,15 @@
 import base64
 
+from pydantic import BaseModel, Field
+
 from .abstract_token import AbstractHeaderAuthenticator
+
+
+class BasicHttpAuthParams(BaseModel):
+    username: str = Field(..., description="Username for basic auth")
+    password: str = Field("", description="Password for basic auth")
+    auth_method: str = Field("Basic", description="Auth method for basic auth")
+    auth_header: str = Field("Authorization", description="Auth header for basic auth")
 
 
 class BasicHttpAuthenticator(AbstractHeaderAuthenticator):
@@ -17,11 +26,9 @@ class BasicHttpAuthenticator(AbstractHeaderAuthenticator):
     def token(self) -> str:
         return f"{self._auth_method} {self._token}"
 
-    def __init__(
-        self, username: str, password: str = "", auth_method: str = "Basic", auth_header: str = "Authorization"
-    ):
-        auth_string = f"{username}:{password}".encode("utf8")
+    def __init__(self, params: BasicHttpAuthParams):
+        auth_string = f"{params.username}:{params.password}".encode("utf8")
         b64_encoded = base64.b64encode(auth_string).decode("utf8")
-        self._auth_header = auth_header
-        self._auth_method = auth_method
+        self._auth_header = params.auth_header
+        self._auth_method = params.auth_method
         self._token = b64_encoded

@@ -1,6 +1,5 @@
-from abc import ABC
 from enum import Enum
-from typing import Any, List, Mapping
+from typing import Any, List, Mapping, Union
 
 from pydantic import BaseModel, Field
 from pydantic_extra_types.pendulum_dt import DateTime
@@ -11,7 +10,7 @@ class AuthType(str, Enum):
     API_KEY = "api_key"
     BEARER = "bearer"
     BASIC = "basic"
-    OTHER = "other"
+    COOKIES = "cookies"
 
 
 class BasicAuthConfig(BaseModel):
@@ -41,5 +40,16 @@ class TokenAuthConfig(BaseModel):
     auth_header: str = "Authorization"
 
 
-class AuthConfig(BaseModel, ABC):
+class CookiesAuthConfig(BaseModel):
+    cookies: Mapping[str, str]
+    headers: Mapping[str, Any]
+
+
+class AuthConfig(BaseModel):
     type: AuthType = Field(..., description="Type of authentication", example="oauth")
+    params: Union[
+        OAuthConfig,
+        BasicAuthConfig,
+        TokenAuthConfig,
+        CookiesAuthConfig,
+    ] = Field(..., description="Configuration for the authentication")

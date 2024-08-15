@@ -5,15 +5,22 @@ from typing import Any, Generator, List, Optional, Tuple
 from loguru import logger
 from requests import HTTPError
 from requests.adapters import HTTPAdapter, Retry
+from requests.auth import AuthBase
 
+from bizon.api.auth.authenticators.oauth import Oauth2AuthParams
+from bizon.api.auth.authenticators.token import TokenAuthParams
+from bizon.api.auth.builder import AuthBuilder
+from bizon.api.auth.config import AuthType
 from bizon.api.session import Session
 from bizon.api.source import APISource
 
-from .auth import HubSpotAuth
-from .constants import URL_BASE, URL_GRANTED_SCOPES
 from .errors import HubspotInvalidAuth
-from .models.config import HubSpotAuthType, HubSpotSourceConfig
+from .models.config import HubSpotSourceConfig
 from .models.hs_object import AllObjectProperties, HubSpotProperty
+
+URL_BASE = "https://api.hubapi.com"
+URL_GRANTED_SCOPES = f"{URL_BASE}/oauth/v1/access-tokens"
+URL_TOKEN_REFRESH = f"{URL_BASE}/oauth/v1/token"
 
 
 class HubSpotSource(APISource):
@@ -25,6 +32,7 @@ class HubSpotSource(APISource):
 
     def __init__(self, config: HubSpotSourceConfig):
         super().__init__(config)
+        self.config: HubSpotSourceConfig = config
         self.object = self.config.stream_name
         self.selected_properties = []  # Initialize properties to empty list
 
@@ -99,8 +107,25 @@ class HubSpotSource(APISource):
         session.mount("https://", HTTPAdapter(max_retries=retries, pool_maxsize=64))
         return session
 
-    def get_auth(self) -> HubSpotAuth:
-        return HubSpotAuth(config=self.config.authentication)
+    def get_authenticator(self) -> AuthBase:
+        if self.config.authentication.type.value == AuthType.OAUTH.value:
+            return AuthBuilder.oauth2(
+                params=Oauth2AuthParams(
+                    token_refresh_endpoint=URL_TOKEN_REFRESH,
+                    client_id=self.config.authentication.params.client_id,
+                    client_secret=self.config.authentication.params.client_secret,
+                    refresh_token=self.config.authentication.params.refresh_token,
+                )
+            )
+
+        elif self.config.authentication.type.value == AuthType.API_KEY.value:
+            return AuthBuilder.token(
+                params=TokenAuthParams(
+                    token=self.config.authentication.params.token,
+                )
+            )
+
+        raise NotImplementedError(f"Auth type {self.config.authentication.type} not implemented for HubSpot")
 
     def _get(self, after: str = None) -> Optional[dict]:
         params = {
@@ -175,8 +200,8 @@ class HubSpotSource(APISource):
 
     def get_granted_scopes(self) -> List[str]:
         try:
-            if self.auth.type == HubSpotAuthType.OAUTH:
-                response = self.session.get(url=f"{URL_GRANTED_SCOPES}/{self.auth.authenticator.access_token}")
+            if self.config.authentication.type == AuthType.OAUTH.value:
+                response = self.session.get(url=f"{URL_GRANTED_SCOPES}/{self.session.auth.access_token}")
             else:
                 raise NotImplementedError("Scope endpoint for API Key are not supported.")
             response.raise_for_status()

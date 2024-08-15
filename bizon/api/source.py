@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional, Tuple
 
+from requests.auth import AuthBase
+
 from bizon.common.config import SourceConfig
 
-from .auth.auth import Auth
 from .session import Session
 
 
@@ -14,14 +15,13 @@ class APISource(ABC):
         self.session = self.get_session()
 
         # Set authentication in the session
-        self.auth = self.get_auth()
-        self.session.auth = self.auth.authenticator
+        self.session.auth = self.get_authenticator()
 
     def __del__(self):
         self.session.close()
 
     @abstractmethod
-    def get_auth(self) -> Auth:
+    def get_authenticator(self) -> AuthBase:
         pass
 
     @abstractmethod

@@ -5,7 +5,8 @@ source:
     strategy: all
   authentication:
     type: api_key
-    api_key: <MY_API_KEY>
+    params:
+      token: <MY_API_KEY>
 
 backend:
   type: bigquery

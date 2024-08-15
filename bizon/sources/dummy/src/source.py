@@ -1,10 +1,17 @@
 from typing import List, Tuple
 
+from requests.auth import AuthBase
+
+from bizon.api.auth.authenticators.oauth import Oauth2AuthParams
+from bizon.api.auth.authenticators.token import TokenAuthParams
+from bizon.api.auth.builder import AuthBuilder
+from bizon.api.auth.config import AuthType
 from bizon.api.source import APISource
 
-from .auth import DummyAuth
 from .config import DummySourceConfig
 from .fake_api import fake_api_call
+
+URL_TOKEN_REFRESH = "https://api.mydummysaas.com/oauth/v1/token"
 
 
 class DummySource(APISource):
@@ -16,8 +23,18 @@ class DummySource(APISource):
     def url_entity(self) -> str:
         return f"https://api.dummy.com/v1/{self.config.stream_name}"
 
-    def get_auth(self) -> DummyAuth:
-        return DummyAuth(config=self.config.authentication)
+    def get_authenticator(self) -> AuthBase:
+
+        if self.config.authentication.type == AuthType.OAUTH:
+            return AuthBuilder.oauth2(
+                params=Oauth2AuthParams(
+                    token_refresh_endpoint=URL_TOKEN_REFRESH,
+                    client_id=self.config.authentication.params.client_id,
+                )
+            )
+
+        if self.config.authentication.type == AuthType.API_KEY:
+            return AuthBuilder.token(params=TokenAuthParams(token=self.config.authentication.params.token))
 
     def check_connection(self) -> Tuple[bool, str | None]:
         # Here we could check if the connection is established

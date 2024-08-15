@@ -1,6 +1,6 @@
-from bizon.sources.hubspot.src.constants import URL_TOKEN_REFRESH
-from bizon.sources.hubspot.src.models.config import HubSpotAuthType, HubSpotSourceConfig
-from bizon.sources.hubspot.src.source import HubSpotSource
+from bizon.api.auth.config import AuthType
+from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
+from bizon.sources.hubspot.src.source import URL_TOKEN_REFRESH, HubSpotSource
 
 
 def test_source_config_valid():
@@ -10,7 +10,8 @@ def test_source_config_valid():
             "stream_name": "contacts",
             "authentication": {
                 "type": "oauth",
-                "oauth": {
+                "params": {
+                    "token_refresh_endpoint": "https://api.hubapi.com/oauth/v1/token",
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
                     "refresh_token": "fresh-12345abcd",
@@ -19,11 +20,11 @@ def test_source_config_valid():
         }
     }
     source_config = HubSpotSourceConfig.model_validate(raw_config["source"])
-    assert source_config.authentication.type == HubSpotAuthType.OAUTH
-    assert source_config.authentication.oauth.client_id == "id-12345abcd"
-    assert source_config.authentication.oauth.client_secret == "cli-12345abcd"
-    assert source_config.authentication.oauth.refresh_token == "fresh-12345abcd"
-    assert source_config.authentication.oauth.token_refresh_endpoint == URL_TOKEN_REFRESH
+    assert source_config.authentication.type == AuthType.OAUTH
+    assert source_config.authentication.params.client_id == "id-12345abcd"
+    assert source_config.authentication.params.client_secret == "cli-12345abcd"
+    assert source_config.authentication.params.refresh_token == "fresh-12345abcd"
+    assert source_config.authentication.params.token_refresh_endpoint == URL_TOKEN_REFRESH
 
 
 def test_source_instanciation_contacts():
@@ -34,7 +35,8 @@ def test_source_instanciation_contacts():
             "init_pipeline": False,
             "authentication": {
                 "type": "oauth",
-                "oauth": {
+                "params": {
+                    "token_refresh_endpoint": "https://api.hubapi.com/oauth/v1/token",
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
                     "refresh_token": "fresh-12345abcd",
@@ -54,7 +56,8 @@ def test_source_instanciation_companies():
             "init_pipeline": False,
             "authentication": {
                 "type": "oauth",
-                "oauth": {
+                "params": {
+                    "token_refresh_endpoint": "https://api.hubapi.com/oauth/v1/token",
                     "client_id": "id-12345abcd",
                     "client_secret": "cli-12345abcd",
                     "refresh_token": "fresh-12345abcd",

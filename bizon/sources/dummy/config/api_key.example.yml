@@ -3,7 +3,8 @@ source:
   stream_name: creatures
   authentication:
     type: api_key
-    api_key: dummy_key
+    params:
+      token: dummy_key
 
 backend:
   type: sqlite
