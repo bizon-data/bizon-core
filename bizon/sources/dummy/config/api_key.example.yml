@@ -1,0 +1,18 @@
+source:
+  source_name: dummy
+  stream_name: creatures
+  authentication:
+    type: api_key
+    api_key: dummy_key
+
+backend:
+  type: sqlite
+  database: NOT_USED_WITH_SQLITE
+  schema: NOT_USED_WITH_SQLITE
+  syncCursorInDBEvery: 2
+
+destination:
+  name: bigquery
+
+pipeline:
+  log_level: DEBUG
