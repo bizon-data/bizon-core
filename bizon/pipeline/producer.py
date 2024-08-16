@@ -1,5 +1,4 @@
 import ast
-from threading import Thread
 
 from loguru import logger
 
@@ -9,13 +8,11 @@ from bizon.backend.client import BackendClient
 from bizon.backend.models import StreamJob
 from bizon.common.models import CursorStatus, JobStatus
 
-from .constants import QUEUE_TERMINATION
-from .queue import PipelineQueue
+from .queue import AbstractQueue
 
 
-class SourceThread(Thread):
-    def __init__(self, queue: PipelineQueue, source: APISource, backend: BackendClient):
-        super(SourceThread, self).__init__()
+class Producer:
+    def __init__(self, queue: AbstractQueue, source: APISource, backend: BackendClient):
         self.name = f"source-{source.config.source_name.lower()}-{source.config.stream_name.lower()}"
         self.queue = queue
         self.source = source
@@ -81,11 +78,6 @@ class SourceThread(Thread):
             )
         return cursor
 
-    def send_termination_signal(self, index: int = 0) -> bool:
-        self.queue.put(signal=QUEUE_TERMINATION, records=[], index=index)
-        logger.info("Sent termination signal to destination thread.")
-        return True
-
     def run(self):
 
         # Init backend to DB
@@ -110,7 +102,7 @@ class SourceThread(Thread):
             logger.warning(
                 f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
             )
-            self.send_termination_signal(index=cursor.iteration)
+            self.queue.send_termination_signal(topic="not_used_yet", index=cursor.iteration)
             return
 
         while not cursor.is_finished:
@@ -119,7 +111,7 @@ class SourceThread(Thread):
                 logger.warning(
                     f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
                 )
-                self.send_termination_signal(index=cursor.iteration)
+                self.queue.send_termination_signal(topic="not_used_yet", index=cursor.iteration)
                 return
 
             # Set job status to running
@@ -129,7 +121,7 @@ class SourceThread(Thread):
             pagination_dict, records = self.source.get(pagination=cursor.pagination)
 
             # Put the data in the queue
-            self.queue.put(records=records, index=cursor.iteration)
+            self.queue.put(records=records, topic="not_used_yet", index=cursor.iteration)
 
             # Update the cursor state
             cursor.update_state(pagination_dict=pagination_dict, nb_records_fetched=len(records))
@@ -146,5 +138,5 @@ class SourceThread(Thread):
                     cursor_status=CursorStatus.NOT_STARTED,
                 )
 
-        logger.info("Terminating destination thread ...")
-        self.send_termination_signal(index=cursor.iteration)
+        logger.info("Terminating destination ...")
+        self.queue.send_termination_signal(topic="not_used_yet", index=cursor.iteration)

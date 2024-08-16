@@ -4,20 +4,20 @@ import pytest
 
 from bizon.backend.client import BackendClient
 from bizon.common.models import CursorStatus, JobStatus
-from bizon.pipeline.producer import SourceThread
-from bizon.pipeline.runner import Runner
+from bizon.pipeline.producer import Producer
+from bizon.pipeline.runner import RunnerFactory
 
 
 @pytest.fixture(scope="function")
 def my_producer(my_backend_client: BackendClient):
-    runner = Runner.from_yaml(os.path.abspath("tests/pipeline/dummy_pipeline.yml"))
+    runner = RunnerFactory.create_from_yaml(os.path.abspath("tests/pipeline/dummy_pipeline.yml"))
     source = runner.get_source()
     my_backend_client._create_all_tables()
     source_backend = my_backend_client
-    return SourceThread(queue=runner.queue, source=source, backend=source_backend)
+    return Producer(queue=runner.queue, source=source, backend=source_backend)
 
 
-def test_create_job(my_producer: SourceThread, db_session):
+def test_create_job(my_producer: Producer, db_session):
     job = my_producer.get_or_create_job(session=db_session)
     assert job is not None
 
@@ -25,7 +25,7 @@ def test_create_job(my_producer: SourceThread, db_session):
     assert my_job.id == job.id
 
 
-def test_create_job_and_recover(my_producer: SourceThread, db_session):
+def test_create_job_and_recover(my_producer: Producer, db_session):
     job = my_producer.get_or_create_job(session=db_session)
     assert job is not None
 
@@ -35,7 +35,7 @@ def test_create_job_and_recover(my_producer: SourceThread, db_session):
     assert recover_job.id == job.id
 
 
-def test_cursor_recovery_after_iteration(my_producer: SourceThread, db_session):
+def test_cursor_recovery_after_iteration(my_producer: Producer, db_session):
     job = my_producer.get_or_create_job(session=db_session)
     assert job is not None
 
@@ -50,7 +50,7 @@ def test_cursor_recovery_after_iteration(my_producer: SourceThread, db_session):
     assert cursor_from_db is None
 
 
-def test_cursor_recovery_not_running(my_producer: SourceThread, db_session):
+def test_cursor_recovery_not_running(my_producer: Producer, db_session):
     job = my_producer.get_or_create_job(session=db_session)
     assert job is not None
 
@@ -62,5 +62,5 @@ def test_cursor_recovery_not_running(my_producer: SourceThread, db_session):
     assert cursor_from_db is None
 
 
-def test_source_thread(my_producer: SourceThread):
+def test_source_thread(my_producer: Producer):
     assert my_producer.source.config.source_name == "dummy"

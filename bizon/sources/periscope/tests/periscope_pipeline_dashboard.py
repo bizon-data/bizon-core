@@ -1,9 +1,9 @@
 import os
 
 from bizon.cli.parser import parse_from_yaml
-from bizon.pipeline.runner import Runner
+from bizon.pipeline.runner import RunnerFactory
 
 config = parse_from_yaml(os.path.abspath("bizon/sources/periscope/config/periscope_dashboards.yml"))
 
-runner = Runner(config=config)
+runner = RunnerFactory.create_from_config_dict(config=config)
 runner.run()

@@ -16,4 +16,5 @@ destination:
   name: bigquery
 
 pipeline:
+  runner: threads
   log_level: DEBUG

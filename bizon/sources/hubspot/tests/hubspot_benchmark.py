@@ -4,11 +4,11 @@ from time import sleep
 import yappi
 
 from bizon.cli.parser import parse_from_yaml
-from bizon.pipeline.runner import Runner
+from bizon.pipeline.runner import RunnerFactory
 
 raw_config = parse_from_yaml("/Users/antoineballiet/Documents/GitHub/bizon/bizon/sources/hubspot/config/hubspot.yml")
 
-runner = Runner(config=raw_config)
+runner = RunnerFactory.create_from_config_dict(config=raw_config)
 
 yappi.start()
 runner.run()

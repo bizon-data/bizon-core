@@ -1,4 +1,4 @@
-import time
+from abc import ABC, abstractmethod
 
 from loguru import logger
 
@@ -8,19 +8,22 @@ from bizon.cli.parser import parse_from_yaml
 from bizon.common.config import SyncConfig
 from bizon.sources import SOURCES
 
-from .constants import CONSUMER_START_DELAY, IS_ALIVE_CHECK_INTERVAL
-from .consumer import DestinationThread
-from .producer import SourceThread
-from .queue import PipelineQueue
+from .config import RunnerTypes
+from .producer import Producer
+from .queue import AbstractQueue
 
 
-class Runner:
+class AbstractRunner(ABC):
     def __init__(self, config: dict):
         self.raw_config = config
         self.basic_config_validation()
         self.config = SyncConfig.model_validate(obj=config)
-        self.queue = PipelineQueue()
         self._is_running: bool = False
+
+        # Instaniate the source, backend and destination
+        self.source: APISource = self.get_source()
+        self.backend: BackendClient = self.get_backend()
+        self.queue: AbstractQueue = self.get_queue()
 
     @property
     def is_running(self) -> bool:
@@ -42,7 +45,6 @@ class Runner:
         """Get an instance of the source based on the source config dict"""
 
         logger.info(f"Creating client for {self.config.source.source_name} - {self.config.source.stream_name} ...")
-
         # Get the client class, validate the config and return the client
         return SOURCES.get_instance(
             source_name=self.config.source.source_name,
@@ -54,26 +56,35 @@ class Runner:
         """Get an instance of the backend based on the backend config dict"""
         return BackendClient.from_raw_config(self.raw_config["backend"])
 
+    def get_producer(self) -> Producer:
+        return Producer(queue=self.queue, source=self.source, backend=self.backend)
+
+    @abstractmethod
+    def get_queue(self) -> AbstractQueue:
+        """Get an instance of the queue based on the messaging system"""
+        pass
+
+    @abstractmethod
     def run(self) -> bool:
-        """Run the pipeline with dedicated threads for source and destination"""
+        """Run the pipeline with dedicated adapter for source and destination"""
+        pass
 
-        # Create the source thread
-        source = self.get_source()
-        source_backend = self.get_backend()
-        source_thread = SourceThread(queue=self.queue, source=source, backend=source_backend)
 
-        # Create the destination thread
-        destination_thread = DestinationThread(queue=self.queue, destination_config=self.config.destination)
+class RunnerFactory:
 
-        # Start the source thread (producer)
-        source_thread.start()
-        self._is_running = True
-        time.sleep(CONSUMER_START_DELAY)
+    @staticmethod
+    def create_from_config_dict(config: dict) -> AbstractRunner:
 
-        # Start the destination thread (consumer)
-        destination_thread.start()
+        sync_config = SyncConfig.model_validate(obj=config)
 
-        while source_thread.is_alive():
-            time.sleep(IS_ALIVE_CHECK_INTERVAL)
-        self._is_running = False
-        return True
+        if sync_config.pipeline.runner == RunnerTypes.THREADS:
+            from bizon.pipeline.adapters.threads.runner import ThreadRunner
+
+            return ThreadRunner(config=config)
+
+        raise ValueError(f"Runner type {sync_config.pipeline.runner} is not supported")
+
+    @staticmethod
+    def create_from_yaml(filepath: str) -> AbstractRunner:
+        config = parse_from_yaml(filepath)
+        return RunnerFactory.create_from_config_dict(config)
