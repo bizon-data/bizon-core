@@ -8,8 +8,8 @@ from .config import LoggerDestinationConfig
 
 
 class LoggerDestination(AbstractDestination):
-    def __init__(self, config: LoggerDestinationConfig) -> None:
-        pass
+    def __init__(self, config: LoggerDestinationConfig):
+        super().__init__(config)
 
     def check_connection(self) -> bool:
         return True

@@ -9,6 +9,10 @@ class AbstractDestination(ABC):
     def __init__(self, config: DestinationConfig):
         self.config = config
 
+    @property
+    def name(self) -> str:
+        return self.config.name
+
     @abstractmethod
     def check_connection(self) -> bool:
         pass

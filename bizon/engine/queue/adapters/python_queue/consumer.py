@@ -15,8 +15,10 @@ class PythonQueueConsumer(AbstractQueueConsumer):
         while True:
             message: dict = self.queue.get()
             queue_message = QueueMessage.model_validate(message)
-            logger.info(f"Consuming data from queue: {len(queue_message.records)}")
+
+            self.destination.write_records(queue_message.records)
+            logger.info(f"Consumed data from queue: {len(queue_message.records)}")
 
             if queue_message.signal == QUEUE_TERMINATION:
-                logger.info("[Destination] Terminating thread ...")
+                logger.info(f"[Destination:{self.destination.name}] Terminating thread ...")
                 break
