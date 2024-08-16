@@ -6,7 +6,9 @@ from .config import DestinationConfig, DestinationTypes
 
 class AbstractDestination(ABC):
 
-    def __init__(self, config: DestinationConfig):
+    def __init__(self, source_name: str, stream_name: str, config: DestinationConfig):
+        self.source_name = source_name
+        self.stream_name = stream_name
         self.config = config
 
     @property
@@ -24,16 +26,22 @@ class AbstractDestination(ABC):
 
 class DestinationFactory:
     @staticmethod
-    def get_destination(config: DestinationConfig) -> AbstractDestination:
+    def get_destination(source_name: str, stream_name: str, destination_config_dict: dict) -> AbstractDestination:
 
-        if config.name == DestinationTypes.LOGGER:
+        if destination_config_dict.get("name") == DestinationTypes.LOGGER:
+            from .logger.src.config import LoggerDestinationConfig
             from .logger.src.destination import LoggerDestination
 
-            return LoggerDestination(config=config)
+            config = LoggerDestinationConfig.model_validate(obj=destination_config_dict.get("config"))
+            return LoggerDestination(source_name=source_name, stream_name=stream_name, config=config)
 
-        if config.name == DestinationTypes.BIGQUERY:
+        if destination_config_dict.get("name") == DestinationTypes.BIGQUERY:
             from .bigquery.src.client import BigQueryDestination
+            from .bigquery.src.config import BigQueryConfig
 
-            return BigQueryDestination(config=config)
+            config = BigQueryConfig.model_validate(obj=destination_config_dict.get("config"))
+            return BigQueryDestination(source_name=source_name, stream_name=stream_name, config=config)
 
-        raise ValueError(f"Destination {config.name} not found")
+        raise ValueError(
+            f"Destination {destination_config_dict.get('name')}" f"with params {destination_config_dict} not found"
+        )

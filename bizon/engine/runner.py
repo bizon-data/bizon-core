@@ -52,7 +52,11 @@ class AbstractRunner(ABC):
 
     def get_destination(self) -> AbstractDestination:
         """Get an instance of the destination based on the destination config dict"""
-        return DestinationFactory.get_destination(config=self.bizon_config.destination)
+        return DestinationFactory.get_destination(
+            source_name=self.bizon_config.source.source_name,
+            stream_name=self.bizon_config.source.stream_name,
+            destination_config_dict=self.config["destination"],
+        )
 
     def get_backend(self) -> Backend:
         """Get an instance of the backend based on the backend config dict"""

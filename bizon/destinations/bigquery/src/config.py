@@ -14,7 +14,6 @@ class BigQueryConfig(BaseModel):
     dataset_location: Optional[str] = "US"
     project_id: str
     gcs_buffer_bucket: str
-    gcs_buffer_path: str
     gcs_buffer_format: Optional[GCSBufferFormat] = GCSBufferFormat.PARQUET
 
     service_account_key: Optional[str] = Field(

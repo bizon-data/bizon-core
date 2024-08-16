@@ -20,7 +20,9 @@ from .config import BigQueryConfig
 
 
 class BigQueryDestination(AbstractDestination):
-    def __init__(self, config: BigQueryConfig):
+    def __init__(self, source_name: str, stream_name: str, config: BigQueryConfig):
+        super().__init__(source_name, stream_name, config)
+
         if bool(config.service_account_key):
             with tempfile.NamedTemporaryFile(delete=False) as temp:
                 temp.write(config.service_account_key.encode())
@@ -35,7 +37,6 @@ class BigQueryDestination(AbstractDestination):
         self.buffer_format = config.gcs_buffer_format
         self.dataset_id = config.dataset_id
         self.dataset_location = config.dataset_location
-        self.buffer_bucket_path = config.gcs_buffer_path
 
     def convert_and_upload_to_buffer(self, json_records: List[Dict[str, Any]]):
 
@@ -53,7 +54,7 @@ class BigQueryDestination(AbstractDestination):
             buffer.seek(0)
 
             # Upload the Parquet file to GCS
-            file_name = f"{os.path.join(self.buffer_bucket_path), str(uuid4())}.parquet"
+            file_name = f"{self.source_name}/{self.stream_name}/{str(uuid4())}.parquet"
             blob = self.buffer_bucket.blob(file_name)
             blob.upload_from_file(buffer, content_type="application/octet-stream")
             return file_name
@@ -86,8 +87,6 @@ class BigQueryDestination(AbstractDestination):
                 bigquery.SchemaField("_bizon_data", "STRING", mode="NULLABLE"),
             ],
         )
-
-        self.check_or_create_destination_dataset()
 
         table_id = f"{self.project_id}.{self.dataset_id}.{self.source_name}_{self.stream_name}"
 
