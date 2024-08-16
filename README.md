@@ -1,14 +1,15 @@
 # bizon ⚡️
-Extract and load your data reliably with native checkpointing mechanism. Sync your largest data streams with an ETL you can finally trust for millions records.
+Extract and load your largest data streams with a framework you can trust for billion records.
 
 ## Features
 - **Natively fault-tolerant**: Bizon uses a checkpointing mechanism to keep track of the progress and recover from the last checkpoint.
 - **Queue system agnostic**: Bizon is agnostic of the queuing system, you can use any queuing system like Python Queue, Kafka or Redpanda. Thanks to the `bizon.queue.Queue` interface, adapters can be written for any queuing system.
-- **Exhaustive metrics**: Bizon provides exhaustive metrics for the pipeline and implement OpenTelemetry for tracing. You can monitor:
-    - Completion percentage
-    - Number of records processed
+- **Pipeline metrics**: Bizon provides exhaustive pipeline metrics and implement OpenTelemetry for tracing. You can monitor:
     - ETAs for completion
-- **Lightweight**: Bizon is lightweight and has very minimal dependencies:
+    - Number of records processed
+    - Completion percentage
+    - Latency Source <> Destination
+- **Lightweight & lean**: Bizon is lightweight, minimal codebase and only uses few dependencies:
     - `requests` for HTTP requests
     - `pyyaml` for configuration
     - `sqlalchemy` for database / warehouse connections
@@ -66,7 +67,7 @@ Queue is the interface used by Bizon to exchange data between `Source` and `Dest
 
 ### Quick setup without any dependencies ✌️
 
-Queue configuration can be set to `python_queue` and backend configuration  to `sqlite`.
+Queue configuration can be set to `python_queue` and backend configuration to `sqlite`.
 This will allow you to test the pipeline without any external dependencies.
 
 
@@ -75,9 +76,6 @@ This will allow you to test the pipeline without any external dependencies.
 To test the pipeline with Kafka, you can use `docker compose` to setup Kafka or Redpanda locally.
 
 **Kafka**
-
-`bootstrap.servers: localhost:9092`
-
 ```bash
 docker compose --file ./scripts/kafka-compose.yml up
 ```
