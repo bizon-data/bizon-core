@@ -15,13 +15,13 @@ backend:
 consumer:
   enabled: true
   bootstrap_servers:
-    - localhost:19092
+    - localhost:9092
 
 
 pipeline:
   runner: kafka
   runner_config:
-    bootstrap_servers: localhost:19092
+    bootstrap_servers: localhost:9092
     topic: bizon
 
   log_level: DEBUG
