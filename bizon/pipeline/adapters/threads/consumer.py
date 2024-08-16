@@ -2,7 +2,7 @@ from threading import Thread
 
 from loguru import logger
 
-from bizon.common.config import DestinationConfig
+from bizon.common.config import ConsumerConfig
 from bizon.pipeline.consumer import AbstractConsumer
 from bizon.pipeline.queue import QUEUE_TERMINATION
 
@@ -10,9 +10,10 @@ from .queue import PythonnQueue, QueueMessage
 
 
 class ThreadedConsumer(Thread, AbstractConsumer):
-    def __init__(self, queue: PythonnQueue, config: DestinationConfig):
+    def __init__(self, queue: PythonnQueue, config: ConsumerConfig):
         Thread.__init__(self)
-        AbstractConsumer.__init__(self, queue=queue, config=config)
+        AbstractConsumer.__init__(self, config=config)
+        self.queue = queue
 
     def run(self) -> None:
         while True:

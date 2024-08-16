@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from bizon.common.config import DestinationConfig
+from bizon.common.config import ConsumerConfig
 
 
 class GCSBufferFormat(str, Enum):
@@ -20,6 +20,6 @@ class BigQueryAuth(BaseModel):
     service_account_key: Optional[str] = ""  # If empty it will be infered
 
 
-class BigQueryConfig(DestinationConfig):
+class BigQueryConfig(ConsumerConfig):
     name: str = "bigquery"
     config: BigQueryAuth

@@ -102,7 +102,7 @@ class Producer:
             logger.warning(
                 f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
             )
-            self.queue.send_termination_signal(topic="not_used_yet", index=cursor.iteration)
+            self.queue.send_termination_signal(index=cursor.iteration)
             return
 
         while not cursor.is_finished:
@@ -111,7 +111,7 @@ class Producer:
                 logger.warning(
                     f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
                 )
-                self.queue.send_termination_signal(topic="not_used_yet", index=cursor.iteration)
+                self.queue.send_termination_signal(index=cursor.iteration)
                 return
 
             # Set job status to running
@@ -121,7 +121,7 @@ class Producer:
             pagination_dict, records = self.source.get(pagination=cursor.pagination)
 
             # Put the data in the queue
-            self.queue.put(records=records, topic="not_used_yet", index=cursor.iteration)
+            self.queue.put(records=records, index=cursor.iteration)
 
             # Update the cursor state
             cursor.update_state(pagination_dict=pagination_dict, nb_records_fetched=len(records))
@@ -139,4 +139,4 @@ class Producer:
                 )
 
         logger.info("Terminating destination ...")
-        self.queue.send_termination_signal(topic="not_used_yet", index=cursor.iteration)
+        self.queue.send_termination_signal(index=cursor.iteration)

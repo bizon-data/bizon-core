@@ -3,9 +3,6 @@ from threading import Thread
 
 from loguru import logger
 
-from bizon.api.source import APISource
-from bizon.backend.client import BackendClient
-from bizon.pipeline.producer import Producer
 from bizon.pipeline.runner import AbstractRunner
 
 from .consumer import ThreadedConsumer
@@ -20,7 +17,7 @@ class ThreadRunner(AbstractRunner):
         super().__init__(config)
 
     def get_queue(self) -> PythonnQueue:
-        return PythonnQueue(queue_size=1000)
+        return PythonnQueue(queue_size=self.config.pipeline.runner_config.max_queue_size)
 
     def run(self) -> bool:
         """Run the pipeline with dedicated threads for source and destination"""
@@ -30,7 +27,7 @@ class ThreadRunner(AbstractRunner):
         threaded_producer = Thread(target=producer.run)
 
         # Create the destination thread
-        threaded_consumer = ThreadedConsumer(queue=self.queue, config=self.config.destination)
+        threaded_consumer = ThreadedConsumer(queue=self.queue, config=self.config.consumer)
 
         # Start the source thread (producer)
         threaded_producer.start()

@@ -37,7 +37,7 @@ class AbstractRunner(ABC):
         return cls(config=config)
 
     def basic_config_validation(self):
-        for key in ["source", "backend", "destination"]:
+        for key in ["source", "backend", "consumer"]:
             if key not in self.raw_config:
                 raise ValueError(f"Missing {key} in the config, please provide it")
 
@@ -81,6 +81,11 @@ class RunnerFactory:
             from bizon.pipeline.adapters.threads.runner import ThreadRunner
 
             return ThreadRunner(config=config)
+
+        if sync_config.pipeline.runner == RunnerTypes.KAFKA:
+            from bizon.pipeline.adapters.kafka.runner import KafkaRunner
+
+            return KafkaRunner(config=config)
 
         raise ValueError(f"Runner type {sync_config.pipeline.runner} is not supported")
 

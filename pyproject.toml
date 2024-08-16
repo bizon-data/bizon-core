@@ -23,6 +23,7 @@ google-cloud-storage = "^2.17.0"
 faker = "^26.0.0"
 sqlalchemy = "^2.0.32"
 sqlalchemy-bigquery = "^1.11.0"
+kafka-python = "^2.0.2"
 
 [tool.poetry.group.test.dependencies]
 pytest = "^7.2.2"

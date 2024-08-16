@@ -1,0 +1,27 @@
+source:
+  source_name: dummy
+  stream_name: creatures
+  authentication:
+    type: api_key
+    params:
+      token: dummy_key
+
+backend:
+  type: sqlite
+  database: NOT_USED_WITH_SQLITE
+  schema: NOT_USED_WITH_SQLITE
+  syncCursorInDBEvery: 2
+
+consumer:
+  enabled: true
+  bootstrap_servers:
+    - localhost:19092
+
+
+pipeline:
+  runner: kafka
+  runner_config:
+    bootstrap_servers: localhost:19092
+    topic: bizon
+
+  log_level: DEBUG

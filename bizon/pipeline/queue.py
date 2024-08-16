@@ -8,7 +8,6 @@ QUEUE_TERMINATION = "TERMINATION"
 
 
 class QueueMessage(BaseModel):
-    topic: str
     index: int
     records: List[dict]
     signal: Optional[str] = None
@@ -17,18 +16,18 @@ class QueueMessage(BaseModel):
 class AbstractQueue(ABC):
 
     @abstractmethod
-    def put(self, records: List[dict], topic: str, index: int, signal: str = None):
+    def put(self, records: List[dict], index: int, signal: str = None):
         pass
 
     @abstractmethod
-    def get(self, topic: str) -> QueueMessage:
+    def get(self) -> QueueMessage:
         pass
 
     @abstractmethod
     def terminate(self):
         pass
 
-    def send_termination_signal(self, topic: str, index: int = 0) -> bool:
-        self.put(records=[], topic=topic, index=index, signal=QUEUE_TERMINATION)
+    def send_termination_signal(self, index: int = 0) -> bool:
+        self.put(records=[], index=index, signal=QUEUE_TERMINATION)
         logger.info("Sent termination signal to destination.")
         return True

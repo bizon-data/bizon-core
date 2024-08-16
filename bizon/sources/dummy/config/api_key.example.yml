@@ -12,7 +12,8 @@ backend:
   schema: NOT_USED_WITH_SQLITE
   syncCursorInDBEvery: 2
 
-destination:
+consumer:
+  enabled: true
   name: bigquery
 
 pipeline:
