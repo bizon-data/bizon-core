@@ -1,6 +1,6 @@
 from yaml import safe_load
 
-from bizon.pipeline.runner import RunnerFactory
+from bizon.engine.run import RunnerFactory
 
 config_yaml = """
 source:

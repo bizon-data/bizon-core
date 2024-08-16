@@ -1,14 +1,14 @@
 import pytest
 from sqlalchemy.orm import scoped_session, sessionmaker
 
-from bizon.backend.client import BackendClient
-from bizon.backend.config import BackendConfig, SQLAlchemyTypes
+from bizon.engine.backend.backend import Backend
+from bizon.engine.backend.config import BackendConfig, BackendTypes
 
 
 @pytest.fixture(scope="function")
 def my_backend_config():
     return BackendConfig(
-        type=SQLAlchemyTypes.SQLITE,
+        type=BackendTypes.SQLITE,
         database="NOT_DATABASE_WITH_SQLITE",
         schema="NOT_SCHEMA_IN_SQLITE",
         syncCursorInDBEvery=2,
@@ -16,12 +16,12 @@ def my_backend_config():
 
 
 @pytest.fixture(scope="function")
-def my_backend_client(my_backend_config: BackendConfig) -> BackendClient:
-    return BackendClient(config=my_backend_config)
+def my_backend_client(my_backend_config: BackendConfig) -> Backend:
+    return Backend(config=my_backend_config)
 
 
 @pytest.fixture(scope="function")
-def db_session(my_backend_client: BackendClient):
+def db_session(my_backend_client: Backend):
     """yields a SQLAlchemy connection which is rollbacked after the test"""
     session_ = scoped_session(sessionmaker(bind=my_backend_client.engine, expire_on_commit=False))
 

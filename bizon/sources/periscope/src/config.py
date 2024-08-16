@@ -3,9 +3,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from bizon.api.auth.authenticators.cookies import CookiesAuthParams
-from bizon.api.auth.config import AuthConfig, AuthType
-from bizon.common.config import SourceConfig
+from bizon.source.auth.authenticators.cookies import CookiesAuthParams
+from bizon.source.auth.config import AuthConfig, AuthType
+from bizon.source.config import SourceConfig
 
 
 class PeriscopeStreams(str, Enum):

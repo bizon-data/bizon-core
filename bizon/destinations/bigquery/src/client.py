@@ -13,13 +13,14 @@ from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference
 from loguru import logger
 
-from bizon.common.config import SourceConfig
 from bizon.common.utils import convert_to_bizon_record
-from bizon.destinations.bigquery.src.models.config import BigQueryAuth
+from bizon.destinations.destination import AbstractDestination
+
+from .config import BigQueryConfig
 
 
-class BigQueryClient:
-    def __init__(self, config: BigQueryAuth, source_config: SourceConfig):
+class BigQueryDestination(AbstractDestination):
+    def __init__(self, config: BigQueryConfig):
         if bool(config.service_account_key):
             with tempfile.NamedTemporaryFile(delete=False) as temp:
                 temp.write(config.service_account_key.encode())
@@ -34,8 +35,7 @@ class BigQueryClient:
         self.buffer_format = config.gcs_buffer_format
         self.dataset_id = config.dataset_id
         self.dataset_location = config.dataset_location
-        self.source_name = source_config.source_name
-        self.stream_name = source_config.stream_name
+        self.buffer_bucket_path = config.gcs_buffer_path
 
     def convert_and_upload_to_buffer(self, json_records: List[Dict[str, Any]]):
 
@@ -53,12 +53,12 @@ class BigQueryClient:
             buffer.seek(0)
 
             # Upload the Parquet file to GCS
-            file_name = f"{self.source_name}/{self.stream_name}/{str(uuid4())}.parquet"
+            file_name = f"{os.path.join(self.buffer_bucket_path), str(uuid4())}.parquet"
             blob = self.buffer_bucket.blob(file_name)
             blob.upload_from_file(buffer, content_type="application/octet-stream")
             return file_name
 
-    def check_or_create_destination_dataset(self):
+    def check_connection(self) -> bool:
         dataset_ref = DatasetReference(self.project_id, self.dataset_id)
 
         try:
@@ -67,6 +67,7 @@ class BigQueryClient:
             dataset = bigquery.Dataset(dataset_ref)
             dataset.location = self.dataset_location
             dataset = self.bq_client.create_dataset(dataset)
+        return True
 
     def cleanup(self, gcs_file: str):
         blob = self.buffer_bucket.blob(gcs_file)
@@ -95,8 +96,8 @@ class BigQueryClient:
         )
         load_job.result()
 
-    def load_records_to_bigquery(self, json_records: List[Dict[str, Any]]):
-        gs_file_name = self.convert_and_upload_to_buffer(json_records)
+    def write_records(self, records: List[str]):
+        gs_file_name = self.convert_and_upload_to_buffer(records)
         try:
             self.load_to_bigquery(gs_file_name)
             self.cleanup(gs_file_name)

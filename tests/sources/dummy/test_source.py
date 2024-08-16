@@ -1,7 +1,7 @@
 import pytest
 
-from bizon.api.auth.authenticators.token import TokenAuthParams
-from bizon.api.auth.config import AuthType
+from bizon.source.auth.authenticators.token import TokenAuthParams
+from bizon.source.auth.config import AuthType
 from bizon.sources.dummy.src.config import (
     DummyAuthConfig,
     DummySourceConfig,

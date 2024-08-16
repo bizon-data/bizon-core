@@ -8,14 +8,16 @@ source:
     params:
       token: <MY_API_KEY>
 
-backend:
-  type: bigquery
-  database: <MY_GCP_PROJECT>
-  schema: bizon_test
-  syncCursorInDBEvery: 2
-
 destination:
-  name: bigquery
+  name: logger
+  config:
+    dummy: dummy
 
-pipeline:
-  log_level: DEBUG
+engine:
+  backend:
+    type: bigquery
+    database: <MY_GCP_PROJECT>
+    schema: bizon_test
+    syncCursorInDBEvery: 2
+  runner:
+    log_level: DEBUG

@@ -2,11 +2,11 @@ from typing import List, Tuple
 
 from requests.auth import AuthBase
 
-from bizon.api.auth.authenticators.oauth import Oauth2AuthParams
-from bizon.api.auth.authenticators.token import TokenAuthParams
-from bizon.api.auth.builder import AuthBuilder
-from bizon.api.auth.config import AuthType
-from bizon.api.source import APISource
+from bizon.source.auth.authenticators.oauth import Oauth2AuthParams
+from bizon.source.auth.authenticators.token import TokenAuthParams
+from bizon.source.auth.builder import AuthBuilder
+from bizon.source.auth.config import AuthType
+from bizon.source.source import Source
 
 from .config import DummySourceConfig
 from .fake_api import fake_api_call
@@ -14,7 +14,7 @@ from .fake_api import fake_api_call
 URL_TOKEN_REFRESH = "https://api.mydummysaas.com/oauth/v1/token"
 
 
-class DummySource(APISource):
+class DummySource(Source):
 
     def __init__(self, config: DummySourceConfig):
         super().__init__(config)

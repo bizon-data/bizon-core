@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from bizon.common.config import SourceConfig
+from bizon.source.config import SourceConfig
 
 
 class HubSpotObjects(str, Enum):

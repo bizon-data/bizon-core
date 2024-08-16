@@ -3,10 +3,10 @@ from typing import Literal, Union
 
 from pydantic import Field
 
-from bizon.api.auth.authenticators.oauth import Oauth2AuthParams
-from bizon.api.auth.authenticators.token import TokenAuthParams
-from bizon.api.auth.config import AuthConfig, AuthType
-from bizon.common.config import SourceConfig
+from bizon.source.auth.authenticators.oauth import Oauth2AuthParams
+from bizon.source.auth.authenticators.token import TokenAuthParams
+from bizon.source.auth.config import AuthConfig, AuthType
+from bizon.source.config import SourceConfig
 
 
 class DummyStreams(str, Enum):

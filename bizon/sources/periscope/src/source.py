@@ -5,10 +5,10 @@ from typing import Any, List, Tuple
 from loguru import logger
 from requests.auth import AuthBase
 
-from bizon.api.auth.authenticators.cookies import CookiesAuthParams
-from bizon.api.auth.builder import AuthBuilder
-from bizon.api.auth.config import AuthType
-from bizon.api.source import APISource
+from bizon.source.auth.authenticators.cookies import CookiesAuthParams
+from bizon.source.auth.builder import AuthBuilder
+from bizon.source.auth.config import AuthType
+from bizon.source.source import Source
 
 from .config import PeriscopeSourceConfig, PeriscopeStreams
 
@@ -19,7 +19,7 @@ URL_VIEWS = f"{BASE_URL}/login_state/sql_views"
 URL_DATABASES = f"{BASE_URL}/welcome/remaining_state/site_models"
 
 
-class PeriscopeSource(APISource):
+class PeriscopeSource(Source):
 
     def __init__(self, config: PeriscopeSourceConfig):
         super().__init__(config)

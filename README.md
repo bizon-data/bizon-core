@@ -23,7 +23,7 @@ pip install bizon
 ## Usage
 ```python
 from yaml import safe_load
-from bizon.pipeline.runner import RunnerFactory
+from bizon.engine.runner import RunnerFactory
 
 yaml_config = """
 source:

@@ -7,12 +7,12 @@ from requests import HTTPError
 from requests.adapters import HTTPAdapter, Retry
 from requests.auth import AuthBase
 
-from bizon.api.auth.authenticators.oauth import Oauth2AuthParams
-from bizon.api.auth.authenticators.token import TokenAuthParams
-from bizon.api.auth.builder import AuthBuilder
-from bizon.api.auth.config import AuthType
-from bizon.api.session import Session
-from bizon.api.source import APISource
+from bizon.source.auth.authenticators.oauth import Oauth2AuthParams
+from bizon.source.auth.authenticators.token import TokenAuthParams
+from bizon.source.auth.builder import AuthBuilder
+from bizon.source.auth.config import AuthType
+from bizon.source.session import Session
+from bizon.source.source import Source
 
 from .errors import HubspotInvalidAuth
 from .models.config import HubSpotSourceConfig
@@ -23,7 +23,7 @@ URL_GRANTED_SCOPES = f"{URL_BASE}/oauth/v1/access-tokens"
 URL_TOKEN_REFRESH = f"{URL_BASE}/oauth/v1/token"
 
 
-class HubSpotSource(APISource):
+class HubSpotSource(Source):
 
     api_version = "v3"
 

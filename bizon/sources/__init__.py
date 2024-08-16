@@ -2,7 +2,8 @@ from typing import List, Type
 
 from pydantic import BaseModel
 
-from bizon.api.source import APISource
+from bizon.source.config import SourceConfig
+from bizon.source.source import Source
 
 # Dummy
 from .dummy.src.config import DummySourceConfig, DummyStreams
@@ -19,11 +20,11 @@ from .periscope.src.source import PeriscopeSource
 
 class Stream(BaseModel):
     name: str
-    client: Type[APISource]
+    client: Type[Source]
     config: Type[BaseModel]
 
-    def get_instance(self, raw_source_config: dict) -> APISource:
-        return self.client(config=self.config.model_validate(raw_source_config))
+    def get_instance(self, source_config_dict: dict) -> Source:
+        return self.client(config=self.config.model_validate(source_config_dict))
 
 
 class Source(BaseModel):
@@ -54,10 +55,10 @@ class SourceMap(BaseModel):
                 return source
         raise ValueError(f"Source {name} not found. Available sources are {self.available_sources}")
 
-    def get_instance(self, source_name: str, stream_name: str, raw_source_config: dict) -> APISource:
-        source = self.get_source_by_name(source_name)
-        stream = source.get_stream_by_name(stream_name)
-        return stream.get_instance(raw_source_config)
+    def get_instance(self, source_name: str, stream_name: str, source_config_dict: dict) -> Source:
+        source = self.get_source_by_name(name=source_name)
+        stream = source.get_stream_by_name(name=stream_name)
+        return stream.get_instance(source_config_dict=source_config_dict)
 
 
 SOURCES = SourceMap(

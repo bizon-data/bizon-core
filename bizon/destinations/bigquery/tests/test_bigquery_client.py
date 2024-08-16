@@ -6,9 +6,9 @@ from random import randint
 from faker import Faker
 
 from bizon.cli.parser import parse_from_yaml
-from bizon.common.config import SourceConfig
-from bizon.destinations.bigquery.src.client import BigQueryClient
-from bizon.destinations.bigquery.src.models.config import BigQueryConfig
+from bizon.destinations.bigquery.src.client import BigQueryDestination
+from bizon.destinations.bigquery.src.config import BigQueryConfig
+from bizon.source.config import SourceConfig
 
 logger = logging.getLogger(__name__)
 
