@@ -1,7 +1,6 @@
 import io
 import os
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List
 from uuid import uuid4
 
@@ -13,7 +12,7 @@ from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference
 from loguru import logger
 
-from bizon.common.utils import convert_to_bizon_record
+from bizon.common.models import BizonRecord
 from bizon.destinations.destination import AbstractDestination
 
 from .config import BigQueryConfig
@@ -40,10 +39,10 @@ class BigQueryDestination(AbstractDestination):
 
     def convert_and_upload_to_buffer(self, json_records: List[Dict[str, Any]]):
 
-        with ThreadPoolExecutor() as executor:
-            bizon_records = list(executor.map(convert_to_bizon_record, json_records))
+        bizon_records = [BizonRecord.from_record(record) for record in json_records]
 
         logger.info(bizon_records[0])
+
         df = pd.DataFrame(bizon_records)
 
         # Convert DataFrame to Parquet in-memory
@@ -96,6 +95,7 @@ class BigQueryDestination(AbstractDestination):
         load_job.result()
 
     def write_records(self, records: List[str]):
+
         gs_file_name = self.convert_and_upload_to_buffer(records)
         try:
             self.load_to_bigquery(gs_file_name)
