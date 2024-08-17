@@ -11,6 +11,7 @@ from bizon.source.auth.authenticators.oauth import Oauth2AuthParams
 from bizon.source.auth.authenticators.token import TokenAuthParams
 from bizon.source.auth.builder import AuthBuilder
 from bizon.source.auth.config import AuthType
+from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.session import Session
 from bizon.source.source import Source
 
@@ -140,7 +141,7 @@ class HubSpotSource(Source):
     def get(
         self,
         pagination: dict = None,
-    ) -> Tuple[dict, Optional[List[dict]]]:
+    ) -> SourceIteration:
         """Return the next page of data from HubSpot
         Returns:
             dict, Optional[List[dict]]]: Next pagination dict and data
@@ -153,7 +154,7 @@ class HubSpotSource(Source):
 
         return self.parse_response(response)
 
-    def parse_response(self, response: dict) -> Tuple[dict, Optional[List[dict]]]:
+    def parse_response(self, response: dict) -> SourceIteration:
         # If no response or no results, we return empty dict
         if not response or len(response.get("results", [])) == 0:
             return dict(), []
@@ -167,7 +168,16 @@ class HubSpotSource(Source):
             "link": response["paging"]["next"]["link"],
             "after": response["paging"]["next"]["after"],
         }
-        return next_pagination_dict, response["results"]
+        return SourceIteration(
+            next_pagination=next_pagination_dict,
+            records=[
+                SourceRecord(
+                    id=record["id"],
+                    data=record,
+                )
+                for record in response["results"]
+            ],
+        )
 
     def get_total_records_count(self) -> Optional[int]:
         search_response = self._request_api(

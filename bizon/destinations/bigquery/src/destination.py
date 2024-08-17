@@ -14,6 +14,7 @@ from loguru import logger
 
 from bizon.common.models import BizonRecord
 from bizon.destinations.destination import AbstractDestination
+from bizon.source.models import SourceRecord
 
 from .config import BigQueryConfig
 
@@ -37,9 +38,9 @@ class BigQueryDestination(AbstractDestination):
         self.dataset_id = config.dataset_id
         self.dataset_location = config.dataset_location
 
-    def convert_and_upload_to_buffer(self, json_records: List[Dict[str, Any]]):
+    def convert_and_upload_to_buffer(self, source_records: List[SourceRecord]):
 
-        bizon_records = [BizonRecord.from_record(record) for record in json_records]
+        bizon_records = [BizonRecord.from_source_record(source_record) for source_record in source_records]
 
         logger.info(bizon_records[0])
 
@@ -94,9 +95,13 @@ class BigQueryDestination(AbstractDestination):
         )
         load_job.result()
 
-    def write_records(self, records: List[str]):
+    def write_records(self, source_records: List[SourceRecord]):
 
-        gs_file_name = self.convert_and_upload_to_buffer(records)
+        # Here we can check if these IDs are already present in BigQuery
+        # Using SourceRecord.id values
+
+        gs_file_name = self.convert_and_upload_to_buffer(source_records=source_records)
+
         try:
             self.load_to_bigquery(gs_file_name)
             self.cleanup(gs_file_name)

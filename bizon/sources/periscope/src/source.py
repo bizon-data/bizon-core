@@ -8,6 +8,7 @@ from requests.auth import AuthBase
 from bizon.source.auth.authenticators.cookies import CookiesAuthParams
 from bizon.source.auth.builder import AuthBuilder
 from bizon.source.auth.config import AuthType
+from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.source import Source
 
 from .config import PeriscopeSourceConfig, PeriscopeStreams
@@ -67,9 +68,20 @@ class PeriscopeSource(Source):
     def get_total_records_count(self) -> int | None:
         return None
 
-    def get_dashboards(self, pagination: dict = None) -> Tuple[dict, List[dict]]:
+    def get_dashboards(self, pagination: dict = None) -> SourceIteration:
         response = self.session.call(method="GET", url=f"{BASE_URL}/login_state/dashboards", params=self.http_params)
-        return dict(), response.json()["Dashboard"]
+        records_json = response.json()["Dashboard"]
+
+        return SourceIteration(
+            next_pagination=dict(),
+            records=[
+                SourceRecord(
+                    id=record["id"],
+                    data=record,
+                )
+                for record in records_json
+            ],
+        )
 
     def get_dashboard_ids(self) -> List[int]:
         _, records = self.get_dashboards()
@@ -124,7 +136,7 @@ class PeriscopeSource(Source):
 
         return dashboard_charts
 
-    def get_charts(self, pagination: dict = None) -> Tuple[dict, List[dict]]:
+    def get_charts(self, pagination: dict = None) -> SourceIteration:
         MAX_CONCURRENT_REQUESTS = 10
 
         if not pagination:
@@ -146,9 +158,19 @@ class PeriscopeSource(Source):
             pagination["dashboard_ids"] = []
 
         records = list(itertools.chain.from_iterable(result))
-        return pagination, records
 
-    def get(self, pagination: dict = None) -> Tuple[dict | List[dict]]:
+        return SourceIteration(
+            next_pagination=pagination,
+            records=[
+                SourceRecord(
+                    id=record["id"],
+                    data=record,
+                )
+                for record in records
+            ],
+        )
+
+    def get(self, pagination: dict = None) -> SourceIteration:
         if self.config.stream_name == PeriscopeStreams.DASHBOARDS:
             return self.get_dashboards(pagination)
 

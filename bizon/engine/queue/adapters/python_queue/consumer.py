@@ -20,8 +20,8 @@ class PythonQueueConsumer(AbstractQueueConsumer):
                 logger.info("Received termination signal, waiting for destination to close gracefully ...")
                 break
 
-            if not queue_message.records:
+            if not queue_message.source_records:
                 raise ValueError("Received empty message, with no records")
 
-            self.destination.write_records(queue_message.records)
-            logger.info(f"Consumed data from queue: {len(queue_message.records)}")
+            self.destination.write_records(queue_message.source_records)
+            logger.info(f"Consumed data from queue: {len(queue_message.source_records)}")

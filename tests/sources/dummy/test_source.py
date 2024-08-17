@@ -32,12 +32,12 @@ def test_dummy_source_get_auth(dummy_source: DummySource):
 
 
 def test_get_first_page(dummy_source: DummySource):
-    next_pagination, records = dummy_source.get()
-    assert len(records) == 2
-    assert next_pagination == {"cursor": "vfvfvuhfefpeiduzhihxb"}
+    source_iteration = dummy_source.get()
+    assert len(source_iteration.records) == 2
+    assert source_iteration.next_pagination == {"cursor": "vfvfvuhfefpeiduzhihxb"}
 
 
 def test_get_last_page(dummy_source: DummySource):
-    next_pagination, records = dummy_source.get(pagination={"cursor": "final-cursor"})
-    assert len(records) == 1
-    assert next_pagination == {}
+    source_iteration = dummy_source.get(pagination={"cursor": "final-cursor"})
+    assert len(source_iteration.records) == 1
+    assert source_iteration.next_pagination == {}

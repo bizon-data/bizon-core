@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List
 
+from bizon.source.models import SourceRecord
+
 from .config import DestinationConfig, DestinationTypes
 
 
@@ -20,7 +22,7 @@ class AbstractDestination(ABC):
         pass
 
     @abstractmethod
-    def write_records(self, records: List[str]):
+    def write_records(self, source_records: List[SourceRecord]):
         pass
 
 

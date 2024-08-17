@@ -4,7 +4,6 @@ from threading import Thread
 from loguru import logger
 
 from bizon.common.models import BizonConfig
-from bizon.engine.queue.queue import AbstractQueueConsumer
 from bizon.engine.runner import AbstractRunner
 
 IS_ALIVE_CHECK_INTERVAL = 2  # seconds

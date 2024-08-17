@@ -13,10 +13,13 @@ from .queue.queue import AbstractQueue
 
 class Producer:
     def __init__(self, queue: AbstractQueue, source: Source, backend: Backend):
-        self.name = f"source-{source.config.source_name.lower()}-{source.config.stream_name.lower()}"
         self.queue = queue
         self.source = source
         self.backend = backend
+
+    @property
+    def name(self) -> str:
+        return f"producer-{self.source.config.source_name}-{self.source.config.stream_name}"
 
     def get_or_create_job(self, session=None) -> StreamJob:
         """Get or create a job for the current stream, return its ID"""
@@ -121,13 +124,15 @@ class Producer:
             self.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING)
 
             # Get the next data
-            pagination_dict, records = self.source.get(pagination=cursor.pagination)
+            source_iteration = self.source.get(pagination=cursor.pagination)
 
             # Put the data in the queue
-            self.queue.put(records=records, index=cursor.iteration)
+            self.queue.put(source_records=source_iteration.records, index=cursor.iteration)
 
             # Update the cursor state
-            cursor.update_state(pagination_dict=pagination_dict, nb_records_fetched=len(records))
+            cursor.update_state(
+                pagination_dict=source_iteration.next_pagination, nb_records_fetched=len(source_iteration.records)
+            )
 
             if cursor.iteration % self.backend.config.syncCursorInDBEvery == 0:
                 # Create a new cursor in the DB

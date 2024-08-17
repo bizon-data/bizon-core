@@ -4,13 +4,14 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from bizon.destinations.destination import AbstractDestination
+from bizon.source.models import SourceRecord
 
 from .config import QueueConfig, QueueTypes
 
 
 class QueueMessage(BaseModel):
     index: int
-    records: List[dict]
+    source_records: List[SourceRecord]
     signal: Optional[str] = None
 
 
@@ -37,7 +38,7 @@ class AbstractQueue(ABC):
         pass
 
     @abstractmethod
-    def put(self, records: List[dict], index: int, signal: str = None):
+    def put(self, source_records: List[SourceRecord], index: int, signal: str = None):
         pass
 
     @abstractmethod

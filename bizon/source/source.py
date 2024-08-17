@@ -1,7 +1,9 @@
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional, Tuple
 
 from requests.auth import AuthBase
+
+from bizon.source.models import SourceIteration
 
 from .config import SourceConfig
 from .session import Session
@@ -28,7 +30,7 @@ class Source(ABC):
         pass
 
     @abstractmethod
-    def get(self, pagination: dict = None) -> Tuple[dict, List[dict]]:
+    def get(self, pagination: dict = None) -> SourceIteration:
         """Perform next API call to retrieve data and return next pagination.
 
         If pagination is None, it should return the first page of data.

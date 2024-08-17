@@ -6,6 +6,7 @@ from bizon.source.auth.authenticators.oauth import Oauth2AuthParams
 from bizon.source.auth.authenticators.token import TokenAuthParams
 from bizon.source.auth.builder import AuthBuilder
 from bizon.source.auth.config import AuthType
+from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.source import Source
 
 from .config import DummySourceConfig
@@ -46,7 +47,7 @@ class DummySource(Source):
         # In our case we have 5 records
         return 5
 
-    def get(self, pagination: dict = None) -> Tuple[dict, List[dict]]:
+    def get(self, pagination: dict = None) -> SourceIteration:
 
         response: dict = None
 
@@ -69,6 +70,18 @@ class DummySource(Source):
         next_pagination = {"cursor": next_cursor} if next_cursor else {}
 
         if records:
-            return next_pagination, records
+            return SourceIteration(
+                next_pagination=next_pagination,
+                records=[
+                    SourceRecord(
+                        id=record["id"],
+                        data=record,
+                    )
+                    for record in records
+                ],
+            )
 
-        return next_pagination, []
+        return SourceIteration(
+            next_pagination=next_pagination,
+            records=[],
+        )

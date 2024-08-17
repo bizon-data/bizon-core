@@ -6,6 +6,7 @@ from loguru import logger
 
 from bizon.destinations.destination import AbstractDestination
 from bizon.engine.queue.queue import AbstractQueue, QueueMessage
+from bizon.source.models import SourceRecord
 
 from .config import KafkaConfig
 from .consumer import KafkaConsumer_
@@ -36,10 +37,10 @@ class KafkaQueue(AbstractQueue):
     def on_error(e):
         logger.error(f"Error sending message: {e}")
 
-    def put(self, records: List[dict], index: int, signal: str = None):
+    def put(self, source_records: List[SourceRecord], index: int, signal: str = None):
         future = self.producer.send(
             topic=self.config.queue.topic,
-            value=QueueMessage(index=index, records=records, signal=signal).model_dump(),
+            value=QueueMessage(index=index, source_records=source_records, signal=signal).model_dump(),
         )
         future.add_callback(self.on_success)
         future.add_errback(self.on_error)
