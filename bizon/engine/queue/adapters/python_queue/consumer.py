@@ -17,7 +17,7 @@ class PythonQueueConsumer(AbstractQueueConsumer):
             queue_message = QueueMessage.model_validate(message)
 
             if queue_message.signal == QUEUE_TERMINATION:
-                logger.info("Received termination signal, closed destination gracefully.")
+                logger.info("Received termination signal, waiting for destination to close gracefully ...")
                 break
 
             if not queue_message.records:

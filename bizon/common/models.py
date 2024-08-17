@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pytz import UTC
 
 from bizon.destinations.config import DestinationConfig
@@ -40,6 +40,9 @@ class BizonRecord(BaseModel):
 
 
 class BizonConfig(BaseModel):
+
+    # Forbid extra keys in the model
+    model_config = ConfigDict(extra="forbid")
 
     source: SourceConfig
 

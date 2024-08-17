@@ -1,6 +1,6 @@
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .backend.config import BackendConfig, BackendTypes
 from .queue.adapters.python_queue.config import (
@@ -13,6 +13,9 @@ from .runners.config import RunnerConfig, RunnerTypes, ThreadsConfig
 
 
 class EngineConfig(BaseModel):
+
+    # Forbid extra keys in the model
+    model_config = ConfigDict(extra="forbid")
 
     backend: Optional[BackendConfig] = Field(
         description="Configuration for the backend",

@@ -1,6 +1,5 @@
-from abc import ABC
 from enum import Enum
-from typing import Optional, Union
+from typing import Union
 
 from pydantic import BaseModel, Field
 
@@ -14,22 +13,17 @@ class QueueTypes(str, Enum):
 
 
 class QueueConfigDetails(BaseModel):
-    queue: Optional[Union[KafkaConfig, PythonQueueConfig]] = Field(
+    queue: Union[KafkaConfig, PythonQueueConfig] = Field(
         PythonQueueConfig(max_size=1000), description="Configuration of the queue"
     )
-    consumer: Optional[Union[KafkaConsumerConfig, PythonQueueConsumerConfig]] = Field(
+    consumer: Union[KafkaConsumerConfig, PythonQueueConsumerConfig] = Field(
         PythonQueueConsumerConfig(poll_interval=2), description="Configuration of the consumer"
     )
 
 
 class QueueConfig(BaseModel):
-    type: Optional[QueueTypes] = Field(QueueTypes.PYTHON_QUEUE, description="Type of the queue")
-    config: Optional[
-        Union[
-            KafkaConfig,
-            PythonQueueConfig,
-        ]
-    ] = Field(
+    type: QueueTypes = Field(QueueTypes.PYTHON_QUEUE, description="Type of the queue")
+    config: Union[KafkaConfig, PythonQueueConfig] = Field(
         QueueConfigDetails(queue=PythonQueueConfig(max_size=1000), consumer=PythonQueueConsumerConfig(poll_interval=2)),
         escription="Configuration for the queue",
     )

@@ -8,18 +8,18 @@ QUEUE_TERMINATION = "TERMINATION"
 
 
 class PythonQueueConfigDetails(BaseModel):
-    max_size: Optional[int] = Field(1000, description="Maximum size of the queue")
+    max_size: int = Field(1000, description="Maximum size of the queue")
 
 
 class PythonQueueConsumerConfig(BaseModel):
-    poll_interval: Optional[int] = Field(1, description="Interval in seconds to poll the queue in seconds")
+    poll_interval: int = Field(1, description="Interval in seconds to poll the queue in seconds")
 
 
 class PythonQueueConfig(AbastractQueueConfigDetails):
-    queue: Optional[PythonQueueConfigDetails] = Field(
+    queue: PythonQueueConfigDetails = Field(
         PythonQueueConfigDetails(max_size=1000), description="Configuration of the queue"
     )
 
-    consumer: Optional[PythonQueueConsumerConfig] = Field(
+    consumer: PythonQueueConsumerConfig = Field(
         PythonQueueConsumerConfig(poll_interval=1), description="Kafka consumer configuration"
     )

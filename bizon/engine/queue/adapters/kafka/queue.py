@@ -12,13 +12,15 @@ from .consumer import KafkaConsumer_
 
 
 class KafkaQueue(AbstractQueue):
-    def __init__(self, config: KafkaConfig, destination: AbstractDestination):
-        super().__init__(config, destination=destination)
+    def __init__(self, config: KafkaConfig):
+        super().__init__(config)
         self.config: KafkaConfig = config
+
+    def connect(self):
         self.producer = self.get_kafka_producer()
 
     def get_consumer(self, destination: AbstractDestination) -> KafkaConsumer_:
-        return KafkaConsumer_()
+        return KafkaConsumer_(config=self.config, destination=destination)
 
     def get_kafka_producer(self) -> KafkaProducer:
         return KafkaProducer(

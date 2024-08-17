@@ -29,6 +29,10 @@ class AbstractQueue(ABC):
         self.config = config
 
     @abstractmethod
+    def connect(self):
+        pass
+
+    @abstractmethod
     def get_consumer(self, destination: AbstractDestination) -> AbstractQueueConsumer:
         pass
 

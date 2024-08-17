@@ -6,7 +6,6 @@ from typing import List
 from loguru import logger
 
 from bizon.destinations.destination import AbstractDestination
-from bizon.engine.queue.config import QueueConfig
 from bizon.engine.queue.queue import AbstractQueue, AbstractQueueConsumer, QueueMessage
 
 from .config import QUEUE_TERMINATION, PythonQueueConfig
@@ -14,9 +13,14 @@ from .consumer import PythonQueueConsumer
 
 
 class PythonQueue(AbstractQueue):
-    def __init__(self, config: QueueConfig) -> None:
+    def __init__(self, config: PythonQueueConfig) -> None:
         super().__init__(config)
-        self.queue = queue.Queue(maxsize=config.queue.max_size)
+        self.config: PythonQueueConfig = config
+        self.queue = queue.Queue(maxsize=self.config.queue.max_size)
+
+    def connect(self):
+        # No connection to establish for PythonQueue
+        pass
 
     def get_consumer(self, destination: AbstractDestination) -> AbstractQueueConsumer:
         return PythonQueueConsumer(config=self.config, queue=self.queue, destination=destination)

@@ -84,6 +84,9 @@ class Producer:
         self.backend.check_prerequisites()
         self.backend._create_all_tables()
 
+        # Init queue
+        self.queue.connect()
+
         # First we check if the connection is successful and initialize the cursor
         check_connection, connection_error = self.source.check_connection()
 

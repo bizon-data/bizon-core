@@ -36,8 +36,8 @@ class DestinationFactory:
             return LoggerDestination(source_name=source_name, stream_name=stream_name, config=config)
 
         if destination_config_dict.get("name") == DestinationTypes.BIGQUERY:
-            from .bigquery.src.client import BigQueryDestination
             from .bigquery.src.config import BigQueryConfig
+            from .bigquery.src.destination import BigQueryDestination
 
             config = BigQueryConfig.model_validate(obj=destination_config_dict.get("config"))
             return BigQueryDestination(source_name=source_name, stream_name=stream_name, config=config)
