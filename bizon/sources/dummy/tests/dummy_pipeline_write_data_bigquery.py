@@ -22,14 +22,6 @@ destination:
     project_id: <MY_PROJECT_ID>
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet
-
-backend:
-  type: sqlite
-  database: not_used
-  schema: not_used
-  syncCursorInDBEvery: 200
-
-  log_level: DEBUG
 """
 config = safe_load(config_yaml)
 runner = RunnerFactory.create_from_config_dict(config=config)

@@ -11,18 +11,17 @@ source:
     params:
       token: dummy_key
 
-backend:
-  type: bigquery
-  database: <GCP_PROJECT_ID>
-  schema: bizon_test
-  syncCursorInDBEvery: 2
+destination:
+  name: logger
+  config:
+    dummy: dummy
 
-consumer:
-  enabled: true
-  name: bigquery
-
-pipeline:
-  log_level: DEBUG
+engine:
+  backend:
+    type: bigquery
+    database: <MY_PROJECT_ID>
+    schema: bizon_test
+    syncCursorInDBEvery: 2
 """
 config = safe_load(config_yaml)
 runner = RunnerFactory.create_from_config_dict(config=config)

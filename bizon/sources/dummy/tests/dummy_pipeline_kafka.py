@@ -11,24 +11,16 @@ source:
     params:
       token: dummy_key
 
-backend:
-  type: sqlite
-  database: NOT_USED_WITH_SQLITE
-  schema: NOT_USED_WITH_SQLITE
-  syncCursorInDBEvery: 2
+destination:
+  name: logger
+  config:
+    dummy: dummy
 
-consumer:
-  enabled: true
-  bootstrap_servers:
-    - localhost:9092
-
-pipeline:
-  runner: kafka
-  runner_config:
-    bootstrap_servers: localhost:9092
-    topic: bizon
-
-  log_level: DEBUG
+engine:
+  queue:
+    type: kafka
+    config:
+      bootstrap_servers: localhost:9092
 """
 config = safe_load(config_yaml)
 runner = RunnerFactory.create_from_config_dict(config=config)

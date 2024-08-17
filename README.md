@@ -34,15 +34,10 @@ source:
     params:
       token: dummy_key
 
-backend:
-  type: sqlite
-
-consumer:
-  enabled: true
+destination:
   name: logger
-
-pipeline:
-  log_level: DEBUG
+  config:
+    dummy: dummy
 """
 
 config = safe_load(yaml_config)
@@ -80,12 +75,13 @@ To test the pipeline with Kafka, you can use `docker compose` to setup Kafka or 
 docker compose --file ./scripts/kafka-compose.yml up
 ```
 
+In your YAML configuration, set the `queue` configuration to Kafka under `engine`:
 ```yaml
-pipeline:
-  runner: kafka
-  runner_config:
-    bootstrap_servers: localhost:9092
-    topic: bizon
+engine:
+  queue:
+    type: kafka
+    config:
+      bootstrap_servers: localhost:9092
 ```
 
 **Redpanda**
@@ -93,12 +89,12 @@ pipeline:
 docker compose --file ./scripts/redpanda-compose.yml up
 ```
 
-Setup your `pipeline`config:
+In your YAML configuration, set the `queue` configuration to Kafka under `engine`:
 
 ```yaml
-pipeline:
-  runner: kafka
-  runner_config:
-    bootstrap_servers: localhost:19092
-    topic: bizon
+engine:
+  queue:
+    type: kafka
+    config:
+      bootstrap_servers: localhost:19092
 ```

@@ -21,20 +21,10 @@ destination:
     gcs_buffer_format: parquet
 
 engine:
-  backend:
-    type: sqlite
-    database: not_used
-    schema: not_used
-    syncCursorInDBEvery: 200
-
   queue:
     type: kafka
     config:
       bootstrap_servers: localhost:9092
-
-  runner:
-    type: threads
-    log_level: DEBUG
 """
 config = safe_load(config_yaml)
 runner = RunnerFactory.create_from_config_dict(config=config)
