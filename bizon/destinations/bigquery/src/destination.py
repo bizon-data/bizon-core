@@ -1,7 +1,7 @@
 import io
 import os
 import tempfile
-from typing import Any, Dict, List
+from typing import List
 from uuid import uuid4
 
 import pandas as pd
@@ -12,8 +12,8 @@ from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference
 from loguru import logger
 
-from bizon.common.models import BizonRecord
 from bizon.destinations.destination import AbstractDestination
+from bizon.destinations.models import DestinationRecord
 from bizon.source.models import SourceRecord
 
 from .config import BigQueryConfig
@@ -40,7 +40,9 @@ class BigQueryDestination(AbstractDestination):
 
     def convert_and_upload_to_buffer(self, source_records: List[SourceRecord]):
 
-        bizon_records = [BizonRecord.from_source_record(source_record) for source_record in source_records]
+        bizon_records = [
+            DestinationRecord.from_source_record(source_record).model_dump() for source_record in source_records
+        ]
 
         logger.info(bizon_records[0])
 
@@ -82,9 +84,10 @@ class BigQueryDestination(AbstractDestination):
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             schema=[
-                bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_loaded_at", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_data", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("bizon_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("bizon_loaded_at", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("source_record_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("source_data", "STRING", mode="NULLABLE"),
             ],
         )
 
