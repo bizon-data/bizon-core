@@ -45,9 +45,5 @@ class RabbitMQ(AbstractQueue):
 
     def terminate(self) -> bool:
         self.put(source_records=[], index=0, signal=QUEUE_TERMINATION)
-
-        for consumer_tag in self.channel.consumer_tags:
-            self.channel.basic_cancel(consumer_tag=consumer_tag)
-
         logger.info("Sent termination signal to destination.")
         return True
