@@ -20,7 +20,8 @@ engine:
   queue:
     type: kafka
     config:
-      bootstrap_servers: localhost:9092
+      queue:
+        bootstrap_server: localhost:9092
 """
 config = safe_load(config_yaml)
 runner = RunnerFactory.create_from_config_dict(config=config)

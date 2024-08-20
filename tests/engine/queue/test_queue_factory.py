@@ -43,11 +43,10 @@ def test_queue_factory_kafka():
         type=QueueTypes.KAFKA,
         config=KafkaConfigDetails(
             queue=KafkaQueueConfig(
-                bootstrap_servers="localhost:9092",
+                bootstrap_server="localhost:9092",
                 topic="bizon",
             ),
             consumer=KafkaConsumerConfig(
-                bootstrap_servers=["localhost:9092"],
                 group_id="bizon",
                 auto_offset_reset="earliest",
                 enable_auto_commit=True,

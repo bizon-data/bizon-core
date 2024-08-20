@@ -10,19 +10,19 @@ from bizon.engine.queue.queue import (
     QueueMessage,
 )
 
-from .config import KafkaConfig
+from .config import KafkaConfigDetails
 
 
 class KafkaConsumer_(AbstractQueueConsumer):
-    def __init__(self, config: KafkaConfig, destination: AbstractDestination):
+    def __init__(self, config: KafkaConfigDetails, destination: AbstractDestination):
         super().__init__(config, destination=destination)
-        self.config: KafkaConfig = config
+        self.config: KafkaConfigDetails = config
         self.consumer = self.get_consumer()
         self.consumer.subscribe(self.config.queue.topic)
 
     def get_consumer(self) -> KafkaConsumer:
         return KafkaConsumer(
-            bootstrap_servers=self.config.consumer.bootstrap_servers,
+            bootstrap_servers=self.config.queue.bootstrap_server,
             group_id=self.config.consumer.group_id,
             auto_offset_reset=self.config.consumer.auto_offset_reset,
             enable_auto_commit=self.config.consumer.enable_auto_commit,

@@ -8,14 +8,14 @@ from bizon.destinations.destination import AbstractDestination
 from bizon.engine.queue.queue import QUEUE_TERMINATION, AbstractQueue, QueueMessage
 from bizon.source.models import SourceRecord
 
-from .config import KafkaConfig
+from .config import KafkaConfigDetails
 from .consumer import KafkaConsumer_
 
 
 class KafkaQueue(AbstractQueue):
-    def __init__(self, config: KafkaConfig):
+    def __init__(self, config: KafkaConfigDetails):
         super().__init__(config)
-        self.config: KafkaConfig = config
+        self.config: KafkaConfigDetails = config
 
     def connect(self):
         self.producer = self.get_kafka_producer()
@@ -25,7 +25,7 @@ class KafkaQueue(AbstractQueue):
 
     def get_kafka_producer(self) -> KafkaProducer:
         return KafkaProducer(
-            bootstrap_servers=self.config.queue.bootstrap_servers,
+            bootstrap_servers=self.config.queue.bootstrap_server,
             value_serializer=lambda m: json.dumps(m).encode("utf-8"),
         )
 

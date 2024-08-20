@@ -88,10 +88,7 @@ def test_parse_task_runner_kafka_queue():
                 type: kafka
                 config:
                     queue:
-                        bootstrap_servers: localhost:9092
-                    consumer:
-                        bootstrap_servers:
-                            - localhost:9092
+                        bootstrap_server: localhost:9092
 
             runner:
                 log_level: DEBUG
@@ -108,7 +105,7 @@ def test_parse_task_runner_kafka_queue():
     assert runner.backend.config.type == BackendTypes.SQLITE
 
     assert isinstance(runner.queue, KafkaQueue)
-    assert runner.queue.config.queue.bootstrap_servers == "localhost:9092"
+    assert runner.queue.config.queue.bootstrap_server == "localhost:9092"
 
 
 def test_parse_task_runner_rabbitmq_queue():

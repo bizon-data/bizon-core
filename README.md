@@ -72,7 +72,8 @@ To test the pipeline with Kafka, you can use `docker compose` to setup Kafka or 
 
 **Kafka**
 ```bash
-docker compose --file ./scripts/kafka-compose.yml up
+docker compose --file ./scripts/kafka-compose.yml up # Kafka
+docker compose --file ./scripts/redpanda-compose.yml up # Redpanda
 ```
 
 In your YAML configuration, set the `queue` configuration to Kafka under `engine`:
@@ -81,12 +82,12 @@ engine:
   queue:
     type: kafka
     config:
-      bootstrap_servers: localhost:9092
+      queue: bootstrap_server: localhost:9092 # Kafka:9092 & Redpanda: 19092
 ```
 
-**Redpanda**
+**RabbitMQ**
 ```bash
-docker compose --file ./scripts/redpanda-compose.yml up
+docker compose --file ./scripts/rabbitmq-compose.yml up
 ```
 
 In your YAML configuration, set the `queue` configuration to Kafka under `engine`:
@@ -94,7 +95,9 @@ In your YAML configuration, set the `queue` configuration to Kafka under `engine
 ```yaml
 engine:
   queue:
-    type: kafka
+    type: rabbitmq
     config:
-      bootstrap_servers: localhost:19092
+      queue:
+        host: localhost
+        queue_name: bizon
 ```
