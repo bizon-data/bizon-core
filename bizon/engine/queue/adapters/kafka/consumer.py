@@ -4,7 +4,11 @@ from kafka import KafkaConsumer
 from loguru import logger
 
 from bizon.destinations.destination import AbstractDestination
-from bizon.engine.queue.queue import AbstractQueueConsumer, QueueMessage
+from bizon.engine.queue.queue import (
+    QUEUE_TERMINATION,
+    AbstractQueueConsumer,
+    QueueMessage,
+)
 
 from .config import KafkaConfig
 
@@ -31,7 +35,17 @@ class KafkaConsumer_(AbstractQueueConsumer):
             for message in self.consumer:
                 logger.debug(f"Consuming message on topic: {message.partition}|{message.offset} key: {message.key}")
                 queue_message = QueueMessage.model_validate(message.value)
-                self.destination.write_records(records=queue_message.records)
+
+                if queue_message.signal == QUEUE_TERMINATION:
+                    logger.info("Received termination signal, waiting for destination to close gracefully ...")
+                    break
+
+                if not queue_message.source_records:
+                    raise ValueError("Received empty message, with no records")
+
+                self.destination.write_records(queue_message.source_records)
+                logger.info(f"Consumed data from queue: {len(queue_message.source_records)}")
+
         except Exception as e:
             logger.error(f"Error occurred while consuming messages: {e}")
         finally:

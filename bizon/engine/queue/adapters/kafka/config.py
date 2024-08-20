@@ -1,12 +1,16 @@
-from typing import List, Optional
+from typing import List, Literal
 
 from pydantic import BaseModel, Field
 
-from bizon.engine.queue.config_details import AbastractQueueConfigDetails
+from bizon.engine.queue.config import (
+    AbastractQueueConfigDetails,
+    AbstractQueueConfig,
+    QueueTypes,
+)
 
 
 class KafkaQueueConfig(BaseModel):
-    bootstrap_servers: str = Field("localhost:9092", description="Kafka bootstrap servers")
+    bootstrap_servers: str = Field(..., description="Kafka bootstrap servers")
     topic: str = Field("bizon", description="Kafka topic")
 
 
@@ -18,6 +22,11 @@ class KafkaConsumerConfig(BaseModel):
     consumer_timeout_ms: int = Field(1000, description="Kafka consumer timeout in milliseconds")
 
 
-class KafkaConfig(AbastractQueueConfigDetails):
-    queue: Optional[KafkaQueueConfig] = Field(KafkaQueueConfig(), description="Kafka queue configuration")
-    consumer: Optional[KafkaConsumerConfig] = Field(KafkaConsumerConfig(), description="Kafka consumer configuration")
+class KafkaConfigDetails(AbastractQueueConfigDetails):
+    queue: KafkaQueueConfig = Field(..., description="Kafka queue configuration")
+    consumer: KafkaConsumerConfig = Field(..., description="Kafka consumer configuration")
+
+
+class KafkaConfig(AbstractQueueConfig):
+    type: Literal[QueueTypes.KAFKA]
+    config: KafkaConfigDetails

@@ -1,13 +1,15 @@
-from typing import Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from bizon.engine.queue.config_details import AbastractQueueConfigDetails
+from bizon.engine.queue.config import (
+    AbastractQueueConfigDetails,
+    AbstractQueueConfig,
+    QueueTypes,
+)
 
-QUEUE_TERMINATION = "TERMINATION"
 
-
-class PythonQueueConfigDetails(BaseModel):
+class PythonQueueQueueConfig(BaseModel):
     max_size: int = Field(1000, description="Maximum size of the queue")
 
 
@@ -15,11 +17,11 @@ class PythonQueueConsumerConfig(BaseModel):
     poll_interval: int = Field(1, description="Interval in seconds to poll the queue in seconds")
 
 
-class PythonQueueConfig(AbastractQueueConfigDetails):
-    queue: PythonQueueConfigDetails = Field(
-        PythonQueueConfigDetails(max_size=1000), description="Configuration of the queue"
-    )
+class PythonQueueConfigDetails(AbastractQueueConfigDetails):
+    queue: PythonQueueQueueConfig = Field(..., description="Configuration of the queue")
+    consumer: PythonQueueConsumerConfig = Field(..., description="Kafka consumer configuration")
 
-    consumer: PythonQueueConsumerConfig = Field(
-        PythonQueueConsumerConfig(poll_interval=1), description="Kafka consumer configuration"
-    )
+
+class PythonQueueConfig(AbstractQueueConfig):
+    type: Literal[QueueTypes.PYTHON_QUEUE]
+    config: PythonQueueConfigDetails

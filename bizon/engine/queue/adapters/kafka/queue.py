@@ -5,7 +5,7 @@ from kafka import KafkaProducer
 from loguru import logger
 
 from bizon.destinations.destination import AbstractDestination
-from bizon.engine.queue.queue import AbstractQueue, QueueMessage
+from bizon.engine.queue.queue import QUEUE_TERMINATION, AbstractQueue, QueueMessage
 from bizon.source.models import SourceRecord
 
 from .config import KafkaConfig
@@ -50,6 +50,7 @@ class KafkaQueue(AbstractQueue):
         raise NotImplementedError("Kafka does not support getting messages from here. Use KafkaConsumer instead.")
 
     def terminate(self) -> bool:
+        self.put(source_records=[], index=0, signal=QUEUE_TERMINATION)
         self.producer.close()
         logger.debug("Terminating Kafka producer ...")
         return True

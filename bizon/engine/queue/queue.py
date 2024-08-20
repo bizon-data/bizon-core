@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from bizon.destinations.destination import AbstractDestination
 from bizon.source.models import SourceRecord
 
-from .config import QueueConfig, QueueTypes
+from .config import AbstractQueueConfig, QueueTypes
+
+QUEUE_TERMINATION = "TERMINATION"
 
 
 class QueueMessage(BaseModel):
@@ -16,7 +18,7 @@ class QueueMessage(BaseModel):
 
 
 class AbstractQueueConsumer(ABC):
-    def __init__(self, config: QueueConfig, destination: AbstractDestination):
+    def __init__(self, config: AbstractQueueConfig, destination: AbstractDestination):
         self.config = config
         self.destination = destination
 
@@ -26,7 +28,7 @@ class AbstractQueueConsumer(ABC):
 
 
 class AbstractQueue(ABC):
-    def __init__(self, config: QueueConfig) -> None:
+    def __init__(self, config: AbstractQueueConfig) -> None:
         self.config = config
 
     @abstractmethod
@@ -52,7 +54,7 @@ class AbstractQueue(ABC):
 
 class QueueFactory:
     @staticmethod
-    def get_queue(config: QueueConfig) -> AbstractQueue:
+    def get_queue(config: AbstractQueueConfig) -> AbstractQueue:
         if config.type == QueueTypes.PYTHON_QUEUE:
             from .adapters.python_queue.queue import PythonQueue
 
@@ -62,5 +64,10 @@ class QueueFactory:
             from .adapters.kafka.queue import KafkaQueue
 
             return KafkaQueue(config=config.config)
+
+        if config.type == QueueTypes.RABBITMQ:
+            from .adapters.rabbitmq.queue import RabbitMQ
+
+            return RabbitMQ(config=config.config)
 
         raise ValueError(f"Queue type {config.type} is not supported")

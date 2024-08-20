@@ -1,29 +1,28 @@
+from abc import ABC
 from enum import Enum
-from typing import Union
 
-from pydantic import BaseModel, Field
-
-from .adapters.kafka.config import KafkaConfig, KafkaConsumerConfig
-from .adapters.python_queue.config import PythonQueueConfig, PythonQueueConsumerConfig
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class QueueTypes(str, Enum):
     KAFKA = "kafka"
+    RABBITMQ = "rabbitmq"
     PYTHON_QUEUE = "python_queue"
 
 
-class QueueConfigDetails(BaseModel):
-    queue: Union[KafkaConfig, PythonQueueConfig] = Field(
-        PythonQueueConfig(max_size=1000), description="Configuration of the queue"
-    )
-    consumer: Union[KafkaConsumerConfig, PythonQueueConsumerConfig] = Field(
-        PythonQueueConsumerConfig(poll_interval=2), description="Configuration of the consumer"
-    )
+class AbastractQueueConfigDetails(BaseModel, ABC):
+
+    # Forbid extra keys in the model
+    model_config = ConfigDict(extra="forbid")
+
+    queue: BaseModel = Field(..., description="Configuration of the queue")
+    consumer: BaseModel = Field(..., description="Configuration of the consumer")
 
 
-class QueueConfig(BaseModel):
-    type: QueueTypes = Field(QueueTypes.PYTHON_QUEUE, description="Type of the queue")
-    config: Union[KafkaConfig, PythonQueueConfig] = Field(
-        QueueConfigDetails(queue=PythonQueueConfig(max_size=1000), consumer=PythonQueueConsumerConfig(poll_interval=2)),
-        escription="Configuration for the queue",
-    )
+class AbstractQueueConfig(BaseModel, ABC):
+
+    # Forbid extra keys in the model
+    model_config = ConfigDict(extra="forbid")
+
+    type: QueueTypes = Field(..., description="Type of the queue")
+    config: AbastractQueueConfigDetails = Field(..., description="Configuration of the queue")

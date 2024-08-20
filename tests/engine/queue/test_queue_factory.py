@@ -1,53 +1,81 @@
 from bizon.engine.queue.adapters.kafka.config import (
     KafkaConfig,
+    KafkaConfigDetails,
     KafkaConsumerConfig,
     KafkaQueueConfig,
 )
 from bizon.engine.queue.adapters.kafka.queue import KafkaQueue
-from bizon.engine.queue.adapters.python_queue.config import PythonQueueConfig
+from bizon.engine.queue.adapters.python_queue.config import (
+    PythonQueueConfig,
+    PythonQueueConfigDetails,
+    PythonQueueConsumerConfig,
+    PythonQueueQueueConfig,
+)
 from bizon.engine.queue.adapters.python_queue.queue import PythonQueue
-from bizon.engine.queue.config import QueueConfig, QueueTypes
+from bizon.engine.queue.adapters.rabbitmq.config import (
+    RabbitMQConfig,
+    RabbitMQConfigDetails,
+    RabbitMQConsumerConfig,
+    RabbitMQQueueConfig,
+)
+from bizon.engine.queue.adapters.rabbitmq.queue import RabbitMQ
+from bizon.engine.queue.config import QueueTypes
 from bizon.engine.queue.queue import QueueFactory
 
 
 def test_queue_factory():
 
-    queue = QueueFactory().get_queue(config=QueueConfig(type=QueueTypes.PYTHON_QUEUE, config=PythonQueueConfig()))
+    config = PythonQueueConfig(
+        type=QueueTypes.PYTHON_QUEUE,
+        config=PythonQueueConfigDetails(
+            queue=PythonQueueQueueConfig(max_size=1000),
+            consumer=PythonQueueConsumerConfig(poll_interval=1),
+        ),
+    )
+
+    queue = QueueFactory().get_queue(config=config)
     assert isinstance(queue, PythonQueue)
 
 
-def test_default_python_queue():
-    config = PythonQueueConfig()
-    assert config.queue.max_size == 1000
-    assert config.consumer.poll_interval == 1
-
-
-def test_kafka_python_queue_default_config():
-    config = KafkaConfig()
-    assert config.queue.bootstrap_servers == "localhost:9092"
-    assert config.queue.topic == "bizon"
-    assert config.consumer.bootstrap_servers == ["localhost:9092"]
-    assert config.consumer.group_id == "bizon"
-    assert config.consumer.auto_offset_reset == "earliest"
-    assert config.consumer.enable_auto_commit == True
-    assert config.consumer.consumer_timeout_ms == 1000
-
-
-def test_kafkaqueue_config():
-    config = KafkaQueueConfig()
-    assert config.bootstrap_servers == "localhost:9092"
-    assert config.topic == "bizon"
-
-
-def test_kafka_consumer_config():
-    config = KafkaConsumerConfig()
-    assert config.bootstrap_servers == ["localhost:9092"]
-    assert config.group_id == "bizon"
-    assert config.auto_offset_reset == "earliest"
-    assert config.enable_auto_commit == True
-    assert config.consumer_timeout_ms == 1000
-
-
 def test_queue_factory_kafka():
-    queue = QueueFactory().get_queue(config=QueueConfig(type=QueueTypes.KAFKA, config=KafkaConfig()))
+
+    config = KafkaConfig(
+        type=QueueTypes.KAFKA,
+        config=KafkaConfigDetails(
+            queue=KafkaQueueConfig(
+                bootstrap_servers="localhost:9092",
+                topic="bizon",
+            ),
+            consumer=KafkaConsumerConfig(
+                bootstrap_servers=["localhost:9092"],
+                group_id="bizon",
+                auto_offset_reset="earliest",
+                enable_auto_commit=True,
+                consumer_timeout_ms=1000,
+            ),
+        ),
+    )
+
+    queue = QueueFactory().get_queue(config=config)
     assert isinstance(queue, KafkaQueue)
+
+
+def test_queue_rabbitmq():
+
+    config = RabbitMQConfig(
+        type=QueueTypes.RABBITMQ,
+        config=RabbitMQConfigDetails(
+            queue=RabbitMQQueueConfig(
+                host="localhost",
+                port=5672,
+                queue_name="bizon",
+                exchange="",
+            ),
+            consumer=RabbitMQConsumerConfig(
+                poll_interval=1,
+            ),
+        ),
+    )
+
+    queue = QueueFactory().get_queue(config=config)
+    assert isinstance(queue, RabbitMQ)

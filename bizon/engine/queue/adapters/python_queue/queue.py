@@ -6,10 +6,15 @@ from typing import List
 from loguru import logger
 
 from bizon.destinations.destination import AbstractDestination
-from bizon.engine.queue.queue import AbstractQueue, AbstractQueueConsumer, QueueMessage
+from bizon.engine.queue.queue import (
+    QUEUE_TERMINATION,
+    AbstractQueue,
+    AbstractQueueConsumer,
+    QueueMessage,
+)
 from bizon.source.models import SourceRecord
 
-from .config import QUEUE_TERMINATION, PythonQueueConfig
+from .config import PythonQueueConfig
 from .consumer import PythonQueueConsumer
 
 

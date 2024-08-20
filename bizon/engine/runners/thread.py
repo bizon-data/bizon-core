@@ -7,7 +7,7 @@ from bizon.common.models import BizonConfig
 from bizon.engine.runner import AbstractRunner
 
 IS_ALIVE_CHECK_INTERVAL = 2  # seconds
-CONSUMER_START_DELAY = 2  # seconds
+CONSUMER_START_DELAY = 0  # seconds
 
 
 class ThreadRunner(AbstractRunner):

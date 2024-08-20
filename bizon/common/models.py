@@ -34,7 +34,7 @@ class BizonConfig(BaseModel):
 
     destination: DestinationConfig
 
-    engine: Optional[EngineConfig] = Field(
+    engine: EngineConfig = Field(
         description="Engine configuration",
         default=EngineConfig(),
     )

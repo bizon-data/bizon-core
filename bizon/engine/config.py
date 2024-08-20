@@ -1,14 +1,17 @@
-from typing import Optional
+from typing import Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from .backend.config import BackendConfig, BackendTypes
+from .queue.adapters.kafka.config import KafkaConfig
 from .queue.adapters.python_queue.config import (
     PythonQueueConfig,
     PythonQueueConfigDetails,
     PythonQueueConsumerConfig,
+    PythonQueueQueueConfig,
 )
-from .queue.config import QueueConfig, QueueTypes
+from .queue.adapters.rabbitmq.config import RabbitMQConfig
+from .queue.config import QueueTypes
 from .runners.config import RunnerConfig, RunnerTypes, ThreadsConfig
 
 
@@ -17,25 +20,30 @@ class EngineConfig(BaseModel):
     # Forbid extra keys in the model
     model_config = ConfigDict(extra="forbid")
 
-    backend: Optional[BackendConfig] = Field(
+    backend: BackendConfig = Field(
         description="Configuration for the backend",
         default=BackendConfig(
             type=BackendTypes.SQLITE, database="NOT_USED_IN_SQLITE", schema="NOT_USED_IN_SQLITE", syncCursorInDBEvery=2
         ),
     )
 
-    queue: Optional[QueueConfig] = Field(
+    queue: Union[
+        KafkaConfig,
+        RabbitMQConfig,
+        PythonQueueConfig,
+    ] = Field(
         description="Configuration for the queue",
-        default=QueueConfig(
+        default=PythonQueueConfig(
             type=QueueTypes.PYTHON_QUEUE,
-            config=PythonQueueConfig(
-                queue=PythonQueueConfigDetails(max_size=1000),
+            config=PythonQueueConfigDetails(
+                queue=PythonQueueQueueConfig(max_size=1000),
                 consumer=PythonQueueConsumerConfig(poll_interval=2),
             ),
         ),
+        discriminator="type",
     )
 
-    runner: Optional[RunnerConfig] = Field(
+    runner: RunnerConfig = Field(
         description="Runner to use for the pipeline",
         default=RunnerConfig(
             type=RunnerTypes.THREADS,
