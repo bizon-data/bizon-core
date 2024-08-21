@@ -50,7 +50,7 @@ class SQLAlchemyBackend(AbstractBackend):
         session_.close()
 
     def _get_engine_bigquery(self) -> Engine:
-        if self.config.service_account_key:
+        if hasattr(self.config, "service_account_key") and self.config.service_account_key:
             return create_engine(
                 f"bigquery://{self.config.database}/{self.config.schema}",
                 echo=self.config.echoEngine,
