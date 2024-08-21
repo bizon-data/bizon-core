@@ -1,29 +1,35 @@
 import pytest
 from sqlalchemy.orm import scoped_session, sessionmaker
 
-from bizon.engine.backend.backend import Backend
-from bizon.engine.backend.config import BackendConfig, BackendTypes
+from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
+from bizon.engine.backend.adapters.sqlalchemy.config import (
+    SQLiteConfigDetails,
+    SQLiteInMemoryConfig,
+)
+from bizon.engine.backend.config import BackendTypes
 
 
 @pytest.fixture(scope="function")
 def my_backend_config():
-    return BackendConfig(
-        type=BackendTypes.SQLITE,
-        database="NOT_DATABASE_WITH_SQLITE",
-        schema="NOT_SCHEMA_IN_SQLITE",
-        syncCursorInDBEvery=2,
+    return SQLiteInMemoryConfig(
+        type=BackendTypes.SQLITE_IN_MEMORY,
+        config=SQLiteConfigDetails(
+            database="NOT_DATABASE_WITH_SQLITE",
+            schema="NOT_SCHEMA_IN_SQLITE",
+            syncCursorInDBEvery=2,
+        ),
     )
 
 
 @pytest.fixture(scope="function")
-def my_backend_client(my_backend_config: BackendConfig) -> Backend:
-    return Backend(config=my_backend_config)
+def my_backend(my_backend_config: SQLiteInMemoryConfig) -> SQLAlchemyBackend:
+    return SQLAlchemyBackend(config=my_backend_config.config, type=my_backend_config.type)
 
 
 @pytest.fixture(scope="function")
-def db_session(my_backend_client: Backend):
+def db_session(my_backend: SQLAlchemyBackend):
     """yields a SQLAlchemy connection which is rollbacked after the test"""
-    session_ = scoped_session(sessionmaker(bind=my_backend_client.engine, expire_on_commit=False))
+    session_ = scoped_session(sessionmaker(bind=my_backend.engine, expire_on_commit=False))
 
     yield session_
 

@@ -4,7 +4,7 @@ from typing import Optional
 from loguru import logger
 from pytz import UTC
 
-from bizon.common.models import JobStatus
+from bizon.engine.backend.models import JobStatus
 
 
 class Cursor:

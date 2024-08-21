@@ -4,6 +4,7 @@ from typing import List
 from kafka import KafkaProducer
 from loguru import logger
 
+from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
 from bizon.engine.queue.queue import QUEUE_TERMINATION, AbstractQueue, QueueMessage
 from bizon.source.models import SourceRecord
@@ -13,8 +14,9 @@ from .consumer import KafkaConsumer_
 
 
 class KafkaQueue(AbstractQueue):
-    def __init__(self, config: KafkaConfigDetails):
-        super().__init__(config)
+
+    def __init__(self, sync_metadata: SyncMetadata, config: KafkaConfigDetails) -> None:
+        super().__init__(sync_metadata, config)
         self.config: KafkaConfigDetails = config
 
     def connect(self):
@@ -37,10 +39,10 @@ class KafkaQueue(AbstractQueue):
     def on_error(e):
         logger.error(f"Error sending message: {e}")
 
-    def put(self, source_records: List[SourceRecord], index: int, signal: str = None):
+    def put(self, source_records: List[SourceRecord], iteration: int, signal: str = None):
         future = self.producer.send(
             topic=self.config.queue.topic,
-            value=QueueMessage(index=index, source_records=source_records, signal=signal).model_dump(),
+            value=QueueMessage(iteration=iteration, source_records=source_records, signal=signal).model_dump(),
         )
         future.add_callback(self.on_success)
         future.add_errback(self.on_error)
@@ -49,8 +51,8 @@ class KafkaQueue(AbstractQueue):
     def get(self) -> QueueMessage:
         raise NotImplementedError("Kafka does not support getting messages from here. Use KafkaConsumer instead.")
 
-    def terminate(self) -> bool:
-        self.put(source_records=[], index=0, signal=QUEUE_TERMINATION)
+    def terminate(self, iteration: int) -> bool:
+        self.put(source_records=[], iteration=iteration, signal=QUEUE_TERMINATION)
         self.producer.close()
         logger.debug("Terminating Kafka producer ...")
         return True

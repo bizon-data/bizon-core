@@ -2,18 +2,18 @@ import os
 
 import pytest
 
-from bizon.common.models import JobStatus
-from bizon.engine.backend.backend import Backend
+from bizon.engine.backend.backend import AbstractBackend
+from bizon.engine.backend.models import JobStatus
 from bizon.engine.producer import Producer
 from bizon.engine.runner import RunnerFactory
 
 
 @pytest.fixture(scope="function")
-def my_producer(my_backend_client: Backend):
+def my_producer(my_backend: AbstractBackend):
     runner = RunnerFactory.create_from_yaml(os.path.abspath("tests/engine/dummy_pipeline.yml"))
     source = runner.get_source()
-    my_backend_client._create_all_tables()
-    source_backend = my_backend_client
+    my_backend.create_all_tables()
+    source_backend = my_backend
     return Producer(queue=runner.queue, source=source, backend=source_backend)
 
 

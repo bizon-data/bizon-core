@@ -2,7 +2,13 @@ from typing import Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .backend.config import BackendConfig, BackendTypes
+from .backend.adapters.sqlalchemy.config import (
+    PostgresSQLAlchemyConfig,
+    SQLiteConfigDetails,
+    SQLiteInMemoryConfig,
+    SQLiteSQLAlchemyConfig,
+)
+from .backend.config import BackendTypes
 from .queue.adapters.kafka.config import KafkaConfig
 from .queue.adapters.python_queue.config import (
     PythonQueueConfig,
@@ -20,11 +26,17 @@ class EngineConfig(BaseModel):
     # Forbid extra keys in the model
     model_config = ConfigDict(extra="forbid")
 
-    backend: BackendConfig = Field(
+    backend: Union[PostgresSQLAlchemyConfig, SQLiteInMemoryConfig, SQLiteSQLAlchemyConfig] = Field(
         description="Configuration for the backend",
-        default=BackendConfig(
-            type=BackendTypes.SQLITE, database="NOT_USED_IN_SQLITE", schema="NOT_USED_IN_SQLITE", syncCursorInDBEvery=2
+        default=SQLiteSQLAlchemyConfig(
+            type=BackendTypes.SQLITE,
+            config=SQLiteConfigDetails(
+                database="NOT_USED_IN_SQLITE",
+                schema="NOT_USED_IN_SQLITE",
+            ),
+            syncCursorInDBEvery=2,
         ),
+        discriminator="type",
     )
 
     queue: Union[

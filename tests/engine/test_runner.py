@@ -1,6 +1,7 @@
 import os
 
 from bizon.cli.parser import parse_from_yaml
+from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.runner import RunnerFactory
 
 
@@ -23,5 +24,5 @@ def test_get_source():
 
 def test_get_backend():
     runner = RunnerFactory.create_from_yaml(os.path.abspath("tests/engine/dummy_pipeline.yml"))
-    backend = runner.get_backend()
-    assert backend.config.type == "sqlite"
+    backend: SQLAlchemyBackend = runner.get_backend()
+    assert backend.type == "sqlite"

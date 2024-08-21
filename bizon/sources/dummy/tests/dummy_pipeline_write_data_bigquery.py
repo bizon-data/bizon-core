@@ -19,7 +19,7 @@ destination:
   config:
     dataset_id: bizon_test
     dataset_location: US
-    project_id: <MY_PROJECT_ID>
+    project_id: my-gcp-project-id
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet
 """

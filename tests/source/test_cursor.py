@@ -1,6 +1,7 @@
 import pytest
 
-from bizon.source.cursor import Cursor, JobStatus
+from bizon.engine.backend.models import JobStatus
+from bizon.source.cursor import Cursor
 
 
 @pytest.fixture

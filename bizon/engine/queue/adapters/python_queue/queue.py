@@ -5,6 +5,7 @@ from typing import List
 
 from loguru import logger
 
+from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
 from bizon.engine.queue.queue import (
     QUEUE_TERMINATION,
@@ -14,14 +15,15 @@ from bizon.engine.queue.queue import (
 )
 from bizon.source.models import SourceRecord
 
-from .config import PythonQueueConfig
+from .config import PythonQueueConfigDetails
 from .consumer import PythonQueueConsumer
 
 
 class PythonQueue(AbstractQueue):
-    def __init__(self, config: PythonQueueConfig) -> None:
-        super().__init__(config)
-        self.config: PythonQueueConfig = config
+
+    def __init__(self, sync_metadata: SyncMetadata, config: PythonQueueConfigDetails) -> None:
+        super().__init__(sync_metadata, config)
+        self.config: PythonQueueConfigDetails = config
         self.queue = queue.Queue(maxsize=self.config.queue.max_size)
 
     def connect(self):
@@ -31,14 +33,14 @@ class PythonQueue(AbstractQueue):
     def get_consumer(self, destination: AbstractDestination) -> AbstractQueueConsumer:
         return PythonQueueConsumer(config=self.config, queue=self.queue, destination=destination)
 
-    def put(self, source_records: List[SourceRecord], index: int, signal: str = None):
+    def put(self, source_records: List[SourceRecord], iteration: int, signal: str = None):
         if not self.queue.full():
-            self.queue.put(QueueMessage(index=index, source_records=source_records, signal=signal).model_dump())
-            logger.debug(f"Putting data from index {index} ({self.queue.qsize()} items in queue)")
+            self.queue.put(QueueMessage(iteration=iteration, source_records=source_records, signal=signal).model_dump())
+            logger.debug(f"Putting data from iteration {iteration} ({self.queue.qsize()} items in queue)")
         else:
             logger.warning("Queue is full, waiting for consumer to consume data")
             time.sleep(random.random())
-            self.put(source_records=source_records, index=index, signal=signal)
+            self.put(source_records=source_records, iteration=iteration, signal=signal)
 
     def get(self) -> QueueMessage:
         if not self.queue.empty():
@@ -51,7 +53,7 @@ class PythonQueue(AbstractQueue):
             time.sleep(random.random())
             return self.get()
 
-    def terminate(self) -> bool:
-        self.put(source_records=[], index=0, signal=QUEUE_TERMINATION)
+    def terminate(self, iteration: int) -> bool:
+        self.put(source_records=[], iteration=iteration, signal=QUEUE_TERMINATION)
         logger.info("Sent termination signal to destination.")
         return True

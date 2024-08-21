@@ -24,6 +24,11 @@ faker = "^26.0.0"
 sqlalchemy = "^2.0.32"
 sqlalchemy-bigquery = "^1.11.0"
 
+# Backend dependencies group
+
+# Postgres
+[tool.poetry.group.postgres.dependencies]
+psycopg2-binary = "^2.9.9"
 
 # Queue dependencies group
 [tool.poetry.group.kafka.dependencies]

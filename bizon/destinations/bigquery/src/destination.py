@@ -1,7 +1,7 @@
 import io
 import os
 import tempfile
-from typing import List
+from typing import List, Tuple
 from uuid import uuid4
 
 import pandas as pd
@@ -12,16 +12,20 @@ from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference
 from loguru import logger
 
+from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
 from bizon.destinations.models import DestinationRecord
+from bizon.engine.backend.backend import AbstractBackend
 from bizon.source.models import SourceRecord
 
-from .config import BigQueryConfig
+from .config import BigQueryConfigDetails
 
 
 class BigQueryDestination(AbstractDestination):
-    def __init__(self, source_name: str, stream_name: str, config: BigQueryConfig):
-        super().__init__(source_name, stream_name, config)
+
+    def __init__(self, sync_metadata: SyncMetadata, config: BigQueryConfigDetails, backend: AbstractBackend):
+        super().__init__(sync_metadata, config, backend)
+        self.config: BigQueryConfigDetails = config
 
         if bool(config.service_account_key):
             with tempfile.NamedTemporaryFile(delete=False) as temp:
@@ -56,7 +60,7 @@ class BigQueryDestination(AbstractDestination):
             buffer.seek(0)
 
             # Upload the Parquet file to GCS
-            file_name = f"{self.source_name}/{self.stream_name}/{str(uuid4())}.parquet"
+            file_name = f"{self.sync_metadata.source_name}/{self.sync_metadata.stream_name}/{str(uuid4())}.parquet"
             blob = self.buffer_bucket.blob(file_name)
             blob.upload_from_file(buffer, content_type="application/octet-stream")
             return file_name
@@ -91,14 +95,16 @@ class BigQueryDestination(AbstractDestination):
             ],
         )
 
-        table_id = f"{self.project_id}.{self.dataset_id}.{self.source_name}_{self.stream_name}"
+        table_id = (
+            f"{self.project_id}.{self.dataset_id}.{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
+        )
 
         load_job = self.bq_client.load_table_from_uri(
             f"gs://{self.buffer_bucket_name}/{gcs_file}", table_id, job_config=job_config
         )
         load_job.result()
 
-    def write_records(self, source_records: List[SourceRecord]):
+    def write_records(self, source_records: List[SourceRecord]) -> Tuple[bool, str]:
 
         # Here we can check if these IDs are already present in BigQuery
         # Using SourceRecord.id values
@@ -111,4 +117,4 @@ class BigQueryDestination(AbstractDestination):
         except Exception as e:
             self.cleanup(gs_file_name)
             raise e
-        return True
+        return True, ""

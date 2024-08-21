@@ -3,9 +3,9 @@ from abc import ABC, abstractmethod
 from loguru import logger
 
 from bizon.cli.parser import parse_from_yaml
-from bizon.common.models import BizonConfig
+from bizon.common.models import BizonConfig, SyncMetadata
 from bizon.destinations.destination import AbstractDestination, DestinationFactory
-from bizon.engine.backend.backend import Backend
+from bizon.engine.backend.backend import AbstractBackend, BackendFactory
 from bizon.engine.producer import Producer
 from bizon.engine.queue.queue import AbstractQueue, QueueFactory
 from bizon.source.source import Source
@@ -18,11 +18,12 @@ class AbstractRunner(ABC):
     def __init__(self, config: dict):
         self.config: dict = config
         self.bizon_config = BizonConfig.model_validate(obj=config)
+        self.sync_metadata = SyncMetadata.from_bizon_config(config=self.bizon_config)
         self._is_running: bool = False
 
         # Instaniate the source, backend and destination
         self.source: Source = self.get_source()
-        self.backend: Backend = self.get_backend()
+        self.backend: AbstractBackend = self.get_backend()
         self.queue: AbstractQueue = self.get_queue()
         self.destination: AbstractDestination = self.get_destination()
 
@@ -53,20 +54,29 @@ class AbstractRunner(ABC):
     def get_destination(self) -> AbstractDestination:
         """Get an instance of the destination based on the destination config dict"""
         return DestinationFactory.get_destination(
-            source_name=self.bizon_config.source.source_name,
-            stream_name=self.bizon_config.source.stream_name,
-            destination_config_dict=self.config["destination"],
+            sync_metadata=self.sync_metadata,
+            config=self.bizon_config.destination,
+            backend=self.backend,
         )
 
-    def get_backend(self) -> Backend:
+    def get_backend(self) -> AbstractBackend:
         """Get an instance of the backend based on the backend config dict"""
-        return Backend(config=self.bizon_config.engine.backend)
+        return BackendFactory.get_backend(
+            config=self.bizon_config.engine.backend,
+        )
 
     def get_producer(self) -> Producer:
-        return Producer(queue=self.queue, source=self.source, backend=self.backend)
+        return Producer(
+            queue=self.queue,
+            source=self.source,
+            backend=self.backend,
+        )
 
     def get_queue(self):
-        return QueueFactory.get_queue(config=self.bizon_config.engine.queue)
+        return QueueFactory.get_queue(
+            config=self.bizon_config.engine.queue,
+            sync_metadata=self.sync_metadata,
+        )
 
     @abstractmethod
     def run(self) -> bool:

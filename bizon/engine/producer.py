@@ -2,17 +2,17 @@ import ast
 
 from loguru import logger
 
-from bizon.common.models import CursorStatus, JobStatus
+from bizon.engine.backend.models import CursorStatus, JobStatus
 from bizon.source.cursor import Cursor
 from bizon.source.source import Source
 
-from .backend.backend import Backend
+from .backend.backend import AbstractBackend
 from .backend.models import StreamJob
 from .queue.queue import AbstractQueue
 
 
 class Producer:
-    def __init__(self, queue: AbstractQueue, source: Source, backend: Backend):
+    def __init__(self, queue: AbstractQueue, source: Source, backend: AbstractBackend):
         self.queue = queue
         self.source = source
         self.backend = backend
@@ -21,7 +21,7 @@ class Producer:
     def name(self) -> str:
         return f"producer-{self.source.config.source_name}-{self.source.config.stream_name}"
 
-    def get_or_create_job(self, session=None) -> StreamJob:
+    def get_or_create_job(self, force_create: bool = False, session=None) -> StreamJob:
         """Get or create a job for the current stream, return its ID"""
         # Retrieve the last job for this stream
         job = self.backend.get_running_stream_job(
@@ -31,7 +31,14 @@ class Producer:
         )
 
         if job:
-            return job
+            # If a job is already running, we cancel it and create a new one
+            if force_create:
+                logger.info(f"Found an existing job, cancelling it...")
+                self.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.CANCELED)
+                logger.info(f"Job {job.id} canceled. Creating a new one...")
+            else:
+                logger.debug(f"Found an existing job: {job.id}")
+                return job
 
         # If no job is running, we create a new one:
         # Get the total number of records
@@ -85,7 +92,7 @@ class Producer:
 
         # Init backend to DB
         self.backend.check_prerequisites()
-        self.backend._create_all_tables()
+        self.backend.create_all_tables()
 
         # Init queue
         self.queue.connect()
@@ -97,8 +104,8 @@ class Producer:
             logger.error(f"Error while connecting to source: {connection_error}")
             return
 
-        # Get or create the job
-        job = self.get_or_create_job()
+        # Get or create the job, if force_ignore_checkpoint, we cancel the existing job and create a new one
+        job = self.get_or_create_job(force_create=self.source.config.force_ignore_checkpoint)
 
         # Get or create the cursor
         cursor = self.get_or_create_cursor(job_id=job.id)
@@ -108,8 +115,11 @@ class Producer:
             logger.warning(
                 f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
             )
-            self.queue.terminate()
+            self.queue.terminate(iteration=cursor.iteration)
             return
+
+        # Set job status to running
+        # self.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING)
 
         while not cursor.is_finished:
 
@@ -117,23 +127,10 @@ class Producer:
                 logger.warning(
                     f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
                 )
-                self.queue.terminate()
+                self.queue.terminate(iteration=cursor.iteration)
                 return
 
-            # Set job status to running
-            self.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING)
-
-            # Get the next data
-            source_iteration = self.source.get(pagination=cursor.pagination)
-
-            # Put the data in the queue
-            self.queue.put(source_records=source_iteration.records, index=cursor.iteration)
-
-            # Update the cursor state
-            cursor.update_state(
-                pagination_dict=source_iteration.next_pagination, nb_records_fetched=len(source_iteration.records)
-            )
-
+            # Check if we need to create a new cursor in the DB
             if cursor.iteration % self.backend.config.syncCursorInDBEvery == 0:
                 # Create a new cursor in the DB
                 self.backend.create_stream_cursor(
@@ -143,8 +140,19 @@ class Producer:
                     iteration=cursor.iteration,
                     rows_fetched=cursor.rows_fetched,
                     next_pagination=cursor.pagination,
-                    cursor_status=CursorStatus.NOT_STARTED,
+                    cursor_status=CursorStatus.PULLING,
                 )
 
+            # Get the next data
+            source_iteration = self.source.get(pagination=cursor.pagination)
+
+            # Put the data in the queue
+            self.queue.put(source_records=source_iteration.records, iteration=cursor.iteration)
+
+            # Update the cursor state
+            cursor.update_state(
+                pagination_dict=source_iteration.next_pagination, nb_records_fetched=len(source_iteration.records)
+            )
+
         logger.info("Terminating destination ...")
-        self.queue.terminate()
+        self.queue.terminate(iteration=cursor.iteration)

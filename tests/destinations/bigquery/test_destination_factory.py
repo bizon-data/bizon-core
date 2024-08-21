@@ -1,0 +1,60 @@
+import pytest
+
+from bizon.common.models import SyncMetadata
+from bizon.destinations.bigquery.src.config import (
+    BigQueryConfig,
+    BigQueryConfigDetails,
+    GCSBufferFormat,
+)
+from bizon.destinations.bigquery.src.destination import BigQueryDestination
+from bizon.destinations.config import DestinationTypes
+from bizon.destinations.destination import DestinationFactory
+
+
+@pytest.fixture(scope="function")
+def sync_metadata() -> SyncMetadata:
+    return SyncMetadata(
+        source_name="cookie",
+        stream_name="test",
+        destination_name="bigquery",
+        sync_mode="full_refresh",
+    )
+
+
+def test_bigquery_factory(sync_metadata, my_backend):
+    config = BigQueryConfig(
+        name=DestinationTypes.BIGQUERY,
+        config=BigQueryConfigDetails(
+            project_id="project_id",
+            dataset_id="dataset_id",
+            table_id="table_id",
+            credentials_path="credentials_path",
+            gcs_buffer_bucket="gcs_buffer_bucket",
+            gcs_buffer_format=GCSBufferFormat.PARQUET,
+            service_account_key="",
+        ),
+    )
+
+    destination = DestinationFactory().get_destination(sync_metadata=sync_metadata, config=config, backend=my_backend)
+    assert isinstance(destination, BigQueryDestination)
+    assert destination.config.service_account_key == ""
+    assert destination.config.project_id == "project_id"
+    assert destination.config.dataset_id == "dataset_id"
+
+
+def test_bigquery_factory_empty_service_account(sync_metadata, my_backend):
+    config = BigQueryConfig(
+        name=DestinationTypes.BIGQUERY,
+        config=BigQueryConfigDetails(
+            project_id="project_id",
+            dataset_id="dataset_id",
+            table_id="table_id",
+            credentials_path="credentials_path",
+            gcs_buffer_bucket="gcs_buffer_bucket",
+            gcs_buffer_format=GCSBufferFormat.PARQUET,
+        ),
+    )
+
+    destination = DestinationFactory().get_destination(sync_metadata=sync_metadata, config=config, backend=my_backend)
+    assert isinstance(destination, BigQueryDestination)
+    assert destination.config.service_account_key == ""

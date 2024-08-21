@@ -3,6 +3,10 @@ import os
 from yaml import safe_load
 
 from bizon.cli.parser import parse_from_yaml
+from bizon.destinations.bigquery.src.destination import BigQueryDestination
+from bizon.engine.backend.config import BackendTypes
+from bizon.engine.queue.adapters.kafka.queue import KafkaQueue
+from bizon.engine.queue.adapters.rabbitmq.queue import RabbitMQ
 from bizon.engine.runner import RunnerFactory
 
 
@@ -35,22 +39,20 @@ def test_parse_task_runner_python_queue():
         engine:
             backend:
                 type: sqlite
-                database: not_used
-                schema: not_used
-                syncCursorInDBEvery: 400
+                config:
+                    database: not_used
+                    schema: not_used
+                    syncCursorInDBEvery: 400
             runner:
                 log_level: INFO
         """
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    from bizon.destinations.bigquery.src.destination import BigQueryDestination
-    from bizon.engine.backend.config import BackendTypes
-
     assert isinstance(runner.destination, BigQueryDestination)
 
     # Check if the backend per default is of type sqlite
-    assert runner.backend.config.type == BackendTypes.SQLITE
+    assert runner.backend.type == BackendTypes.SQLITE
 
     assert runner.bizon_config.engine.runner.log_level == "INFO"
 
@@ -80,9 +82,10 @@ def test_parse_task_runner_kafka_queue():
         engine:
             backend:
                 type: sqlite
-                database: not_used
-                schema: not_used
-                syncCursorInDBEvery: 200
+                config:
+                    database: not_used
+                    schema: not_used
+                    syncCursorInDBEvery: 200
 
             queue:
                 type: kafka
@@ -96,13 +99,9 @@ def test_parse_task_runner_kafka_queue():
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    from bizon.destinations.bigquery.src.destination import BigQueryDestination
-    from bizon.engine.backend.config import BackendTypes
-    from bizon.engine.queue.adapters.kafka.queue import KafkaQueue
-
     assert isinstance(runner.destination, BigQueryDestination)
 
-    assert runner.backend.config.type == BackendTypes.SQLITE
+    assert runner.backend.type == BackendTypes.SQLITE
 
     assert isinstance(runner.queue, KafkaQueue)
     assert runner.queue.config.queue.bootstrap_server == "localhost:9092"
@@ -131,9 +130,10 @@ def test_parse_task_runner_rabbitmq_queue():
         engine:
             backend:
                 type: sqlite
-                database: not_used
-                schema: not_used
-                syncCursorInDBEvery: 200
+                config:
+                    database: not_used
+                    schema: not_used
+                    syncCursorInDBEvery: 200
 
             queue:
                 type: rabbitmq
@@ -150,13 +150,9 @@ def test_parse_task_runner_rabbitmq_queue():
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    from bizon.destinations.bigquery.src.destination import BigQueryDestination
-    from bizon.engine.backend.config import BackendTypes
-    from bizon.engine.queue.adapters.rabbitmq.queue import RabbitMQ
-
     assert isinstance(runner.destination, BigQueryDestination)
 
-    assert runner.backend.config.type == BackendTypes.SQLITE
+    assert runner.backend.type == BackendTypes.SQLITE
 
     assert isinstance(runner.queue, RabbitMQ)
     assert runner.queue.config.queue.queue_name == "bizon"
