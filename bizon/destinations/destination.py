@@ -1,6 +1,8 @@
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Union
 
+from loguru import logger
+
 from bizon.common.models import SyncMetadata
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import CursorStatus
@@ -15,6 +17,7 @@ class AbstractDestination(ABC):
         self.sync_metadata = sync_metadata
         self.config = config
         self.backend = backend
+        self.buffer = []
 
     @property
     def name(self) -> str:
@@ -29,11 +32,20 @@ class AbstractDestination(ABC):
         """Write records to destination for the given iteration and return success status and error message"""
         pass
 
-    def write_records_and_update_cursor(self, source_records: List[SourceRecord], iteration: int):
+    def write_records_and_update_cursor(
+        self, source_records: List[SourceRecord], iteration: int, last_iteration: bool = False
+    ) -> bool:
         """Write records to destination and update the cursor for the given iteration"""
 
-        # Write records
-        success, error_msg = self.write_records(source_records)
+        # TODO: Implement batch writing
+        # Write records if len(buffer) >= batch_size
+        if len(self.buffer) < 2000 and not last_iteration:
+            self.buffer.extend(source_records)
+            logger.info(f"Buffered {len(source_records)} records")
+            success = True
+        else:
+            success, error_msg = self.write_records(self.buffer)
+            self.buffer = []
 
         if iteration % self.backend.config.syncCursorInDBEvery == 0:
 
