@@ -1,4 +1,4 @@
-from typing import Literal, Union
+from typing import Literal
 
 from pydantic import Field
 
@@ -13,10 +13,7 @@ class SQLAlchemyConfigDetails(AbstractBackendConfigDetails):
     echoEngine: bool = Field(False, description="Echo the engine in logs")
 
 
-class SQLiteConfigDetails(SQLAlchemyConfigDetails):
-    pass
-
-
+## POSTGRES ##
 class PostgresConfigDetails(SQLAlchemyConfigDetails):
     host: str = Field(
         description="Host of the database",
@@ -38,7 +35,12 @@ class PostgresConfigDetails(SQLAlchemyConfigDetails):
 
 class PostgresSQLAlchemyConfig(AbstractBackendConfig):
     type: Literal[BackendTypes.POSTGRES]
-    config: Union[SQLiteConfigDetails, PostgresConfigDetails]
+    config: PostgresConfigDetails
+
+
+## SQLITE ##
+class SQLiteConfigDetails(SQLAlchemyConfigDetails):
+    pass
 
 
 class SQLiteSQLAlchemyConfig(AbstractBackendConfig):
@@ -49,3 +51,24 @@ class SQLiteSQLAlchemyConfig(AbstractBackendConfig):
 class SQLiteInMemoryConfig(AbstractBackendConfig):
     type: Literal[BackendTypes.SQLITE_IN_MEMORY]
     config: SQLiteConfigDetails
+
+
+## BIGQUERY ##
+class BigQueryConfigDetails(SQLAlchemyConfigDetails):
+    database: str = Field(
+        description="GCP Project name",
+        default=...,
+    )
+    schema: str = Field(
+        description="BigQuery Dataset name",
+        default=...,
+    )
+    service_account_key: str = Field(
+        description="Service Account Key JSON string. If empty it will be infered",
+        default="",
+    )
+
+
+class BigQuerySQLAlchemyConfig(AbstractBackendConfig):
+    type: Literal[BackendTypes.BIGQUERY]
+    config: SQLAlchemyConfigDetails

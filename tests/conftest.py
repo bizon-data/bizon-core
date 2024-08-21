@@ -1,4 +1,5 @@
 import pytest
+from dotenv import find_dotenv, load_dotenv
 from sqlalchemy.orm import scoped_session, sessionmaker
 
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
@@ -7,6 +8,12 @@ from bizon.engine.backend.adapters.sqlalchemy.config import (
     SQLiteInMemoryConfig,
 )
 from bizon.engine.backend.config import BackendTypes
+
+
+@pytest.fixture(scope="session", autouse=True)
+def load_env():
+    env_file = find_dotenv(".env")
+    load_dotenv(env_file)
 
 
 @pytest.fixture(scope="function")

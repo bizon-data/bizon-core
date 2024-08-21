@@ -119,7 +119,7 @@ class Producer:
             return
 
         # Set job status to running
-        # self.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING)
+        self.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING)
 
         while not cursor.is_finished:
 

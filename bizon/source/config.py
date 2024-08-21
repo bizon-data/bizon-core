@@ -19,7 +19,7 @@ class APIConfig(BaseModel):
 class SourceConfig(BaseModel, ABC):
 
     # Forbid extra keys in the model
-    model_config = ConfigDict(extra="forbid")
+    # model_config = ConfigDict(extra="forbid")
 
     source_name: str = Field(..., description="Name of the source to sync")
 

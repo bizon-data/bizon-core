@@ -6,7 +6,6 @@ from bizon.engine.backend.adapters.sqlalchemy.config import (
     PostgresConfigDetails,
     PostgresSQLAlchemyConfig,
 )
-from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.config import BackendTypes
 from bizon.engine.backend.models import CursorStatus, JobStatus, StreamCursor
 
@@ -56,17 +55,17 @@ def test_check_prerequisites(my_pg_backend: SQLAlchemyBackend):
     assert all_entities_exist == False
 
 
-def test_create_all_then_check_prerequisites(my_backend: AbstractBackend):
-    my_backend.create_all_tables()
-    all_entities_exist = my_backend.check_prerequisites()
+def test_create_all_then_check_prerequisites(my_pg_backend: SQLAlchemyBackend):
+    my_pg_backend.create_all_tables()
+    all_entities_exist = my_pg_backend.check_prerequisites()
     assert all_entities_exist == True
 
 
-def test_create_stream_job(my_backend: AbstractBackend, db_session: Session):
-    my_backend.create_all_tables()
+def test_create_stream_job(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+    my_pg_backend.create_all_tables()
 
-    new_job_id = my_backend.create_stream_job(
-        session=db_session,
+    new_job_id = my_pg_backend.create_stream_job(
+        session=pg_db_session,
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
@@ -76,11 +75,11 @@ def test_create_stream_job(my_backend: AbstractBackend, db_session: Session):
     assert new_job_id
 
 
-def test_update_stream_job_status(my_backend: AbstractBackend, db_session: Session):
-    my_backend.create_all_tables()
+def test_update_stream_job_status(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+    my_pg_backend.create_all_tables()
 
-    new_job = my_backend.create_stream_job(
-        session=db_session,
+    new_job = my_pg_backend.create_stream_job(
+        session=pg_db_session,
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
@@ -88,47 +87,47 @@ def test_update_stream_job_status(my_backend: AbstractBackend, db_session: Sessi
     )
 
     # If no job is running, get_running_job_id should return None
-    job_running_not_found = my_backend.get_running_stream_job(
-        session=db_session, source_name="sourcetest", stream_name="streamtest"
+    job_running_not_found = my_pg_backend.get_running_stream_job(
+        session=pg_db_session, source_name="sourcetest", stream_name="streamtest"
     )
     assert job_running_not_found == None
 
-    my_backend.update_stream_job_status(session=db_session, job_id=new_job.id, job_status=JobStatus.RUNNING)
+    my_pg_backend.update_stream_job_status(session=pg_db_session, job_id=new_job.id, job_status=JobStatus.RUNNING)
 
-    job_running = my_backend.get_running_stream_job(
-        session=db_session, source_name="sourcetest", stream_name="streamtest"
+    job_running = my_pg_backend.get_running_stream_job(
+        session=pg_db_session, source_name="sourcetest", stream_name="streamtest"
     )
     assert new_job.id == job_running.id
 
 
-def test_stream_job_create_and_get(my_backend: AbstractBackend, db_session: Session):
-    my_backend.create_all_tables()
+def test_stream_job_create_and_get(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+    my_pg_backend.create_all_tables()
 
-    new_job = my_backend.create_stream_job(
-        session=db_session,
+    new_job = my_pg_backend.create_stream_job(
+        session=pg_db_session,
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
         job_status=JobStatus.NOT_STARTED,
     )
 
-    job = my_backend.get_stream_job_by_id(session=db_session, job_id=new_job.id)
+    job = my_pg_backend.get_stream_job_by_id(session=pg_db_session, job_id=new_job.id)
     assert job.id == new_job.id
 
 
-def test_create_stream_cursor(my_backend: AbstractBackend, db_session: Session):
-    my_backend.create_all_tables()
+def test_create_stream_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+    my_pg_backend.create_all_tables()
 
-    new_job = my_backend.create_stream_job(
-        session=db_session,
+    new_job = my_pg_backend.create_stream_job(
+        session=pg_db_session,
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
         job_status=JobStatus.NOT_STARTED,
     )
 
-    new_cursor_id = my_backend.create_stream_cursor(
-        session=db_session,
+    new_cursor_id = my_pg_backend.create_stream_cursor(
+        session=pg_db_session,
         job_id=new_job.id,
         source_name="sourcetest",
         stream_name="streamtest",
@@ -141,19 +140,19 @@ def test_create_stream_cursor(my_backend: AbstractBackend, db_session: Session):
     assert new_cursor_id
 
 
-def test_create_failed_cursor(my_backend: AbstractBackend, db_session: Session):
-    my_backend.create_all_tables()
+def test_create_failed_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+    my_pg_backend.create_all_tables()
 
-    new_job = my_backend.create_stream_job(
-        session=db_session,
+    new_job = my_pg_backend.create_stream_job(
+        session=pg_db_session,
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
         job_status=JobStatus.RUNNING,
     )
 
-    new_cursor_id = my_backend.create_stream_cursor(
-        session=db_session,
+    new_cursor_id = my_pg_backend.create_stream_cursor(
+        session=pg_db_session,
         job_id=new_job.id,
         source_name="sourcetest",
         stream_name="streamtest",
@@ -167,19 +166,19 @@ def test_create_failed_cursor(my_backend: AbstractBackend, db_session: Session):
     assert new_cursor_id
 
 
-def test_update_stream_cursor(my_backend: AbstractBackend, db_session: Session):
-    my_backend.create_all_tables()
+def test_update_stream_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+    my_pg_backend.create_all_tables()
 
-    new_job = my_backend.create_stream_job(
-        session=db_session,
+    new_job = my_pg_backend.create_stream_job(
+        session=pg_db_session,
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
         job_status=JobStatus.RUNNING,
     )
 
-    new_cursor_id = my_backend.create_stream_cursor(
-        session=db_session,
+    new_cursor_id = my_pg_backend.create_stream_cursor(
+        session=pg_db_session,
         job_id=new_job.id,
         source_name="sourcetest",
         stream_name="streamtest",
@@ -189,29 +188,29 @@ def test_update_stream_cursor(my_backend: AbstractBackend, db_session: Session):
         cursor_status=CursorStatus.NOT_STARTED,
     )
 
-    my_backend.update_stream_cursor_status(
-        session=db_session,
+    my_pg_backend.update_stream_cursor_status(
+        session=pg_db_session,
         cursor_id=new_cursor_id,
         cursor_status=CursorStatus.WRITTEN_IN_DESTINATION,
     )
 
-    cursor = db_session.query(StreamCursor).filter_by(id=new_cursor_id).first()
+    cursor = pg_db_session.query(StreamCursor).filter_by(id=new_cursor_id).first()
     assert cursor.status == CursorStatus.WRITTEN_IN_DESTINATION
 
 
-def test_stream_cursor_get_last_after_destination_iteration(my_backend: AbstractBackend, db_session: Session):
-    my_backend.create_all_tables()
+def test_stream_cursor_get_last_after_destination_iteration(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+    my_pg_backend.create_all_tables()
 
-    new_job = my_backend.create_stream_job(
-        session=db_session,
+    new_job = my_pg_backend.create_stream_job(
+        session=pg_db_session,
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
         job_status=JobStatus.RUNNING,
     )
 
-    new_cursor_id = my_backend.create_stream_cursor(
-        session=db_session,
+    new_cursor_id = my_pg_backend.create_stream_cursor(
+        session=pg_db_session,
         job_id=new_job.id,
         source_name="sourcetest",
         stream_name="streamtest",
@@ -221,17 +220,17 @@ def test_stream_cursor_get_last_after_destination_iteration(my_backend: Abstract
         cursor_status=CursorStatus.NOT_STARTED,
     )
 
-    cursor = my_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=db_session)
+    cursor = my_pg_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=pg_db_session)
     assert cursor is None
 
     # We recover from the cursor only if data has been written in destination
-    my_backend.update_stream_cursor_status(
+    my_pg_backend.update_stream_cursor_status(
         cursor_id=new_cursor_id,
         cursor_status=CursorStatus.WRITTEN_IN_DESTINATION,
-        session=db_session,
+        session=pg_db_session,
     )
 
-    cursor = my_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=db_session)
+    cursor = my_pg_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=pg_db_session)
 
     assert cursor.id == new_cursor_id
     assert cursor.job_id == new_job.id

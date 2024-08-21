@@ -5,8 +5,8 @@ from pydantic import BaseModel, Field
 
 
 class BackendTypes(str, Enum):
-    BIGQUERY = "bigquery"
     POSTGRES = "postgres"
+    BIGQUERY = "bigquery"
 
     # For testing purposes or local if no database available
     SQLITE = "sqlite"  # Store in a file bizon.db

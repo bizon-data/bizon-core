@@ -20,7 +20,7 @@ from bizon.engine.backend.models import (
     StreamJob,
 )
 
-from .config import PostgresConfigDetails, SQLiteConfigDetails
+from .config import BigQueryConfigDetails, PostgresConfigDetails, SQLiteConfigDetails
 
 
 class SQLAlchemyBackend(AbstractBackend):
@@ -28,7 +28,12 @@ class SQLAlchemyBackend(AbstractBackend):
     def __init__(self, config: Union[PostgresConfigDetails, SQLiteConfigDetails], type: BackendTypes):
         super().__init__(config, type)
         self.engine: Engine = self._get_engine()
-        self.config: Union[PostgresConfigDetails, SQLiteConfigDetails] = config
+
+        self.config: Union[
+            PostgresConfigDetails,
+            SQLiteConfigDetails,
+            BigQueryConfigDetails,
+        ] = config
 
     @property
     def session(self) -> Generator[Session, None, None]:
@@ -44,19 +49,29 @@ class SQLAlchemyBackend(AbstractBackend):
 
         session_.close()
 
+    def _get_engine_bigquery(self) -> Engine:
+        if self.config.service_account_key:
+            return create_engine(
+                f"bigquery://{self.config.database}/{self.config.schema}",
+                echo=self.config.echoEngine,
+                credentials_info=self.config.service_account_key,
+            )
+        return create_engine(f"bigquery://{self.config.database}/{self.config.schema}", echo=self.config.echoEngine)
+
+    def _get_engine_postgres(self) -> Engine:
+        return create_engine(
+            f"postgresql+psycopg2://{self.config.username}:{self.config.password}@{self.config.host}:{self.config.port}/{self.config.database}",
+            echo=self.config.echoEngine,
+        )
+
     def _get_engine(self) -> Engine:
 
-        # if self.type == BackendTypes.BIGQUERY:
-        #     return create_engine(
-        #         f"{self.config.type.value}://{self.config.database}/{self.config.schema}", echo=self.config.echoEngine
-        #     )
+        if self.type == BackendTypes.BIGQUERY:
+            return self._get_engine_bigquery()
 
         # Postgres
         if self.type == BackendTypes.POSTGRES:
-            return create_engine(
-                f"postgresql+psycopg2://{self.config.username}:{self.config.password}@{self.config.host}:{self.config.port}/{self.config.database}",
-                echo=self.config.echoEngine,
-            )
+            return self._get_engine_postgres()
 
         # SQLite in a file
         if self.type == BackendTypes.SQLITE:

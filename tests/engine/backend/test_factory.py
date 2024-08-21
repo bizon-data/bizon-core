@@ -1,5 +1,7 @@
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.adapters.sqlalchemy.config import (
+    BigQueryConfigDetails,
+    BigQuerySQLAlchemyConfig,
     PostgresConfigDetails,
     PostgresSQLAlchemyConfig,
     SQLiteConfigDetails,
@@ -34,6 +36,21 @@ def test_backend_factory_postgres():
             port=5432,
             username="postgres",
             password="bizon",
+        ),
+    )
+
+    backend = BackendFactory().get_backend(config=config)
+    assert isinstance(backend, SQLAlchemyBackend)
+
+
+def test_backend_factory_bigquery():
+
+    config = BigQuerySQLAlchemyConfig(
+        type=BackendTypes.BIGQUERY,
+        config=BigQueryConfigDetails(
+            database="project",
+            schema="dataset",
+            syncCursorInDBEvery=2,
         ),
     )
 

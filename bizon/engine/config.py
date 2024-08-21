@@ -3,6 +3,7 @@ from typing import Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from .backend.adapters.sqlalchemy.config import (
+    BigQuerySQLAlchemyConfig,
     PostgresSQLAlchemyConfig,
     SQLiteConfigDetails,
     SQLiteInMemoryConfig,
@@ -26,7 +27,12 @@ class EngineConfig(BaseModel):
     # Forbid extra keys in the model
     model_config = ConfigDict(extra="forbid")
 
-    backend: Union[PostgresSQLAlchemyConfig, SQLiteInMemoryConfig, SQLiteSQLAlchemyConfig] = Field(
+    backend: Union[
+        PostgresSQLAlchemyConfig,
+        SQLiteInMemoryConfig,
+        SQLiteSQLAlchemyConfig,
+        BigQuerySQLAlchemyConfig,
+    ] = Field(
         description="Configuration for the backend",
         default=SQLiteSQLAlchemyConfig(
             type=BackendTypes.SQLITE,

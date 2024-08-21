@@ -26,6 +26,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# All dotenv
+**/**/.env
+
 # Unit test / coverage reports
 htmlcov/
 .tox/

@@ -115,6 +115,11 @@ class BackendFactory:
 
             return SQLAlchemyBackend(config=config.config, type=config.type)
 
+        elif config.type == BackendTypes.BIGQUERY:
+            from .adapters.sqlalchemy.backend import SQLAlchemyBackend
+
+            return SQLAlchemyBackend(config=config.config, type=config.type)
+
         elif config.type == BackendTypes.SQLITE:
             from .adapters.sqlalchemy.backend import SQLAlchemyBackend
 
