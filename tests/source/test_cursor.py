@@ -37,7 +37,7 @@ def test_update_state_pagination_empty_after_first_iteration(my_cursor: Cursor):
         pagination_dict={},
         nb_records_fetched=20,
     )
-    assert my_cursor.job_status == JobStatus.SUCCESS
+    assert my_cursor.job_status == JobStatus.SUCCEEDED
     assert my_cursor.is_finished == True
 
 
@@ -56,6 +56,6 @@ def test_update_state_pagination_empty_after_two_iterations(my_cursor: Cursor):
         nb_records_fetched=20,
     )
 
-    assert my_cursor.job_status == JobStatus.SUCCESS
+    assert my_cursor.job_status == JobStatus.SUCCEEDED
     assert my_cursor.is_finished == True
     assert my_cursor.iteration == 2

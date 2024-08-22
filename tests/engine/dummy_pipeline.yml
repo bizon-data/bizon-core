@@ -10,3 +10,15 @@ destination:
   name: logger
   config:
     dummy: dummy
+
+engine:
+  backend:
+    type: postgres
+    config:
+      syncCursorInDBEvery: 2
+      database: bizon
+      schema: public
+      host: localhost
+      port: 5432
+      username: postgres
+      password: bizon

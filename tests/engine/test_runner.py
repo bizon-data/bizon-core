@@ -12,7 +12,6 @@ from bizon.engine.runners.thread import ThreadRunner
 
 
 def test_load_from_config():
-    config = parse_from_yaml(os.path.abspath("tests/engine/dummy_pipeline.yml"))
     runner = RunnerFactory.create_from_yaml(os.path.abspath("tests/engine/dummy_pipeline.yml"))
     assert runner.is_running is False
 
@@ -45,7 +44,7 @@ def test_get_source(my_runner: ThreadRunner):
 
 def test_get_backend(my_runner: ThreadRunner):
     backend: SQLAlchemyBackend = my_runner.get_backend()
-    assert backend.type == "sqlite"
+    assert backend.type == "postgres"
 
 
 def test_create_job(my_runner: ThreadRunner, db_session):

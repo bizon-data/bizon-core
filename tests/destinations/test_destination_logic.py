@@ -1,5 +1,6 @@
 import pytest
 
+from bizon.common.models import SyncMetadata
 from bizon.destinations.logger.src.config import LoggerDestinationConfig
 from bizon.destinations.logger.src.destination import LoggerDestination
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
@@ -8,7 +9,17 @@ from bizon.source.models import SourceRecord
 
 @pytest.fixture(scope="function")
 def logger_destination(my_backend: SQLAlchemyBackend):
-    return LoggerDestination(sync_metadata=None, config=LoggerDestinationConfig(dummy="bizon"), backend=my_backend)
+    return LoggerDestination(
+        sync_metadata=SyncMetadata(
+            job_id="123",
+            source_name="dummy",
+            stream_name="test",
+            destination_name="logger",
+            sync_mode="full_refresh",
+        ),
+        config=LoggerDestinationConfig(dummy="bizon"),
+        backend=my_backend,
+    )
 
 
 def test_logger_destination(logger_destination: LoggerDestination):
