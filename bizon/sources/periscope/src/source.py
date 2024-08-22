@@ -84,8 +84,8 @@ class PeriscopeSource(Source):
         )
 
     def get_dashboard_ids(self) -> List[int]:
-        _, records = self.get_dashboards()
-        return [record["id"] for record in records]
+        source_iteration = self.get_dashboards()
+        return [record.id for record in source_iteration.records]
 
     def _get_charts(self, dashboard_id: int) -> List[dict]:
         MAXIMUM_ITERATION: int = 1000
