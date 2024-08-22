@@ -89,9 +89,7 @@ class AbstractDestination(ABC):
             nb_records_to_write = len(self.buffer.records)
             success, error_msg = self.write_records(source_records=self.buffer.records)
             self.buffer.flush()
-            assert (
-                len(source_records) > self.buffer.buffer_free_space
-            ), "Buffer size cannot be smaller than records size"
+            assert len(source_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
             self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
             return DestinationIteration(
                 success=success,
