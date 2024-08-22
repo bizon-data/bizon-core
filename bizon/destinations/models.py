@@ -13,6 +13,8 @@ class DestinationIteration(BaseModel):
     success: bool = Field(..., description="Success status of the iteration")
     error_message: Optional[str] = Field(None, description="Error message if iteration failed")
     records_written: int = Field(0, description="Number of records written to the destination")
+    from_source_iteration: Optional[int] = Field(None, description="From source iteration identifier buffer starts")
+    to_source_iteration: Optional[int] = Field(None, description="To source iteration identifier buffer ends")
 
 
 class DestinationRecord(BaseModel):

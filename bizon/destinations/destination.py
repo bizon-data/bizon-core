@@ -67,12 +67,16 @@ class AbstractDestination(ABC):
                     job_status=JobStatus.SUCCEEDED,
                 )
 
-            self.buffer.flush()
-            return DestinationIteration(
+            destination_iteration = DestinationIteration(
                 success=success,
                 error_message=error_msg,
                 records_written=nb_records_to_write if success else 0,
+                from_source_iteration=self.buffer.from_iteration,
+                to_source_iteration=self.buffer.to_iteration,
             )
+
+            self.buffer.flush()
+            return destination_iteration
 
         # Buffer can hold all records from this iteration
         elif self.buffer.buffer_free_space >= len(source_records):
@@ -88,27 +92,38 @@ class AbstractDestination(ABC):
         elif self.buffer.buffer_free_space > 0:
             nb_records_to_write = len(self.buffer.records)
             success, error_msg = self.write_records(source_records=self.buffer.records)
-            self.buffer.flush()
-            assert len(source_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
-            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
-            return DestinationIteration(
+
+            destination_iteration = DestinationIteration(
                 success=success,
                 error_message=error_msg,
                 records_written=nb_records_to_write if success else 0,
+                from_source_iteration=self.buffer.from_iteration,
+                to_source_iteration=self.buffer.to_iteration,
             )
+
+            self.buffer.flush()
+            assert len(source_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
+            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
+            return destination_iteration
 
         # Buffer cannot contain any records from this iteration
         else:
             nb_records_to_write = len(self.buffer.records)
             success, error_msg = self.write_records(source_records=self.buffer.records)
-            self.buffer.flush()
-            assert len(source_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
-            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
-            return DestinationIteration(
+
+            destination_iteration = DestinationIteration(
                 success=success,
                 error_message=error_msg,
                 records_written=nb_records_to_write if success else 0,
+                from_source_iteration=self.buffer.from_iteration,
+                to_source_iteration=self.buffer.to_iteration,
             )
+
+            self.buffer.flush()
+            assert len(source_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
+
+            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
+            return destination_iteration
 
     def create_cursors(self, iteration: int, destination_iteration: DestinationIteration):
         self.backend.create_destination_cursor(
