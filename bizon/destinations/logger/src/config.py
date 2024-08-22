@@ -2,10 +2,14 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-from bizon.destinations.config import AbstractDestinationConfig, DestinationTypes
+from bizon.destinations.config import (
+    AbstractDestinationConfig,
+    AbstractDestinationDetailsConfig,
+    DestinationTypes,
+)
 
 
-class LoggerDestinationConfig(BaseModel):
+class LoggerDestinationConfig(AbstractDestinationDetailsConfig):
     dummy: Optional[str] = "bizon"
 
 

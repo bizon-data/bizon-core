@@ -1,9 +1,13 @@
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
-from bizon.destinations.config import AbstractDestinationConfig, DestinationTypes
+from bizon.destinations.config import (
+    AbstractDestinationConfig,
+    AbstractDestinationDetailsConfig,
+    DestinationTypes,
+)
 
 
 class GCSBufferFormat(str, Enum):
@@ -11,7 +15,7 @@ class GCSBufferFormat(str, Enum):
     CSV = "csv"
 
 
-class BigQueryConfigDetails(BaseModel):
+class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     dataset_id: str
     dataset_location: Optional[str] = "US"
     project_id: str
@@ -26,4 +30,5 @@ class BigQueryConfigDetails(BaseModel):
 
 class BigQueryConfig(AbstractDestinationConfig):
     name: Literal[DestinationTypes.BIGQUERY]
+    buffer_size: Optional[int] = 2000
     config: BigQueryConfigDetails

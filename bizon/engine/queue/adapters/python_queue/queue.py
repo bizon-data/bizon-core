@@ -21,8 +21,8 @@ from .consumer import PythonQueueConsumer
 
 class PythonQueue(AbstractQueue):
 
-    def __init__(self, sync_metadata: SyncMetadata, config: PythonQueueConfigDetails) -> None:
-        super().__init__(sync_metadata, config)
+    def __init__(self, config: PythonQueueConfigDetails) -> None:
+        super().__init__(config)
         self.config: PythonQueueConfigDetails = config
         self.queue = queue.Queue(maxsize=self.config.queue.max_size)
 

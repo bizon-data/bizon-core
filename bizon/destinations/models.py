@@ -1,11 +1,18 @@
 import json
 from datetime import datetime
+from typing import Optional
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 from pytz import UTC
 
 from bizon.source.models import SourceRecord
+
+
+class DestinationIteration(BaseModel):
+    success: bool = Field(..., description="Success status of the iteration")
+    error_message: Optional[str] = Field(None, description="Error message if iteration failed")
+    records_written: int = Field(0, description="Number of records written to the destination")
 
 
 class DestinationRecord(BaseModel):

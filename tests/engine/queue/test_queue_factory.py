@@ -26,17 +26,7 @@ from bizon.engine.queue.config import QueueTypes
 from bizon.engine.queue.queue import QueueFactory
 
 
-@pytest.fixture(scope="function")
-def sync_metadata() -> SyncMetadata:
-    return SyncMetadata(
-        source_name="cookie",
-        stream_name="test",
-        destination_name="bigquery",
-        sync_mode="full_refresh",
-    )
-
-
-def test_queue_factory(sync_metadata):
+def test_queue_factory():
 
     config = PythonQueueConfig(
         type=QueueTypes.PYTHON_QUEUE,
@@ -46,11 +36,11 @@ def test_queue_factory(sync_metadata):
         ),
     )
 
-    queue = QueueFactory().get_queue(sync_metadata=sync_metadata, config=config)
+    queue = QueueFactory().get_queue(config=config)
     assert isinstance(queue, PythonQueue)
 
 
-def test_queue_factory_kafka(sync_metadata):
+def test_queue_factory_kafka():
 
     config = KafkaConfig(
         type=QueueTypes.KAFKA,
@@ -68,11 +58,11 @@ def test_queue_factory_kafka(sync_metadata):
         ),
     )
 
-    queue = QueueFactory().get_queue(sync_metadata=sync_metadata, config=config)
+    queue = QueueFactory().get_queue(config=config)
     assert isinstance(queue, KafkaQueue)
 
 
-def test_queue_rabbitmq(sync_metadata):
+def test_queue_rabbitmq():
 
     config = RabbitMQConfig(
         type=QueueTypes.RABBITMQ,
@@ -89,5 +79,5 @@ def test_queue_rabbitmq(sync_metadata):
         ),
     )
 
-    queue = QueueFactory().get_queue(sync_metadata=sync_metadata, config=config)
+    queue = QueueFactory().get_queue(config=config)
     assert isinstance(queue, RabbitMQ)

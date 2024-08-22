@@ -14,6 +14,7 @@ from bizon.destinations.destination import DestinationFactory
 @pytest.fixture(scope="function")
 def sync_metadata() -> SyncMetadata:
     return SyncMetadata(
+        job_id="rfou98C9DJH",
         source_name="cookie",
         stream_name="test",
         destination_name="bigquery",

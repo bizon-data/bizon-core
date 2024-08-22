@@ -17,48 +17,29 @@ def my_producer(my_backend: AbstractBackend):
     return Producer(queue=runner.queue, source=source, backend=source_backend)
 
 
-def test_create_job(my_producer: Producer, db_session):
-    job = my_producer.get_or_create_job(session=db_session)
-    assert job is not None
-
-    my_job = my_producer.backend.get_stream_job_by_id(job_id=job.id, session=db_session)
-    assert my_job.id == job.id
-
-
-def test_create_job_and_recover(my_producer: Producer, db_session):
-    job = my_producer.get_or_create_job(session=db_session)
-    assert job is not None
-
-    my_producer.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING, session=db_session)
-
-    recover_job = my_producer.get_or_create_job(session=db_session)
-    assert recover_job.id == job.id
-
-
 def test_cursor_recovery_after_iteration(my_producer: Producer, db_session):
-    job = my_producer.get_or_create_job(session=db_session)
-    assert job is not None
 
-    cursor = my_producer.get_or_create_cursor(job_id=job.id, session=db_session)
+    job_id = "vfbkgbjkgbj"
+
+    cursor = my_producer.get_or_create_cursor(job_id=job_id, session=db_session)
     assert cursor is not None
 
-    my_producer.run()
+    my_producer.run(job_id=job_id)
 
     # Here we did not run the job, so the cursor should be None
-    cursor_from_db = my_producer.backend.get_last_cursor_by_job_id(job_id=job.id, session=db_session)
-
+    cursor_from_db = my_producer.backend.get_last_source_cursor_by_job_id(job_id=job_id, session=db_session)
     assert cursor_from_db is None
 
 
 def test_cursor_recovery_not_running(my_producer: Producer, db_session):
-    job = my_producer.get_or_create_job(session=db_session)
-    assert job is not None
 
-    cursor = my_producer.get_or_create_cursor(job_id=job.id, session=db_session)
+    job_id = "vfbkgbjkgbj"
+
+    cursor = my_producer.get_or_create_cursor(job_id=job_id, session=db_session)
     assert cursor is not None
 
     # Here we did not run the job, so the cursor should be None
-    cursor_from_db = my_producer.backend.get_last_cursor_by_job_id(job_id=job.id, session=db_session)
+    cursor_from_db = my_producer.backend.get_last_source_cursor_by_job_id(job_id=job_id, session=db_session)
     assert cursor_from_db is None
 
 

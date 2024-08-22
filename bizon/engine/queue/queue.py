@@ -3,7 +3,6 @@ from typing import List, Optional
 
 from pydantic import BaseModel
 
-from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
 from bizon.source.models import SourceRecord
 
@@ -29,8 +28,7 @@ class AbstractQueueConsumer(ABC):
 
 
 class AbstractQueue(ABC):
-    def __init__(self, sync_metadata: SyncMetadata, config: AbastractQueueConfigDetails) -> None:
-        self.sync_metadata = sync_metadata
+    def __init__(self, config: AbastractQueueConfigDetails) -> None:
         self.config = config
 
     @abstractmethod
@@ -57,22 +55,21 @@ class AbstractQueue(ABC):
 class QueueFactory:
     @staticmethod
     def get_queue(
-        sync_metadata: SyncMetadata,
         config: AbstractQueueConfig,
     ) -> AbstractQueue:
         if config.type == QueueTypes.PYTHON_QUEUE:
             from .adapters.python_queue.queue import PythonQueue
 
-            return PythonQueue(config=config.config, sync_metadata=sync_metadata)
+            return PythonQueue(config=config.config)
 
         if config.type == QueueTypes.KAFKA:
             from .adapters.kafka.queue import KafkaQueue
 
-            return KafkaQueue(config=config.config, sync_metadata=sync_metadata)
+            return KafkaQueue(config=config.config)
 
         if config.type == QueueTypes.RABBITMQ:
             from .adapters.rabbitmq.queue import RabbitMQ
 
-            return RabbitMQ(config=config.config, sync_metadata=sync_metadata)
+            return RabbitMQ(config=config.config)
 
         raise ValueError(f"Queue type {config.type} is not supported")

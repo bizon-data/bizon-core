@@ -42,13 +42,19 @@ class BigQueryDestination(AbstractDestination):
         self.dataset_id = config.dataset_id
         self.dataset_location = config.dataset_location
 
+    @property
+    def table_id(self) -> str:
+        return f"{self.project_id}.{self.dataset_id}.{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
+
+    def delete_table(self) -> bool:
+        self.bq_client.delete_table(self.table_id, not_found_ok=True)  # Make an API request.
+        return True
+
     def convert_and_upload_to_buffer(self, source_records: List[SourceRecord]):
 
         bizon_records = [
             DestinationRecord.from_source_record(source_record).model_dump() for source_record in source_records
         ]
-
-        logger.info(bizon_records[0])
 
         df = pd.DataFrame(bizon_records)
 
@@ -95,12 +101,8 @@ class BigQueryDestination(AbstractDestination):
             ],
         )
 
-        table_id = (
-            f"{self.project_id}.{self.dataset_id}.{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
-        )
-
         load_job = self.bq_client.load_table_from_uri(
-            f"gs://{self.buffer_bucket_name}/{gcs_file}", table_id, job_config=job_config
+            f"gs://{self.buffer_bucket_name}/{gcs_file}", self.table_id, job_config=job_config
         )
         load_job.result()
 

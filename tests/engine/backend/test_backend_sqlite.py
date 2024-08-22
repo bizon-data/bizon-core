@@ -1,7 +1,12 @@
 from sqlalchemy.orm import Session
 
 from bizon.engine.backend.backend import AbstractBackend
-from bizon.engine.backend.models import CursorStatus, JobStatus, StreamCursor
+from bizon.engine.backend.models import (
+    CursorStatus,
+    DestinationCursor,
+    JobStatus,
+    SourceCursor,
+)
 
 
 def test_backend_client_instance(my_backend: AbstractBackend):
@@ -77,7 +82,7 @@ def test_stream_job_create_and_get(my_backend: AbstractBackend, db_session: Sess
     assert job.id == new_job.id
 
 
-def test_create_stream_cursor(my_backend: AbstractBackend, db_session: Session):
+def test_create_source_cursor(my_backend: AbstractBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -88,7 +93,7 @@ def test_create_stream_cursor(my_backend: AbstractBackend, db_session: Session):
         job_status=JobStatus.NOT_STARTED,
     )
 
-    new_cursor_id = my_backend.create_stream_cursor(
+    new_cursor_id = my_backend.create_source_cursor(
         session=db_session,
         job_id=new_job.id,
         source_name="sourcetest",
@@ -113,7 +118,7 @@ def test_create_failed_cursor(my_backend: AbstractBackend, db_session: Session):
         job_status=JobStatus.RUNNING,
     )
 
-    new_cursor_id = my_backend.create_stream_cursor(
+    new_cursor_id = my_backend.create_source_cursor(
         session=db_session,
         job_id=new_job.id,
         source_name="sourcetest",
@@ -128,7 +133,7 @@ def test_create_failed_cursor(my_backend: AbstractBackend, db_session: Session):
     assert new_cursor_id
 
 
-def test_update_stream_cursor(my_backend: AbstractBackend, db_session: Session):
+def test_update_source_cursor(my_backend: AbstractBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -139,7 +144,7 @@ def test_update_stream_cursor(my_backend: AbstractBackend, db_session: Session):
         job_status=JobStatus.RUNNING,
     )
 
-    new_cursor_id = my_backend.create_stream_cursor(
+    new_cursor_id = my_backend.create_source_cursor(
         session=db_session,
         job_id=new_job.id,
         source_name="sourcetest",
@@ -150,17 +155,17 @@ def test_update_stream_cursor(my_backend: AbstractBackend, db_session: Session):
         cursor_status=CursorStatus.NOT_STARTED,
     )
 
-    my_backend.update_stream_cursor_status(
+    my_backend.update_source_cursor_status(
         session=db_session,
         cursor_id=new_cursor_id,
         cursor_status=CursorStatus.WRITTEN_IN_DESTINATION,
     )
 
-    cursor = db_session.query(StreamCursor).filter_by(id=new_cursor_id).first()
+    cursor = db_session.query(SourceCursor).filter_by(id=new_cursor_id).first()
     assert cursor.status == CursorStatus.WRITTEN_IN_DESTINATION
 
 
-def test_stream_cursor_get_last_after_destination_iteration(my_backend: AbstractBackend, db_session: Session):
+def test_source_cursor_get_last_after_destination_iteration(my_backend: AbstractBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -171,7 +176,7 @@ def test_stream_cursor_get_last_after_destination_iteration(my_backend: Abstract
         job_status=JobStatus.RUNNING,
     )
 
-    new_cursor_id = my_backend.create_stream_cursor(
+    new_cursor_id = my_backend.create_source_cursor(
         session=db_session,
         job_id=new_job.id,
         source_name="sourcetest",
@@ -182,17 +187,70 @@ def test_stream_cursor_get_last_after_destination_iteration(my_backend: Abstract
         cursor_status=CursorStatus.NOT_STARTED,
     )
 
-    cursor = my_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=db_session)
+    cursor = my_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=db_session)
     assert cursor is None
 
     # We recover from the cursor only if data has been written in destination
-    my_backend.update_stream_cursor_status(
+    my_backend.update_source_cursor_status(
         cursor_id=new_cursor_id,
         cursor_status=CursorStatus.WRITTEN_IN_DESTINATION,
         session=db_session,
     )
 
-    cursor = my_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=db_session)
+    cursor = my_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=db_session)
 
     assert cursor.id == new_cursor_id
     assert cursor.job_id == new_job.id
+
+
+def test_create_destination_cursor(my_backend: AbstractBackend, db_session: Session):
+    my_backend.create_all_tables()
+
+    new_job = my_backend.create_stream_job(
+        session=db_session,
+        source_name="sourcetest",
+        stream_name="streamtest",
+        total_records_to_fetch=200,
+        job_status=JobStatus.RUNNING,
+    )
+
+    new_destination_cursor = my_backend.create_destination_cursor(
+        session=db_session,
+        job_id=new_job.id,
+        source_name="sourcetest",
+        stream_name="streamtest",
+        destination_name="destinationtest",
+        from_source_iteration=0,
+        to_source_iteration=0,
+        rows_written=0,
+    )
+
+    assert new_destination_cursor.rows_written == 0
+
+
+def test_update_destination_cursor(my_backend: AbstractBackend, db_session: Session):
+
+    my_backend.create_all_tables()
+
+    new_destination_cursor = my_backend.create_destination_cursor(
+        session=db_session,
+        job_id="crfrifjpduehdpziuh",
+        source_name="sourcetest",
+        stream_name="streamtest",
+        destination_name="destinationtest",
+        from_source_iteration=0,
+        to_source_iteration=0,
+        rows_written=0,
+    )
+
+    assert new_destination_cursor.rows_written == 0
+
+    my_backend.update_destination_cursor(
+        session=db_session,
+        cursor_id=new_destination_cursor.id,
+        status=CursorStatus.WRITTEN_IN_DESTINATION,
+        rows_written=10,
+    )
+
+    cursor = my_backend.get_destination_cursor_by_id(cursor_id=new_destination_cursor.id, session=db_session)
+    assert cursor.rows_written == 10

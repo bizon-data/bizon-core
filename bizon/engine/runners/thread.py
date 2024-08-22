@@ -7,7 +7,7 @@ from bizon.common.models import BizonConfig
 from bizon.engine.runner import AbstractRunner
 
 IS_ALIVE_CHECK_INTERVAL = 2  # seconds
-CONSUMER_START_DELAY = 0  # seconds
+CONSUMER_START_DELAY = 5  # seconds
 
 
 class ThreadRunner(AbstractRunner):
@@ -19,7 +19,7 @@ class ThreadRunner(AbstractRunner):
 
         # Create the producer thread
         producer = self.get_producer()
-        threaded_producer = Thread(target=producer.run)
+        threaded_producer = Thread(target=producer.run, args=(self.job.id,))
 
         # Create the destination thread
         consumer = self.queue.get_consumer(destination=self.destination)

@@ -34,6 +34,11 @@ class RabbitMQConsumer(AbstractQueueConsumer):
 
             if queue_message.signal == QUEUE_TERMINATION:
                 logger.info("Received termination signal, waiting for destination to close gracefully ...")
+                self.destination.write_records_and_update_cursor(
+                    source_records=queue_message.source_records,
+                    iteration=queue_message.iteration,
+                    last_iteration=True,
+                )
                 break
 
             if not queue_message.source_records:

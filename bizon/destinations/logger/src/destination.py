@@ -18,6 +18,9 @@ class LoggerDestination(AbstractDestination):
     def check_connection(self) -> bool:
         return True
 
+    def delete_table(self) -> bool:
+        return True
+
     def write_records(self, source_records: List[SourceRecord]) -> Tuple[bool, str]:
         for record in source_records:
             logger.info(record.data)

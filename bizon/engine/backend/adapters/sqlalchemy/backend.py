@@ -11,12 +11,14 @@ from sqlalchemy.orm import Session, scoped_session, sessionmaker
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.config import BackendTypes
 from bizon.engine.backend.models import (
+    TABLE_DESTINATION_CURSOR,
     TABLE_SOURCE_CURSOR,
     TABLE_STREAM_INFO,
     Base,
     CursorStatus,
+    DestinationCursor,
     JobStatus,
-    StreamCursor,
+    SourceCursor,
     StreamJob,
 )
 
@@ -104,6 +106,8 @@ class SQLAlchemyBackend(AbstractBackend):
                     f"Schema or dataset {self.config.schema} does not exist in the database, you need to create it first."
                 )
 
+    #### INIT DATABASE ####
+
     def create_all_tables(self):
         Base.metadata.create_all(self.engine)
 
@@ -130,6 +134,10 @@ class SQLAlchemyBackend(AbstractBackend):
             all_entities_exist = False
             logger.info(f"Table {TABLE_SOURCE_CURSOR} does not exist in the database, we will create it")
 
+        if not inspect(self.engine).has_table(TABLE_DESTINATION_CURSOR):
+            all_entities_exist = False
+            logger.info(f"Table {TABLE_DESTINATION_CURSOR} does not exist in the database, we will create it")
+
         return all_entities_exist
 
     def _add_and_commit(self, obj, session: Optional[Session] = None):
@@ -142,6 +150,8 @@ class SQLAlchemyBackend(AbstractBackend):
     def _execute(self, select: Select, session: Optional[Session] = None) -> Result:
         session = session or next(self.session)
         return session.execute(select)
+
+    #### STREAM JOB ####
 
     def create_stream_job(
         self,
@@ -208,7 +218,9 @@ class SQLAlchemyBackend(AbstractBackend):
         logger.debug(f"No running job found for source={source_name} stream={stream_name}")
         return None
 
-    def create_stream_cursor(
+    #### SOURCE CURSOR ####
+
+    def create_source_cursor(
         self,
         job_id: str,
         source_name: str,
@@ -220,8 +232,8 @@ class SQLAlchemyBackend(AbstractBackend):
         error_message: Optional[str] = None,
         session: Optional[Session] = None,
     ) -> str:
-        """Create a new StreamCursor record in db and return its ID"""
-        new_stream_cursor = StreamCursor(
+        """Create a new SourceCursor record in db and return its ID"""
+        new_source_cursor = SourceCursor(
             job_id=job_id,
             source_name=source_name,
             stream_name=stream_name,
@@ -231,11 +243,11 @@ class SQLAlchemyBackend(AbstractBackend):
             status=cursor_status,
             error_message=error_message,
         )
-        new_stream_cursor_id = self._add_and_commit(new_stream_cursor, session=session).id
-        logger.debug(f"New streamCursor has been created with id={new_stream_cursor_id}")
-        return new_stream_cursor_id
+        new_source_cursor_id = self._add_and_commit(new_source_cursor, session=session).id
+        logger.debug(f"New streamCursor has been created with id={new_source_cursor_id}")
+        return new_source_cursor_id
 
-    def update_stream_cursor_status(
+    def update_source_cursor_status(
         self,
         cursor_id: str,
         cursor_status: CursorStatus,
@@ -244,18 +256,18 @@ class SQLAlchemyBackend(AbstractBackend):
     ):
         """Update the status of the stream cursor with the given id"""
         stmt = (
-            update(StreamCursor)
-            .where(StreamCursor.id == cursor_id)
+            update(SourceCursor)
+            .where(SourceCursor.id == cursor_id)
             .values(status=cursor_status, error_message=error_message, updated_at=datetime.now(tz=UTC))
             .execution_options(synchronize_session="fetch")
         )
         self._execute(stmt, session=session)
 
-    def get_cursor_by_id(self, cursor_id: str, session: Optional[Session] = None) -> Optional[StreamCursor]:
+    def get_source_cursor_by_id(self, cursor_id: str, session: Optional[Session] = None) -> Optional[SourceCursor]:
         """Get the cursor by its ID"""
 
-        smt = select(StreamCursor).filter(
-            StreamCursor.id == cursor_id,
+        smt = select(SourceCursor).filter(
+            SourceCursor.id == cursor_id,
         )
 
         results = self._execute(smt, session=session).one_or_none()
@@ -264,18 +276,20 @@ class SQLAlchemyBackend(AbstractBackend):
         logger.warning(f"No cursor found for id={cursor_id}")
         return None
 
-    def get_last_cursor_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[StreamCursor]:
+    def get_last_source_cursor_by_job_id(
+        self, job_id: str, session: Optional[Session] = None
+    ) -> Optional[SourceCursor]:
         """Get the last cursor we should start source from for the given job id
         The cursor should have status CursorStatus.WRITTEN_IN_DESTINATION
         """
 
         smt = (
-            select(StreamCursor)
+            select(SourceCursor)
             .filter(
-                StreamCursor.job_id == job_id,
-                StreamCursor.status == CursorStatus.WRITTEN_IN_DESTINATION,
+                SourceCursor.job_id == job_id,
+                SourceCursor.status == CursorStatus.WRITTEN_IN_DESTINATION,
             )
-            .order_by(StreamCursor.iteration.desc())
+            .order_by(SourceCursor.iteration.desc())
         )
 
         results = self._execute(smt, session=session).first()
@@ -285,19 +299,19 @@ class SQLAlchemyBackend(AbstractBackend):
         logger.warning(f"No last cursor found for job_id={job_id}")
         return None
 
-    def get_last_cursor_by_stream_and_iteration(
+    def get_last_source_cursor_by_stream_and_iteration(
         self, source_name: str, stream_name: str, iteration: int, session: Optional[Session] = None
-    ) -> Optional[StreamCursor]:
+    ) -> Optional[SourceCursor]:
         """Get the last cursor for the given stream and iteration"""
 
         smt = (
-            select(StreamCursor)
+            select(SourceCursor)
             .filter(
-                StreamCursor.source_name == source_name,
-                StreamCursor.stream_name == stream_name,
-                StreamCursor.iteration == iteration,
+                SourceCursor.source_name == source_name,
+                SourceCursor.stream_name == stream_name,
+                SourceCursor.iteration == iteration,
             )
-            .order_by(StreamCursor.created_at.desc())
+            .order_by(SourceCursor.created_at.desc())
         )
 
         results = self._execute(smt, session=session).first()
@@ -305,4 +319,64 @@ class SQLAlchemyBackend(AbstractBackend):
             return results[0]
 
         logger.warning(f"No last cursor found for source={source_name} stream={stream_name} iteration={iteration}")
+        return None
+
+    ### DESTINATION CURSOR ###
+
+    def create_destination_cursor(
+        self,
+        job_id: str,
+        source_name: str,
+        stream_name: str,
+        destination_name: str,
+        from_source_iteration: int,
+        to_source_iteration: int,
+        rows_written: int,
+        session: Session | None = None,
+    ) -> DestinationCursor:
+
+        destination_cursor = DestinationCursor(
+            source_name=source_name,
+            stream_name=stream_name,
+            destination_name=destination_name,
+            job_id=job_id,
+            from_source_iteration=from_source_iteration,
+            to_source_iteration=to_source_iteration,
+            rows_written=rows_written,
+        )
+        new_destination_cursor = self._add_and_commit(destination_cursor, session=session)
+        logger.debug(f"New Destination Cursor has been created: {new_destination_cursor}")
+        return new_destination_cursor
+
+    def update_destination_cursor(
+        self,
+        cursor_id: str,
+        rows_written: int,
+        status: CursorStatus,
+        error_message: Optional[str] = None,
+        session: Session | None = None,
+    ):
+        """Update the status of the stream job with the given id"""
+        stmt = (
+            update(DestinationCursor)
+            .where(DestinationCursor.id == cursor_id)
+            .values(
+                status=status, error_message=error_message, rows_written=rows_written, updated_at=datetime.now(tz=UTC)
+            )
+            .execution_options(synchronize_session="fetch")
+        )
+        self._execute(stmt, session=session)
+
+    def get_destination_cursor_by_id(
+        self, cursor_id: str, session: Optional[Session] = None
+    ) -> Optional[DestinationCursor]:
+        """Get the destination cursor by its ID"""
+        smt = select(DestinationCursor).filter(
+            DestinationCursor.id == cursor_id,
+        )
+        results = self._execute(smt, session=session).one_or_none()
+
+        if results:
+            return results[0]
+        logger.warning(f"No job found for id={cursor_id}")
         return None

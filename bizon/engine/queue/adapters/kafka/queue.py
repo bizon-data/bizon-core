@@ -4,7 +4,6 @@ from typing import List
 from kafka import KafkaProducer
 from loguru import logger
 
-from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
 from bizon.engine.queue.queue import QUEUE_TERMINATION, AbstractQueue, QueueMessage
 from bizon.source.models import SourceRecord
@@ -15,8 +14,8 @@ from .consumer import KafkaConsumer_
 
 class KafkaQueue(AbstractQueue):
 
-    def __init__(self, sync_metadata: SyncMetadata, config: KafkaConfigDetails) -> None:
-        super().__init__(sync_metadata, config)
+    def __init__(self, config: KafkaConfigDetails) -> None:
+        super().__init__(config)
         self.config: KafkaConfigDetails = config
 
     def connect(self):

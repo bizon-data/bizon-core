@@ -5,26 +5,33 @@ from loguru import logger
 
 from bizon.common.models import SyncMetadata
 from bizon.engine.backend.backend import AbstractBackend
-from bizon.engine.backend.models import CursorStatus
+from bizon.source.config import SourceSyncModes
 from bizon.source.models import SourceRecord
 
-from .config import AbstractDestinationConfig, DestinationTypes
+from .buffer import DestinationBuffer
+from .config import (
+    AbstractDestinationConfig,
+    AbstractDestinationDetailsConfig,
+    DestinationTypes,
+)
+from .models import DestinationIteration
 
 
 class AbstractDestination(ABC):
 
-    def __init__(self, sync_metadata: SyncMetadata, config: AbstractDestinationConfig, backend: AbstractBackend):
+    def __init__(self, sync_metadata: SyncMetadata, config: AbstractDestinationDetailsConfig, backend: AbstractBackend):
         self.sync_metadata = sync_metadata
         self.config = config
         self.backend = backend
-        self.buffer = []
-
-    @property
-    def name(self) -> str:
-        return self.config.name
+        self.buffer = DestinationBuffer(buffer_size=self.config.buffer_size)
 
     @abstractmethod
     def check_connection(self) -> bool:
+        pass
+
+    @abstractmethod
+    def delete_table(self) -> bool:
+        """Delete table in destination"""
         pass
 
     @abstractmethod
@@ -32,48 +39,102 @@ class AbstractDestination(ABC):
         """Write records to destination for the given iteration and return success status and error message"""
         pass
 
+    def prepare_destination(self):
+        """Prepare destination before writing records"""
+        # Delete table if full refresh
+        if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
+            self.delete_table()
+
+    def write_or_buffer_records(
+        self,
+        source_records: List[SourceRecord],
+        iteration: int,
+        last_iteration: bool = False,
+    ) -> DestinationIteration:
+        """Write records to destination or buffer them for the given iteration"""
+
+        # Last iteration, write all records to destination
+        if last_iteration:
+            logger.debug(f"Writing last iteration records to destination")
+            assert len(source_records) == 0, "Last iteration should not have any records"
+            nb_records_to_write = len(self.buffer.records)
+            success, error_msg = self.write_records(source_records=self.buffer.records)
+            self.buffer.flush()
+            return DestinationIteration(
+                success=success,
+                error_message=error_msg,
+                records_written=nb_records_to_write if success else 0,
+            )
+
+        # Buffer can hold all records from this iteration
+        elif self.buffer.buffer_free_space >= len(source_records):
+            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
+            return DestinationIteration(
+                success=True,
+                error_message=None,
+                records_written=0,
+            )
+
+        # Buffer can contain some records from this iteration
+        # For now we will write all records to destination and then buffer the remaining records
+        elif self.buffer.buffer_free_space > 0:
+            nb_records_to_write = len(self.buffer.records)
+            success, error_msg = self.write_records(source_records=self.buffer.records)
+            self.buffer.flush()
+            assert (
+                len(source_records) > self.buffer.buffer_free_space
+            ), "Buffer size cannot be smaller than records size"
+            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
+            return DestinationIteration(
+                success=success,
+                error_message=error_msg,
+                records_written=nb_records_to_write if success else 0,
+            )
+
+        # Buffer cannot contain any records from this iteration
+        else:
+            nb_records_to_write = len(self.buffer.records)
+            success, error_msg = self.write_records(source_records=self.buffer.records)
+            self.buffer.flush()
+            assert len(source_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
+            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
+            return DestinationIteration(
+                success=success,
+                error_message=error_msg,
+                records_written=nb_records_to_write if success else 0,
+            )
+
+    def create_cursors(self, iteration: int, destination_iteration: DestinationIteration):
+        self.backend.create_destination_cursor(
+            job_id=self.sync_metadata.job_id,
+            source_name=self.sync_metadata.source_name,
+            stream_name=self.sync_metadata.stream_name,
+            destination_name=self.sync_metadata.destination_name,
+            from_source_iteration=iteration,
+            to_source_iteration=iteration,
+            rows_written=destination_iteration.records_written,
+        )
+
     def write_records_and_update_cursor(
         self, source_records: List[SourceRecord], iteration: int, last_iteration: bool = False
     ) -> bool:
         """Write records to destination and update the cursor for the given iteration"""
 
-        # TODO: Implement batch writing
-        # Write records if len(buffer) >= batch_size
-        if len(self.buffer) < 2000 and not last_iteration:
-            self.buffer.extend(source_records)
-            logger.info(f"Buffered {len(source_records)} records")
-            success = True
-        else:
-            success, error_msg = self.write_records(self.buffer)
-            self.buffer = []
+        # Prepare destination
+        if iteration == 0:
+            self.prepare_destination()
 
+        # Buffer records otherwise write to destination
+        destination_iteration = self.write_or_buffer_records(
+            source_records=source_records,
+            iteration=iteration,
+            last_iteration=last_iteration,
+        )
+
+        # Update cursor in DB
         if iteration % self.backend.config.syncCursorInDBEvery == 0:
-
-            cursor = self.backend.get_last_cursor_by_stream_and_iteration(
-                source_name=self.sync_metadata.source_name,
-                stream_name=self.sync_metadata.stream_name,
-                iteration=iteration,
-            )
-
-            if not cursor:
-                raise ValueError(
-                    f"Cursor not found for stream {self.sync_metadata.stream_name} and iteration {iteration}"
-                )
-
-            if success:
-                # If successful, update cursor status
-                self.backend.update_stream_cursor_status(
-                    cursor_id=cursor.id,
-                    cursor_status=CursorStatus.WRITTEN_IN_DESTINATION,
-                )
-                return
-
-            # If failed, update cursor status
-            self.backend.update_stream_cursor_status(
-                cursor_id=cursor.id,
-                cursor_status=CursorStatus.FAILED,
-                error_message=error_msg,
-            )
+            # Update cursors
+            self.create_cursors(iteration=iteration, destination_iteration=destination_iteration)
 
         return True
 
@@ -91,9 +152,14 @@ class DestinationFactory:
 
             return LoggerDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
 
-        if config.name == DestinationTypes.BIGQUERY:
+        elif config.name == DestinationTypes.BIGQUERY:
             from .bigquery.src.destination import BigQueryDestination
 
             return BigQueryDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
+
+        elif config.name == DestinationTypes.FILE:
+            from .file.src.destination import FileDestination
+
+            return FileDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
 
         raise ValueError(f"Destination {config.name}" f"with params {config} not found")

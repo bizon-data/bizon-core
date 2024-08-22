@@ -20,8 +20,8 @@ from .consumer import RabbitMQConsumer
 
 class RabbitMQ(AbstractQueue):
 
-    def __init__(self, sync_metadata: SyncMetadata, config: RabbitMQConfigDetails) -> None:
-        super().__init__(sync_metadata, config)
+    def __init__(self, config: RabbitMQConfigDetails) -> None:
+        super().__init__(config)
         self.config: RabbitMQConfigDetails = config
 
     def connect(self):
