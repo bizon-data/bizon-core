@@ -36,7 +36,8 @@ class ThreadRunner(AbstractRunner):
         threaded_consumer.start()
         logger.info("Consumer has started ...")
 
-        while threaded_producer.is_alive():
+        # TODO: add self-healing mechanism
+        while threaded_consumer.is_alive():
             time.sleep(IS_ALIVE_CHECK_INTERVAL)
         self._is_running = False
         return True
