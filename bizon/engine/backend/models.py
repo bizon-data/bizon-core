@@ -21,6 +21,7 @@ class JobStatus(str, Enum):
     SUCCESS = "success"
     FAILED = "failed"
     CANCELED = "cancelled"
+    SUCCEEDED = "succeeded"
 
 
 class CursorStatus(str, Enum):

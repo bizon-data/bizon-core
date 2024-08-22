@@ -5,6 +5,7 @@ from loguru import logger
 
 from bizon.common.models import SyncMetadata
 from bizon.engine.backend.backend import AbstractBackend
+from bizon.engine.backend.models import JobStatus
 from bizon.source.config import SourceSyncModes
 from bizon.source.models import SourceRecord
 
@@ -59,6 +60,13 @@ class AbstractDestination(ABC):
             assert len(source_records) == 0, "Last iteration should not have any records"
             nb_records_to_write = len(self.buffer.records)
             success, error_msg = self.write_records(source_records=self.buffer.records)
+
+            if success:
+                self.backend.update_stream_job_status(
+                    job_id=self.sync_metadata.job_id,
+                    job_status=JobStatus.SUCCEEDED,
+                )
+
             self.buffer.flush()
             return DestinationIteration(
                 success=success,

@@ -56,7 +56,7 @@ class Cursor:
 
     @property
     def is_finished(self) -> bool:
-        if self.job_status == JobStatus.SUCCESS:
+        if self.job_status == JobStatus.SUCCEEDED:
             return True
         return False
 
@@ -96,7 +96,7 @@ class Cursor:
 
         # *** In case pagination is empty, we consider we finished syncing the source ****
         if pagination_dict is None or len(pagination_dict) == 0:
-            self.job_status = JobStatus.SUCCESS
+            self.job_status = JobStatus.SUCCEEDED
 
             if self.total_records is not None and self.rows_fetched != self.total_records:
                 logger.warning(
