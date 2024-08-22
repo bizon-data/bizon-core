@@ -39,6 +39,8 @@ class RabbitMQConsumer(AbstractQueueConsumer):
                     iteration=queue_message.iteration,
                     last_iteration=True,
                 )
+                channel.queue_delete(queue=self.config.queue.queue_name)
+                channel.close()
                 break
 
             if not queue_message.source_records:
