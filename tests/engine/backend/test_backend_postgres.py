@@ -15,7 +15,7 @@ def my_pg_backend_config():
     return PostgresSQLAlchemyConfig(
         type=BackendTypes.POSTGRES,
         config=PostgresConfigDetails(
-            database="bizon",
+            database="bizon_test",
             schema="public",
             syncCursorInDBEvery=2,
             host="localhost",
@@ -43,7 +43,7 @@ def pg_db_session(my_pg_backend: SQLAlchemyBackend):
 
 
 def test_backend_client_instance(my_pg_backend: SQLAlchemyBackend):
-    assert my_pg_backend.config.database == "bizon"
+    assert my_pg_backend.config.database == "bizon_test"
     assert my_pg_backend.config.schema == "public"
     assert my_pg_backend.config.syncCursorInDBEvery == 2
 

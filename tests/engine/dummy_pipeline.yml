@@ -16,7 +16,7 @@ engine:
     type: postgres
     config:
       syncCursorInDBEvery: 2
-      database: bizon
+      database: bizon_test
       schema: public
       host: localhost
       port: 5432
