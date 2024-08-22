@@ -51,6 +51,7 @@ class AbstractDestination(ABC):
         source_records: List[SourceRecord],
         iteration: int,
         last_iteration: bool = False,
+        session=None,
     ) -> DestinationIteration:
         """Write records to destination or buffer them for the given iteration"""
 
@@ -65,6 +66,7 @@ class AbstractDestination(ABC):
                 self.backend.update_stream_job_status(
                     job_id=self.sync_metadata.job_id,
                     job_status=JobStatus.SUCCEEDED,
+                    session=session,
                 )
 
             destination_iteration = DestinationIteration(

@@ -16,7 +16,7 @@ def load_env():
     load_dotenv(env_file)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def my_backend_config():
     return SQLiteInMemoryConfig(
         type=BackendTypes.SQLITE_IN_MEMORY,
@@ -28,12 +28,12 @@ def my_backend_config():
     )
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def my_backend(my_backend_config: SQLiteInMemoryConfig) -> SQLAlchemyBackend:
     return SQLAlchemyBackend(config=my_backend_config.config, type=my_backend_config.type)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def db_session(my_backend: SQLAlchemyBackend):
     """yields a SQLAlchemy connection which is rollbacked after the test"""
     session_ = scoped_session(sessionmaker(bind=my_backend.engine, expire_on_commit=False))

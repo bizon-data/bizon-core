@@ -1,34 +1,29 @@
 from sqlalchemy.orm import Session
 
-from bizon.engine.backend.backend import AbstractBackend
-from bizon.engine.backend.models import (
-    CursorStatus,
-    DestinationCursor,
-    JobStatus,
-    SourceCursor,
-)
+from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
+from bizon.engine.backend.models import CursorStatus, JobStatus, SourceCursor
 
 
-def test_backend_client_instance(my_backend: AbstractBackend):
+def test_backend_client_instance(my_backend: SQLAlchemyBackend):
     assert my_backend.config.database == "NOT_DATABASE_WITH_SQLITE"
     assert my_backend.config.schema == "NOT_SCHEMA_IN_SQLITE"
     assert my_backend.config.syncCursorInDBEvery == 2
 
 
-def test_check_prerequisites(my_backend: AbstractBackend):
+def test_check_prerequisites(my_backend: SQLAlchemyBackend):
     my_backend.drop_all_tables()
 
     all_entities_exist = my_backend.check_prerequisites()
     assert all_entities_exist == False
 
 
-def test_create_all_then_check_prerequisites(my_backend: AbstractBackend):
+def test_create_all_then_check_prerequisites(my_backend: SQLAlchemyBackend):
     my_backend.create_all_tables()
     all_entities_exist = my_backend.check_prerequisites()
     assert all_entities_exist == True
 
 
-def test_create_stream_job(my_backend: AbstractBackend, db_session: Session):
+def test_create_stream_job(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job_id = my_backend.create_stream_job(
@@ -42,7 +37,7 @@ def test_create_stream_job(my_backend: AbstractBackend, db_session: Session):
     assert new_job_id
 
 
-def test_update_stream_job_status(my_backend: AbstractBackend, db_session: Session):
+def test_update_stream_job_status(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -67,7 +62,7 @@ def test_update_stream_job_status(my_backend: AbstractBackend, db_session: Sessi
     assert new_job.id == job_running.id
 
 
-def test_stream_job_create_and_get(my_backend: AbstractBackend, db_session: Session):
+def test_stream_job_create_and_get(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -82,7 +77,7 @@ def test_stream_job_create_and_get(my_backend: AbstractBackend, db_session: Sess
     assert job.id == new_job.id
 
 
-def test_create_source_cursor(my_backend: AbstractBackend, db_session: Session):
+def test_create_source_cursor(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -107,7 +102,7 @@ def test_create_source_cursor(my_backend: AbstractBackend, db_session: Session):
     assert new_cursor_id
 
 
-def test_create_failed_cursor(my_backend: AbstractBackend, db_session: Session):
+def test_create_failed_cursor(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -133,7 +128,7 @@ def test_create_failed_cursor(my_backend: AbstractBackend, db_session: Session):
     assert new_cursor_id
 
 
-def test_update_source_cursor(my_backend: AbstractBackend, db_session: Session):
+def test_update_source_cursor(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -165,7 +160,7 @@ def test_update_source_cursor(my_backend: AbstractBackend, db_session: Session):
     assert cursor.status == CursorStatus.WRITTEN_IN_DESTINATION
 
 
-def test_source_cursor_get_last_after_destination_iteration(my_backend: AbstractBackend, db_session: Session):
+def test_source_cursor_get_last_after_destination_iteration(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -203,7 +198,7 @@ def test_source_cursor_get_last_after_destination_iteration(my_backend: Abstract
     assert cursor.job_id == new_job.id
 
 
-def test_create_destination_cursor(my_backend: AbstractBackend, db_session: Session):
+def test_create_destination_cursor(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -228,7 +223,7 @@ def test_create_destination_cursor(my_backend: AbstractBackend, db_session: Sess
     assert new_destination_cursor.rows_written == 0
 
 
-def test_update_destination_cursor(my_backend: AbstractBackend, db_session: Session):
+def test_update_destination_cursor(my_backend: SQLAlchemyBackend, db_session: Session):
 
     my_backend.create_all_tables()
 

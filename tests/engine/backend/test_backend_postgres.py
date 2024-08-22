@@ -48,13 +48,6 @@ def test_backend_client_instance(my_pg_backend: SQLAlchemyBackend):
     assert my_pg_backend.config.syncCursorInDBEvery == 2
 
 
-def test_check_prerequisites(my_pg_backend: SQLAlchemyBackend):
-    my_pg_backend.drop_all_tables()
-
-    all_entities_exist = my_pg_backend.check_prerequisites()
-    assert all_entities_exist == False
-
-
 def test_create_all_then_check_prerequisites(my_pg_backend: SQLAlchemyBackend):
     my_pg_backend.create_all_tables()
     all_entities_exist = my_pg_backend.check_prerequisites()
