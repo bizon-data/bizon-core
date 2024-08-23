@@ -432,7 +432,7 @@ requests = ["requests (>=2.20.0,<3.0.0.dev0)"]
 name = "google-cloud-bigquery"
 version = "3.25.0"
 description = "Google BigQuery API client library"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "google-cloud-bigquery-3.25.0.tar.gz", hash = "sha256:5b2aff3205a854481117436836ae1403f11f2594e6810a98886afd57eda28509"},
@@ -463,7 +463,7 @@ tqdm = ["tqdm (>=4.7.4,<5.0.0dev)"]
 name = "google-cloud-bigquery-storage"
 version = "2.25.0"
 description = "Google Cloud Bigquery Storage API client library"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "google-cloud-bigquery-storage-2.25.0.tar.gz", hash = "sha256:195ffd2b180e9eaa22beab3e40a0b61ecd146ecb32667cf42269a8d7111b4d48"},
@@ -715,7 +715,7 @@ test = ["objgraph", "psutil"]
 name = "grpcio"
 version = "1.66.0"
 description = "HTTP/2-based RPC framework"
-optional = false
+optional = true
 python-versions = ">=3.8"
 files = [
     {file = "grpcio-1.66.0-cp310-cp310-linux_armv7l.whl", hash = "sha256:ad7256f224437b2c29c2bef98ddd3130454c5b1ab1f0471fc11794cefd4dbd3d"},
@@ -773,7 +773,7 @@ protobuf = ["grpcio-tools (>=1.66.0)"]
 name = "grpcio-status"
 version = "1.62.3"
 description = "Status proto mapping for gRPC"
-optional = false
+optional = true
 python-versions = ">=3.6"
 files = [
     {file = "grpcio-status-1.62.3.tar.gz", hash = "sha256:289bdd7b2459794a12cf95dc0cb727bd4a1742c37bd823f760236c937e53a485"},
@@ -962,7 +962,7 @@ test = ["ipykernel", "pre-commit", "pytest (<8)", "pytest-cov", "pytest-timeout"
 name = "kafka-python"
 version = "2.0.2"
 description = "Pure Python client for Apache Kafka"
-optional = false
+optional = true
 python-versions = "*"
 files = [
     {file = "kafka-python-2.0.2.tar.gz", hash = "sha256:04dfe7fea2b63726cd6f3e79a2d86e709d608d74406638c5da33a01d45a9d7e3"},
@@ -1285,7 +1285,7 @@ ptyprocess = ">=0.5"
 name = "pika"
 version = "1.3.2"
 description = "Pika Python AMQP Client Library"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "pika-1.3.2-py3-none-any.whl", hash = "sha256:0779a7c1fafd805672796085560d290213a465e4f6f76a6fb19e378d8041a14f"},
@@ -1412,7 +1412,7 @@ test = ["enum34", "ipaddress", "mock", "pywin32", "wmi"]
 name = "psycopg2-binary"
 version = "2.9.9"
 description = "psycopg2 - Python-PostgreSQL Database Adapter"
-optional = false
+optional = true
 python-versions = ">=3.7"
 files = [
     {file = "psycopg2-binary-2.9.9.tar.gz", hash = "sha256:7f01846810177d829c7692f1f5ada8096762d9172af1b1a28d4ab5b77c923c1c"},
@@ -2189,7 +2189,7 @@ sqlcipher = ["sqlcipher3_binary"]
 name = "sqlalchemy-bigquery"
 version = "1.11.0"
 description = "SQLAlchemy dialect for BigQuery"
-optional = false
+optional = true
 python-versions = "<3.13,>=3.8"
 files = [
     {file = "sqlalchemy-bigquery-1.11.0.tar.gz", hash = "sha256:09a2b99b8591d441eef66d34d13057d0f09423fe259fef98c0502df61419d242"},
@@ -2416,7 +2416,13 @@ files = [
 doc = ["furo", "jaraco.packaging (>=9.3)", "jaraco.tidelift (>=1.4)", "rst.linker (>=1.9)", "sphinx (>=3.5)", "sphinx-lint"]
 test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", "jaraco.test", "more-itertools", "pytest (>=6,!=8.1.*)", "pytest-checkdocs (>=2.4)", "pytest-cov", "pytest-enabler (>=2.2)", "pytest-ignore-flaky", "pytest-mypy", "pytest-ruff (>=0.2.1)"]
 
+[extras]
+bigquery = ["google-cloud-bigquery", "google-cloud-bigquery-storage", "sqlalchemy-bigquery"]
+kafka = ["kafka-python"]
+postgres = ["psycopg2-binary"]
+rabbitmq = ["pika"]
+
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.13"
-content-hash = "6f8e7bd81739da8185c1347c70e7af85a17c06caeefabce4b8a3e535f1130c05"
+content-hash = "92af40e495a9d49626e8e639ed924b34efd99b0a8d9399d9103c620783902656"
