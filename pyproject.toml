@@ -35,6 +35,7 @@ kafka-python = { version = "^2.0.2", optional = true }
 
 # RabbitMQ
 pika = { version = "^1.3.2", optional = true }
+python-dotenv = "^1.0.1"
 
 [tool.poetry.extras]
 postgres = ["psycopg2-binary"]
@@ -43,10 +44,16 @@ kafka = ["kafka-python"]
 rabbitmq = ["pika"]
 
 ###### [Test] dependencies ######
+[tool.poetry.group.test]
+optional = true
+
 [tool.poetry.group.test.dependencies]
 pytest = "^7.2.2"
 requests-mock = "^1.10.0"
 python-dotenv = "^1.0.1"
+
+[tool.poetry.group.dev]
+optional = true
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.5"
