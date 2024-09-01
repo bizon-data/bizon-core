@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 
 install:
-	poetry install
+	pip install poetry
+	poetry install --all-extras
 	pre-commit install
 
 format:
