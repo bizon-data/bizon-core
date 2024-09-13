@@ -1,0 +1,19 @@
+source:
+  source_name: gsheets
+  stream_name: worksheet
+  spreadsheet_url: <MY_SPREADSHEET_URL>
+  worksheet_name: Sheet1
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
+
+engine:
+  backend:
+    type: bigquery
+    database: <MY_GCP_PROJECT>
+    schema: bizon_test
+    syncCursorInDBEvery: 2
+  runner:
+    log_level: DEBUG

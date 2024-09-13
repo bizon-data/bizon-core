@@ -9,6 +9,10 @@ from bizon.source.source import Source
 from .dummy.src.config import DummySourceConfig, DummyStreams
 from .dummy.src.source import DummySource
 
+# Google Sheets
+from .gsheets.src.config import GsheetsSourceConfig
+from .gsheets.src.source import GsheetsSource
+
 # HubSpot
 from .hubspot.src.models.config import HubSpotObjects, HubSpotSourceConfig
 from .hubspot.src.source import HubSpotSource
@@ -83,6 +87,12 @@ SOURCES = SourceMap(
             streams=[
                 Stream(name=PeriscopeStreams.DASHBOARDS, client=PeriscopeSource, config=PeriscopeSourceConfig),
                 Stream(name=PeriscopeStreams.CHARTS, client=PeriscopeSource, config=PeriscopeSourceConfig),
+            ],
+        ),
+        Source(
+            name="gsheets",
+            streams=[
+                Stream(name="worksheet", client=GsheetsSource, config=GsheetsSourceConfig),
             ],
         ),
     ]

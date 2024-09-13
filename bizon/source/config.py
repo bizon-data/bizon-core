@@ -1,6 +1,6 @@
 from abc import ABC
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,9 +35,9 @@ class SourceConfig(BaseModel, ABC):
         default=False,
     )
 
-    authentication: AuthConfig = Field(
+    authentication: Optional[AuthConfig] = Field(
         description="Configuration for the authentication",
-        default=...,
+        default=None,
     )
 
     max_iterations: Optional[int] = Field(

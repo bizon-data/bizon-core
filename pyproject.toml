@@ -37,11 +37,15 @@ kafka-python = { version = "^2.0.2", optional = true }
 pika = { version = "^1.3.2", optional = true }
 python-dotenv = "^1.0.1"
 
+# Google
+gspread = { version = "^6.1.2", optional = true }
+
 [tool.poetry.extras]
 postgres = ["psycopg2-binary"]
 bigquery = ["google-cloud-bigquery-storage", "google-cloud-bigquery", "sqlalchemy-bigquery", "pandas"]
 kafka = ["kafka-python"]
 rabbitmq = ["pika"]
+gsheets = ["gspread"]
 
 ###### [Test] dependencies ######
 [tool.poetry.group.test]

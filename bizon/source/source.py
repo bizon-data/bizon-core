@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Tuple
+from typing import Any, Optional, Tuple, Union
 
 from requests.auth import AuthBase
 
@@ -16,13 +16,19 @@ class Source(ABC):
         self.session = self.get_session()
 
         # Set authentication in the session
-        self.session.auth = self.get_authenticator()
+        auth = self.get_authenticator()
+
+        if auth:
+            self.session.auth = auth
 
     def __del__(self):
         self.session.close()
 
     @abstractmethod
-    def get_authenticator(self) -> AuthBase:
+    def get_authenticator(self) -> Union[AuthBase, None]:
+        """Return an authenticator for the source, it will be set in the session
+        If no authenticator is needed, return None
+        """
         pass
 
     @abstractmethod
