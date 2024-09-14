@@ -1,10 +1,11 @@
 import json
-from typing import Any, Tuple
+from typing import Any, Counter, List, Tuple
 from uuid import uuid4
 
 import google.auth
 import gspread
 from google.oauth2.service_account import Credentials
+from loguru import logger
 from requests.auth import AuthBase
 
 from bizon.source.models import SourceIteration, SourceRecord
@@ -50,10 +51,32 @@ class GsheetsSource(Source):
     def get_total_records_count(self) -> int | None:
         return None
 
+    def check_column_names_are_unique(self, column_names: List[str]) -> bool:
+        """Check if all column names are unique, otherwise raise an error listing duplicates"""
+        if len(column_names) != len(set(column_names)):
+            duplicates = [item for item, count in Counter(column_names).items() if count > 1]
+            logger.error(f"Column names are not unique: {duplicates}.")
+            raise ValueError(f"Column names are not unique: {duplicates}.")
+        return True
+
+    def normalize_record(self, record: dict) -> dict:
+        if self.config.convert_column_names_to_sql_format:
+            return {k.lower().replace(" ", "_"): v for k, v in record.items()}
+        return record
+
     def get(self, pagination: dict = None) -> SourceIteration:
         gc = self.get_gspread_client()
         worksheet = gc.open_by_url(self.config.spreadsheet_url).worksheet(self.config.worksheet_name)
+
+        # Ensure column names are unique
+        column_names = worksheet.row_values(1)
+        self.check_column_names_are_unique(column_names)
+
+        # Get all records
         all_records = worksheet.get_all_records()
+        for i in range(len(all_records)):
+            all_records[i] = self.normalize_record(all_records[i])
+
         return SourceIteration(
             records=[SourceRecord(id=uuid4().hex, data=record) for record in all_records],
             next_pagination={},

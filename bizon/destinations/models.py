@@ -19,7 +19,7 @@ class DestinationIteration(BaseModel):
 
 class DestinationRecord(BaseModel):
     bizon_id: str = Field(..., description="Bizon unique identifier of the record")
-    bizon_loaded_at: str = Field(..., description="Datetime when the record was loaded")
+    bizon_loaded_at: datetime = Field(..., description="Datetime when the record was loaded")
     source_record_id: str = Field(..., description="Source record id")
     source_data: str = Field(..., description="Source record JSON string data")
 
@@ -27,7 +27,7 @@ class DestinationRecord(BaseModel):
     def from_source_record(cls, source_record: SourceRecord) -> "DestinationRecord":
         return cls(
             bizon_id=uuid4().hex,
-            bizon_loaded_at=datetime.now(tz=UTC).isoformat(),
+            bizon_loaded_at=datetime.now(tz=UTC),
             source_record_id=source_record.id,
             source_data=json.dumps(source_record.data),
         )

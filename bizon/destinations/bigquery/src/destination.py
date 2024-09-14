@@ -11,6 +11,7 @@ from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference
 from loguru import logger
+from pytz import UTC
 
 from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
@@ -44,19 +45,55 @@ class BigQueryDestination(AbstractDestination):
 
     @property
     def table_id(self) -> str:
-        return f"{self.project_id}.{self.dataset_id}.{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
+        tabled_id = self.config.table_id or f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
+        return f"{self.project_id}.{self.dataset_id}.{tabled_id}"
 
     def delete_table(self) -> bool:
         self.bq_client.delete_table(self.table_id, not_found_ok=True)  # Make an API request.
         return True
 
-    def convert_and_upload_to_buffer(self, source_records: List[SourceRecord]):
+    def get_bigquery_schema(self, source_records: List[SourceRecord]) -> List[bigquery.SchemaField]:
 
-        bizon_records = [
-            DestinationRecord.from_source_record(source_record).model_dump() for source_record in source_records
+        # If normalization is tabular, we parse key / value pairs to columns
+        if self.config.normalization.type == "tabular":
+            first_record_keys = source_records[0].data.keys()
+            return [
+                bigquery.SchemaField("bizon_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("source_record_id", "STRING", mode="REQUIRED"),
+            ] + [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in first_record_keys]
+
+        # Otherwise, we keep raw data in the column source_data
+        return [
+            bigquery.SchemaField("bizon_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
+            bigquery.SchemaField("source_record_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("source_data", "STRING", mode="NULLABLE"),
         ]
 
-        df = pd.DataFrame(bizon_records)
+    def get_batch_records_as_df(self, source_records: List[SourceRecord]) -> pd.DataFrame:
+
+        # If normalization is tabular, we can just convert the data to a DataFrame parsing first-level keys
+        if self.config.normalization.type == "tabular":
+            list_data_dict = [record.data for record in source_records]
+            df = pd.DataFrame(list_data_dict).astype(str)
+            df["bizon_id"] = [uuid4().hex for _ in range(len(source_records))]
+            df["bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
+            df["source_record_id"] = [record.id for record in source_records]
+
+        # Otherwise, we keep raw data in a column -> convert the SourceRecord to a DestinationRecord
+        else:
+            bizon_records = [
+                DestinationRecord.from_source_record(source_record).model_dump() for source_record in source_records
+            ]
+            df = pd.DataFrame(bizon_records)
+            df["bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
+
+        return df
+
+    def convert_and_upload_to_buffer(self, source_records: List[SourceRecord]):
+
+        df = self.get_batch_records_as_df(source_records)
 
         # Convert DataFrame to Parquet in-memory
         if self.buffer_format == "parquet":
@@ -89,16 +126,12 @@ class BigQueryDestination(AbstractDestination):
     # TO DO: Add backoff to common exceptions => looks like most are hanlded by the client
     # https://cloud.google.com/python/docs/reference/storage/latest/retry_timeout
     # https://cloud.google.com/python/docs/reference/bigquery/latest/google.cloud.bigquery.dbapi.DataError
-    def load_to_bigquery(self, gcs_file: str):
+
+    def load_to_bigquery(self, gcs_file: str, source_records: List[SourceRecord]):
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-            schema=[
-                bigquery.SchemaField("bizon_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("bizon_loaded_at", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("source_record_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("source_data", "STRING", mode="NULLABLE"),
-            ],
+            schema=self.get_bigquery_schema(source_records=source_records),
         )
 
         load_job = self.bq_client.load_table_from_uri(
@@ -114,7 +147,7 @@ class BigQueryDestination(AbstractDestination):
         gs_file_name = self.convert_and_upload_to_buffer(source_records=source_records)
 
         try:
-            self.load_to_bigquery(gs_file_name)
+            self.load_to_bigquery(gs_file_name, source_records=source_records)
             self.cleanup(gs_file_name)
         except Exception as e:
             self.cleanup(gs_file_name)

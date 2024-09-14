@@ -12,3 +12,7 @@ class GsheetsSourceConfig(SourceConfig):
         description="Service Account Key JSON string. If empty it will be infered",
         default="",
     )
+    convert_column_names_to_sql_format: bool = Field(
+        description="Convert column names to SQL format (lowercase, no spaces, etc)",
+        default=True,
+    )
