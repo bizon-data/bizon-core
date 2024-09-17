@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Counter, List, Tuple
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ class GsheetsSource(Source):
     def __init__(self, config: GsheetsSourceConfig):
         super().__init__(config)
         self.config: GsheetsSourceConfig = config
+        self.normalization_pattern = re.compile(r"(?<!^)(?=[A-Z])")
 
     def get_gspread_client(self) -> gspread.client.Client:
 
@@ -59,10 +61,12 @@ class GsheetsSource(Source):
             raise ValueError(f"Column names are not unique: {duplicates}.")
         return True
 
-    def normalize_record(self, record: dict) -> dict:
-        if self.config.convert_column_names_to_sql_format:
-            return {k.lower().replace(" ", "_"): v for k, v in record.items()}
-        return record
+    def normalize_record_to_sql_format_inplace(self, records: List[dict]) -> dict:
+        """Normalize record to SQL format inplace"""
+        for i, record in enumerate(records):
+            records[i] = {
+                self.normalization_pattern.sub("_", k).lower().replace(" ", "_"): v for k, v in record.items()
+            }
 
     def get(self, pagination: dict = None) -> SourceIteration:
         gc = self.get_gspread_client()
@@ -74,8 +78,9 @@ class GsheetsSource(Source):
 
         # Get all records
         all_records = worksheet.get_all_records()
-        for i in range(len(all_records)):
-            all_records[i] = self.normalize_record(all_records[i])
+
+        if self.config.convert_column_names_to_sql_format:
+            self.normalize_record_to_sql_format_inplace(all_records)
 
         return SourceIteration(
             records=[SourceRecord(id=uuid4().hex, data=record) for record in all_records],
