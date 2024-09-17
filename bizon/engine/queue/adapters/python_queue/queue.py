@@ -1,11 +1,9 @@
 import queue
 import random
 import time
-from typing import List
 
 from loguru import logger
 
-from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
 from bizon.engine.queue.queue import (
     QUEUE_TERMINATION,
@@ -13,7 +11,6 @@ from bizon.engine.queue.queue import (
     AbstractQueueConsumer,
     QueueMessage,
 )
-from bizon.source.models import SourceRecord
 
 from .config import PythonQueueConfigDetails
 from .consumer import PythonQueueConsumer
@@ -33,14 +30,14 @@ class PythonQueue(AbstractQueue):
     def get_consumer(self, destination: AbstractDestination) -> AbstractQueueConsumer:
         return PythonQueueConsumer(config=self.config, queue=self.queue, destination=destination)
 
-    def put(self, source_records: List[SourceRecord], iteration: int, signal: str = None):
+    def put_queue_message(self, queue_message: QueueMessage):
         if not self.queue.full():
-            self.queue.put(QueueMessage(iteration=iteration, source_records=source_records, signal=signal).model_dump())
-            logger.debug(f"Putting data from iteration {iteration} ({self.queue.qsize()} items in queue)")
+            self.queue.put(queue_message.model_dump())
+            logger.debug(f"Putting data from iteration {queue_message.iteration} ({self.queue.qsize()} items in queue)")
         else:
             logger.warning("Queue is full, waiting for consumer to consume data")
             time.sleep(random.random())
-            self.put(source_records=source_records, iteration=iteration, signal=signal)
+            self.put_queue_message(queue_message)
 
     def get(self) -> QueueMessage:
         if not self.queue.empty():

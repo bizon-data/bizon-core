@@ -1,10 +1,8 @@
 import json
-from typing import List
 
 import pika
 from loguru import logger
 
-from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
 from bizon.engine.queue.queue import (
     QUEUE_TERMINATION,
@@ -12,7 +10,6 @@ from bizon.engine.queue.queue import (
     AbstractQueueConsumer,
     QueueMessage,
 )
-from bizon.source.models import SourceRecord
 
 from .config import RabbitMQConfigDetails
 from .consumer import RabbitMQConsumer
@@ -33,13 +30,11 @@ class RabbitMQ(AbstractQueue):
     def get_consumer(self, destination: AbstractDestination) -> AbstractQueueConsumer:
         return RabbitMQConsumer(config=self.config, destination=destination)
 
-    def put(self, source_records: List[SourceRecord], iteration: int, signal: str = None):
+    def put_queue_message(self, queue_message: QueueMessage):
         self.channel.basic_publish(
             exchange=self.config.queue.exchange,
             routing_key=self.config.queue.queue_name,
-            body=json.dumps(
-                QueueMessage(iteration=iteration, source_records=source_records, signal=signal).model_dump()
-            ),
+            body=json.dumps(queue_message.model_dump()),
         )
 
     def get(self) -> QueueMessage:

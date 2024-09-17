@@ -1,12 +1,10 @@
 import json
-from typing import List
 
 from kafka import KafkaProducer
 from loguru import logger
 
 from bizon.destinations.destination import AbstractDestination
 from bizon.engine.queue.queue import QUEUE_TERMINATION, AbstractQueue, QueueMessage
-from bizon.source.models import SourceRecord
 
 from .config import KafkaConfigDetails
 from .consumer import KafkaConsumer_
@@ -38,10 +36,10 @@ class KafkaQueue(AbstractQueue):
     def on_error(e):
         logger.error(f"Error sending message: {e}")
 
-    def put(self, source_records: List[SourceRecord], iteration: int, signal: str = None):
+    def put_queue_message(self, queue_message: QueueMessage):
         future = self.producer.send(
             topic=self.config.queue.topic,
-            value=QueueMessage(iteration=iteration, source_records=source_records, signal=signal).model_dump(),
+            value=queue_message.model_dump(),
         )
         future.add_callback(self.on_success)
         future.add_errback(self.on_error)
