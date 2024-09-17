@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 from bizon.destinations.config import (
     AbstractDestinationConfig,
@@ -13,15 +13,6 @@ from bizon.destinations.config import (
 class GCSBufferFormat(str, Enum):
     PARQUET = "parquet"
     CSV = "csv"
-
-
-class NormalizationType(str, Enum):
-    TABULAR = "tabular"
-    NONE = "none"
-
-
-class BigQueryNormalizationConfig(BaseModel):
-    type: NormalizationType = Field(description="Normalization type")
 
 
 class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
@@ -36,10 +27,6 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     service_account_key: str = Field(
         description="Service Account Key JSON string. If empty it will be infered",
         default="",
-    )
-    normalization: Optional[BigQueryNormalizationConfig] = Field(
-        description="Normalization configuration, by default no normalization is applied",
-        default=BigQueryNormalizationConfig(type=NormalizationType.NONE),
     )
 
 

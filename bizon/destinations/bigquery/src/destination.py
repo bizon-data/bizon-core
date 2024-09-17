@@ -14,6 +14,7 @@ from loguru import logger
 from pytz import UTC
 
 from bizon.common.models import SyncMetadata
+from bizon.destinations.config import NormalizationType
 from bizon.destinations.destination import AbstractDestination
 from bizon.destinations.models import DestinationRecord
 from bizon.engine.backend.backend import AbstractBackend
@@ -54,40 +55,49 @@ class BigQueryDestination(AbstractDestination):
 
     def get_bigquery_schema(self, source_records: List[SourceRecord]) -> List[bigquery.SchemaField]:
 
-        # If normalization is tabular, we parse key / value pairs to columns
-        if self.config.normalization.type == "tabular":
-            first_record_keys = source_records[0].data.keys()
+        # we keep raw data in the column source_data
+        if self.config.normalization.type == NormalizationType.NONE:
             return [
-                bigquery.SchemaField("bizon_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField("source_record_id", "STRING", mode="REQUIRED"),
-            ] + [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in first_record_keys]
+                bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
+            ]
 
-        # Otherwise, we keep raw data in the column source_data
-        return [
-            bigquery.SchemaField("bizon_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
-            bigquery.SchemaField("source_record_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("source_data", "STRING", mode="NULLABLE"),
-        ]
+        # If normalization is tabular, we parse key / value pairs to columns
+        elif self.config.normalization.type == NormalizationType.TABULAR:
+            first_record_keys = source_records[0].data.keys()
+            return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in first_record_keys] + [
+                bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
+            ]
+
+        raise NotImplementedError(f"Normalization type {self.config.normalization.type} is not supported")
 
     def get_batch_records_as_df(self, source_records: List[SourceRecord]) -> pd.DataFrame:
 
-        # If normalization is tabular, we can just convert the data to a DataFrame parsing first-level keys
-        if self.config.normalization.type == "tabular":
-            list_data_dict = [record.data for record in source_records]
-            df = pd.DataFrame(list_data_dict).astype(str)
-            df["bizon_id"] = [uuid4().hex for _ in range(len(source_records))]
-            df["bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
-            df["source_record_id"] = [record.id for record in source_records]
-
-        # Otherwise, we keep raw data in a column -> convert the SourceRecord to a DestinationRecord
-        else:
+        # We keep raw data in a column -> convert the SourceRecord to a DestinationRecord
+        if self.config.normalization.type == NormalizationType.NONE:
             bizon_records = [
                 DestinationRecord.from_source_record(source_record).model_dump() for source_record in source_records
             ]
             df = pd.DataFrame(bizon_records)
-            df["bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
+            df["_bizon_extracted_at"] = [record.e for record in bizon_records]
+            df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
+
+        # If normalization is tabular, we can just convert the data to a DataFrame parsing first-level keys
+        elif self.config.normalization.type == NormalizationType.TABULAR:
+            list_data_dict = [record.data for record in source_records]
+            df = pd.DataFrame(list_data_dict).astype(str)
+            df["_bizon_id"] = [uuid4().hex for _ in range(len(source_records))]
+            df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
+            df["_source_record_id"] = [record.id for record in source_records]
+
+        else:
+            raise NotImplementedError(f"Normalization type {self.config.normalization.type} is not supported")
 
         return df
 
