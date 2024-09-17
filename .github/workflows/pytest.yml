@@ -1,8 +1,6 @@
 name: Pytest bizon
 
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
 
