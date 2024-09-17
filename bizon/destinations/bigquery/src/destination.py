@@ -18,7 +18,6 @@ from bizon.destinations.config import NormalizationType
 from bizon.destinations.destination import AbstractDestination
 from bizon.destinations.models import DestinationRecord
 from bizon.engine.backend.backend import AbstractBackend
-from bizon.source.models import SourceRecord
 
 from .config import BigQueryConfigDetails
 
@@ -53,13 +52,13 @@ class BigQueryDestination(AbstractDestination):
         self.bq_client.delete_table(self.table_id, not_found_ok=True)  # Make an API request.
         return True
 
-    def get_bigquery_schema(self, source_records: List[SourceRecord]) -> List[bigquery.SchemaField]:
+    def get_bigquery_schema(self, destination_records: List[DestinationRecord]) -> List[bigquery.SchemaField]:
 
         # we keep raw data in the column source_data
         if self.config.normalization.type == NormalizationType.NONE:
             return [
                 bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
+                # bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
@@ -67,43 +66,40 @@ class BigQueryDestination(AbstractDestination):
 
         # If normalization is tabular, we parse key / value pairs to columns
         elif self.config.normalization.type == NormalizationType.TABULAR:
-            first_record_keys = source_records[0].data.keys()
+            first_record_keys = destination_records[0].source_data.keys()
             return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in first_record_keys] + [
                 bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
+                # bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
             ]
 
         raise NotImplementedError(f"Normalization type {self.config.normalization.type} is not supported")
 
-    def get_batch_records_as_df(self, source_records: List[SourceRecord]) -> pd.DataFrame:
+    def get_batch_records_as_df(self, destination_records: List[DestinationRecord]) -> pd.DataFrame:
 
         # We keep raw data in a column -> convert the SourceRecord to a DestinationRecord
         if self.config.normalization.type == NormalizationType.NONE:
-            bizon_records = [
-                DestinationRecord.from_source_record(source_record).model_dump() for source_record in source_records
-            ]
-            df = pd.DataFrame(bizon_records)
-            df["_bizon_extracted_at"] = [record.e for record in bizon_records]
+            df = pd.DataFrame([record.to_dict_raw_json_data(parquet=True) for record in destination_records])
             df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
 
         # If normalization is tabular, we can just convert the data to a DataFrame parsing first-level keys
         elif self.config.normalization.type == NormalizationType.TABULAR:
-            list_data_dict = [record.data for record in source_records]
+            list_data_dict = [record.source_data for record in destination_records]
             df = pd.DataFrame(list_data_dict).astype(str)
-            df["_bizon_id"] = [uuid4().hex for _ in range(len(source_records))]
+            df["_bizon_id"] = [uuid4().hex for _ in range(len(destination_records))]
+            # df["_bizon_extracted_at"] = [pd.to_datetime(record.bizon_extracted_at) for record in destination_records]
             df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
-            df["_source_record_id"] = [record.id for record in source_records]
+            df["_source_record_id"] = [record.source_record_id for record in destination_records]
 
         else:
             raise NotImplementedError(f"Normalization type {self.config.normalization.type} is not supported")
 
         return df
 
-    def convert_and_upload_to_buffer(self, source_records: List[SourceRecord]):
+    def convert_and_upload_to_buffer(self, destination_records: List[DestinationRecord]):
 
-        df = self.get_batch_records_as_df(source_records)
+        df = self.get_batch_records_as_df(destination_records)
 
         # Convert DataFrame to Parquet in-memory
         if self.buffer_format == "parquet":
@@ -137,11 +133,11 @@ class BigQueryDestination(AbstractDestination):
     # https://cloud.google.com/python/docs/reference/storage/latest/retry_timeout
     # https://cloud.google.com/python/docs/reference/bigquery/latest/google.cloud.bigquery.dbapi.DataError
 
-    def load_to_bigquery(self, gcs_file: str, source_records: List[SourceRecord]):
+    def load_to_bigquery(self, gcs_file: str, destination_records: List[DestinationRecord]):
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-            schema=self.get_bigquery_schema(source_records=source_records),
+            schema=self.get_bigquery_schema(destination_records=destination_records),
         )
 
         load_job = self.bq_client.load_table_from_uri(
@@ -149,15 +145,15 @@ class BigQueryDestination(AbstractDestination):
         )
         load_job.result()
 
-    def write_records(self, source_records: List[SourceRecord]) -> Tuple[bool, str]:
+    def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, str]:
 
         # Here we can check if these IDs are already present in BigQuery
         # Using SourceRecord.id values
 
-        gs_file_name = self.convert_and_upload_to_buffer(source_records=source_records)
+        gs_file_name = self.convert_and_upload_to_buffer(destination_records=destination_records)
 
         try:
-            self.load_to_bigquery(gs_file_name, source_records=source_records)
+            self.load_to_bigquery(gs_file_name, destination_records=destination_records)
             self.cleanup(gs_file_name)
         except Exception as e:
             self.cleanup(gs_file_name)

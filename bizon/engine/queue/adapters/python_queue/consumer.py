@@ -26,6 +26,7 @@ class PythonQueueConsumer(AbstractQueueConsumer):
                 self.destination.write_records_and_update_cursor(
                     source_records=queue_message.source_records,
                     iteration=queue_message.iteration,
+                    extracted_at=queue_message.extracted_at,
                     last_iteration=True,
                 )
                 break
@@ -34,6 +35,9 @@ class PythonQueueConsumer(AbstractQueueConsumer):
                 raise ValueError("Received empty message, with no records")
 
             self.destination.write_records_and_update_cursor(
-                source_records=queue_message.source_records, iteration=queue_message.iteration
+                source_records=queue_message.source_records,
+                iteration=queue_message.iteration,
+                extracted_at=queue_message.extracted_at,
             )
+
             logger.info(f"Consumed data from queue: {len(queue_message.source_records)}")

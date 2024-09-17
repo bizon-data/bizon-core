@@ -4,8 +4,8 @@ from loguru import logger
 
 from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
+from bizon.destinations.models import DestinationRecord
 from bizon.engine.backend.backend import AbstractBackend
-from bizon.source.models import SourceRecord
 
 from .config import LoggerDestinationConfig
 
@@ -21,7 +21,7 @@ class LoggerDestination(AbstractDestination):
     def delete_table(self) -> bool:
         return True
 
-    def write_records(self, source_records: List[SourceRecord]) -> Tuple[bool, str]:
-        for record in source_records:
-            logger.info(record.data)
+    def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, str]:
+        for record in destination_records:
+            logger.info(record.source_data)
         return True, ""

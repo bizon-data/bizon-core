@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import List, Tuple, Union
 
 from loguru import logger
@@ -15,7 +16,7 @@ from .config import (
     AbstractDestinationDetailsConfig,
     DestinationTypes,
 )
-from .models import DestinationIteration
+from .models import DestinationIteration, DestinationRecord
 
 
 class AbstractDestination(ABC):
@@ -36,9 +37,19 @@ class AbstractDestination(ABC):
         pass
 
     @abstractmethod
-    def write_records(self, source_records: List[SourceRecord]) -> Tuple[bool, Union[str, None]]:
+    def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, Union[str, None]]:
         """Write records to destination for the given iteration and return success status and error message"""
         pass
+
+    @staticmethod
+    def convert_source_records_to_destination_records(
+        source_records: List[SourceRecord], extracted_at: datetime
+    ) -> List[DestinationRecord]:
+        """Convert source records to destination records"""
+        return [
+            DestinationRecord.from_source_record(source_record=source_record, extracted_at=extracted_at)
+            for source_record in source_records
+        ]
 
     def prepare_destination(self):
         """Prepare destination before writing records"""
@@ -48,7 +59,7 @@ class AbstractDestination(ABC):
 
     def write_or_buffer_records(
         self,
-        source_records: List[SourceRecord],
+        destination_records: List[DestinationRecord],
         iteration: int,
         last_iteration: bool = False,
         session=None,
@@ -58,9 +69,9 @@ class AbstractDestination(ABC):
         # Last iteration, write all records to destination
         if last_iteration:
             logger.debug(f"Writing last iteration records to destination")
-            assert len(source_records) == 0, "Last iteration should not have any records"
+            assert len(destination_records) == 0, "Last iteration should not have any records"
             nb_records_to_write = len(self.buffer.records)
-            success, error_msg = self.write_records(source_records=self.buffer.records)
+            success, error_msg = self.write_records(destination_records=self.buffer.records)
 
             if success:
                 self.backend.update_stream_job_status(
@@ -81,8 +92,8 @@ class AbstractDestination(ABC):
             return destination_iteration
 
         # Buffer can hold all records from this iteration
-        elif self.buffer.buffer_free_space >= len(source_records):
-            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
+        elif self.buffer.buffer_free_space >= len(destination_records):
+            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=destination_records)
             return DestinationIteration(
                 success=True,
                 error_message=None,
@@ -93,7 +104,7 @@ class AbstractDestination(ABC):
         # For now we will write all records to destination and then buffer the remaining records
         elif self.buffer.buffer_free_space > 0:
             nb_records_to_write = len(self.buffer.records)
-            success, error_msg = self.write_records(source_records=self.buffer.records)
+            success, error_msg = self.write_records(destination_records=self.buffer.records)
 
             destination_iteration = DestinationIteration(
                 success=success,
@@ -104,14 +115,14 @@ class AbstractDestination(ABC):
             )
 
             self.buffer.flush()
-            assert len(source_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
-            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
+            assert len(destination_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
+            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=destination_records)
             return destination_iteration
 
         # Buffer cannot contain any records from this iteration
         else:
             nb_records_to_write = len(self.buffer.records)
-            success, error_msg = self.write_records(source_records=self.buffer.records)
+            success, error_msg = self.write_records(destination_records=self.buffer.records)
 
             destination_iteration = DestinationIteration(
                 success=success,
@@ -122,9 +133,9 @@ class AbstractDestination(ABC):
             )
 
             self.buffer.flush()
-            assert len(source_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
+            assert len(destination_records) < self.buffer.buffer_size, "Buffer size cannot be smaller than records size"
 
-            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=source_records)
+            self.buffer.add_source_iteration_records_to_buffer(iteration=iteration, records=destination_records)
             return destination_iteration
 
     def create_cursors(self, iteration: int, destination_iteration: DestinationIteration):
@@ -139,7 +150,7 @@ class AbstractDestination(ABC):
         )
 
     def write_records_and_update_cursor(
-        self, source_records: List[SourceRecord], iteration: int, last_iteration: bool = False
+        self, source_records: List[SourceRecord], iteration: int, extracted_at: datetime, last_iteration: bool = False
     ) -> bool:
         """Write records to destination and update the cursor for the given iteration"""
 
@@ -147,9 +158,13 @@ class AbstractDestination(ABC):
         if iteration == 0:
             self.prepare_destination()
 
+        destination_records = self.convert_source_records_to_destination_records(
+            source_records=source_records, extracted_at=extracted_at
+        )
+
         # Buffer records otherwise write to destination
         destination_iteration = self.write_or_buffer_records(
-            source_records=source_records,
+            destination_records=destination_records,
             iteration=iteration,
             last_iteration=last_iteration,
         )

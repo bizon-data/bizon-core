@@ -1,13 +1,13 @@
 from typing import List
 
-from bizon.source.models import SourceRecord
+from bizon.destinations.models import DestinationRecord
 
 
 class DestinationBuffer:
 
     def __init__(self, buffer_size: int) -> None:
         self.buffer_size = buffer_size
-        self.records: List[SourceRecord] = []
+        self.records: List[DestinationRecord] = []
         self._current_size = 0
         self._iterations: List[int] = []
 
@@ -42,7 +42,7 @@ class DestinationBuffer:
         self._current_size = 0
         self._iterations = []
 
-    def add_source_iteration_records_to_buffer(self, iteration: int, records: List[SourceRecord]):
+    def add_source_iteration_records_to_buffer(self, iteration: int, records: List[DestinationRecord]):
         """Add records for the given iteration to buffer"""
         self.records.extend(records)
         self._current_size += len(records)
