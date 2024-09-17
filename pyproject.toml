@@ -63,6 +63,7 @@ optional = true
 ipykernel = "^6.29.5"
 snakeviz = "^2.1.2"
 yappi = "^1.3.2"
+pre-commit = "^3.8.0"
 
 [build-system]
 requires = ["poetry-core"]

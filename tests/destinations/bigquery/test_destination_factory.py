@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 from bizon.common.models import SyncMetadata
@@ -22,6 +24,10 @@ def sync_metadata() -> SyncMetadata:
     )
 
 
+@pytest.mark.skipif(
+    os.getenv("POETRY_ENV_TEST") == "CI",
+    reason="Skipping tests that require a BigQuery database",
+)
 def test_bigquery_factory(sync_metadata, my_backend):
     config = BigQueryConfig(
         name=DestinationTypes.BIGQUERY,
@@ -43,6 +49,10 @@ def test_bigquery_factory(sync_metadata, my_backend):
     assert destination.config.dataset_id == "dataset_id"
 
 
+@pytest.mark.skipif(
+    os.getenv("POETRY_ENV_TEST") == "CI",
+    reason="Skipping tests that require a BigQuery database",
+)
 def test_bigquery_factory_empty_service_account(sync_metadata, my_backend):
     config = BigQueryConfig(
         name=DestinationTypes.BIGQUERY,

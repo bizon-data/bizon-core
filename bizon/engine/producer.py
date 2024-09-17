@@ -55,6 +55,18 @@ class Producer:
             )
         return cursor
 
+    def handle_max_iterations(self, cursor: Cursor) -> bool:
+        """Handle the case where the max_iterations is reached for the current cursor
+        If max_iterations is reached return True
+        Else return False
+        """
+        if self.source.config.max_iterations and cursor.iteration > self.source.config.max_iterations:
+            logger.warning(
+                f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
+            )
+            return True
+        return False
+
     def run(self, job_id: int):
 
         # Init queue
@@ -63,22 +75,12 @@ class Producer:
         # Get or create the cursor
         cursor = self.get_or_create_cursor(job_id=job_id)
 
-        # Handle the case where last cursor already reach max_iterations
-        if self.source.config.max_iterations and cursor.iteration > self.source.config.max_iterations:
-            logger.warning(
-                f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
-            )
-            self.queue.terminate(iteration=cursor.iteration)
-            return
-
         while not cursor.is_finished:
 
-            if self.source.config.max_iterations and cursor.iteration > self.source.config.max_iterations:
-                logger.warning(
-                    f"Max iteration of {self.source.config.max_iterations} reached for this cursor, terminating ..."
-                )
-                self.queue.terminate(iteration=cursor.iteration)
-                return
+            # Handle the case where last cursor already reach max_iterations
+            terminate = self.handle_max_iterations(cursor)
+            if terminate:
+                break
 
             # Check if we need to create a new cursor in the DB
             if cursor.iteration % self.backend.config.syncCursorInDBEvery == 0:

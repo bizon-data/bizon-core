@@ -34,8 +34,8 @@ class EngineConfig(BaseModel):
         BigQuerySQLAlchemyConfig,
     ] = Field(
         description="Configuration for the backend",
-        default=SQLiteSQLAlchemyConfig(
-            type=BackendTypes.SQLITE,
+        default=SQLiteInMemoryConfig(
+            type=BackendTypes.SQLITE_IN_MEMORY,
             config=SQLiteConfigDetails(
                 database="NOT_USED_IN_SQLITE",
                 schema="NOT_USED_IN_SQLITE",

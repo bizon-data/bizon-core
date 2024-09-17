@@ -3,7 +3,7 @@ import os
 from yaml import safe_load
 
 from bizon.cli.parser import parse_from_yaml
-from bizon.destinations.bigquery.src.destination import BigQueryDestination
+from bizon.destinations.logger.src.destination import LoggerDestination
 from bizon.engine.backend.config import BackendTypes
 from bizon.engine.queue.adapters.kafka.queue import KafkaQueue
 from bizon.engine.queue.adapters.rabbitmq.queue import RabbitMQ
@@ -11,7 +11,7 @@ from bizon.engine.runner import RunnerFactory
 
 
 def test_parse_from_yaml():
-    config = parse_from_yaml(os.path.abspath("tests/engine/dummy_pipeline.yml"))
+    config = parse_from_yaml(os.path.abspath("tests/engine/dummy_pipeline_sqlite.yml"))
     runner = RunnerFactory.create_from_config_dict(config=config)
     assert runner.is_running is False
 
@@ -27,18 +27,13 @@ def test_parse_task_runner_python_queue():
                     token: dummy_key
 
         destination:
-            # Must have the bigquery.dataEditor and storage.objectUser on the supplied dataset and bucket
-            name: bigquery
+            name: logger
             config:
-                dataset_id: bizon_test
-                dataset_location: US
-                project_id: <MY_PROJECT_ID>
-                gcs_buffer_bucket: bizon-buffer
-                gcs_buffer_format: parquet
+                dummy: dummy
 
         engine:
             backend:
-                type: sqlite
+                type: sqlite_in_memory
                 config:
                     database: not_used
                     schema: not_used
@@ -49,10 +44,10 @@ def test_parse_task_runner_python_queue():
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    assert isinstance(runner.destination, BigQueryDestination)
+    assert isinstance(runner.destination, LoggerDestination)
 
     # Check if the backend per default is of type sqlite
-    assert runner.backend.type == BackendTypes.SQLITE
+    assert runner.backend.type == BackendTypes.SQLITE_IN_MEMORY
 
     assert runner.bizon_config.engine.runner.log_level == "INFO"
 
@@ -70,18 +65,13 @@ def test_parse_task_runner_kafka_queue():
                     token: dummy_key
 
         destination:
-            # Must have the bigquery.dataEditor and storage.objectUser on the supplied dataset and bucket
-            name: bigquery
+            name: logger
             config:
-                dataset_id: bizon_test
-                dataset_location: US
-                project_id: <MY_PROJECT_ID>
-                gcs_buffer_bucket: bizon-buffer
-                gcs_buffer_format: parquet
+                dummy: dummy
 
         engine:
             backend:
-                type: sqlite
+                type: sqlite_in_memory
                 config:
                     database: not_used
                     schema: not_used
@@ -99,9 +89,9 @@ def test_parse_task_runner_kafka_queue():
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    assert isinstance(runner.destination, BigQueryDestination)
+    assert isinstance(runner.destination, LoggerDestination)
 
-    assert runner.backend.type == BackendTypes.SQLITE
+    assert runner.backend.type == BackendTypes.SQLITE_IN_MEMORY
 
     assert isinstance(runner.queue, KafkaQueue)
     assert runner.queue.config.queue.bootstrap_server == "localhost:9092"
@@ -118,18 +108,13 @@ def test_parse_task_runner_rabbitmq_queue():
                     token: dummy_key
 
         destination:
-            # Must have the bigquery.dataEditor and storage.objectUser on the supplied dataset and bucket
-            name: bigquery
+            name: logger
             config:
-                dataset_id: bizon_test
-                dataset_location: US
-                project_id: <MY_PROJECT_ID>
-                gcs_buffer_bucket: bizon-buffer
-                gcs_buffer_format: parquet
+                dummy: dummy
 
         engine:
             backend:
-                type: sqlite
+                type: sqlite_in_memory
                 config:
                     database: not_used
                     schema: not_used
@@ -150,9 +135,9 @@ def test_parse_task_runner_rabbitmq_queue():
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    assert isinstance(runner.destination, BigQueryDestination)
+    assert isinstance(runner.destination, LoggerDestination)
 
-    assert runner.backend.type == BackendTypes.SQLITE
+    assert runner.backend.type == BackendTypes.SQLITE_IN_MEMORY
 
     assert isinstance(runner.queue, RabbitMQ)
     assert runner.queue.config.queue.queue_name == "bizon"

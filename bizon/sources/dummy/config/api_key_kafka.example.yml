@@ -7,7 +7,7 @@ source:
       token: dummy_key
 
 backend:
-  type: sqlite
+  type: sqlite_in_memory
   database: NOT_USED_WITH_SQLITE
   schema: NOT_USED_WITH_SQLITE
   syncCursorInDBEvery: 2

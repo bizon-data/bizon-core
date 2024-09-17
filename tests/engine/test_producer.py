@@ -11,7 +11,7 @@ from bizon.engine.runner import RunnerFactory
 
 @pytest.fixture(scope="function")
 def my_producer(my_backend: AbstractBackend, db_session: SQLAlchemyBackend):
-    runner = RunnerFactory.create_from_yaml(os.path.abspath("tests/engine/dummy_pipeline.yml"))
+    runner = RunnerFactory.create_from_yaml(os.path.abspath("tests/engine/dummy_pipeline_sqlite.yml"))
     source = runner.get_source()
     my_backend.create_all_tables()
     return Producer(queue=runner.queue, source=source, backend=my_backend)

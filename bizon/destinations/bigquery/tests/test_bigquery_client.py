@@ -3,6 +3,7 @@ import os
 import random
 from random import randint
 
+import pytest
 from faker import Faker
 
 from bizon.cli.parser import parse_from_yaml
@@ -14,10 +15,13 @@ logger = logging.getLogger(__name__)
 
 fake = Faker("en_US")
 
-raw_config = parse_from_yaml(os.path.abspath("bizon/destinations/bigquery/config/bigquery.test.yml"))
 
-
+@pytest.mark.skipif(
+    os.getenv("POETRY_ENV_TEST") == "CI",
+    reason="Skipping tests that require a BigQuery connexion",
+)
 def test_config_models():
+    raw_config = parse_from_yaml(os.path.abspath("bizon/destinations/bigquery/config/bigquery.test.yml"))
     assert bool(SourceConfig.model_validate(raw_config["source"])) is True
     logger.info("source validated...")
 
