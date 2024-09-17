@@ -1,6 +1,8 @@
 import ast
+from datetime import datetime
 
 from loguru import logger
+from pytz import UTC
 
 from bizon.engine.backend.models import CursorStatus
 from bizon.source.cursor import Cursor
@@ -98,8 +100,13 @@ class Producer:
             # Get the next data
             source_iteration = self.source.get(pagination=cursor.pagination)
 
+            # Get current time, we consider this as the time the data was extracted
+            extracted_at = datetime.now(tz=UTC)
+
             # Put the data in the queue
-            self.queue.put(source_records=source_iteration.records, iteration=cursor.iteration)
+            self.queue.put(
+                source_records=source_iteration.records, iteration=cursor.iteration, extracted_at=extracted_at
+            )
 
             # Update the cursor state
             cursor.update_state(
