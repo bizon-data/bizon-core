@@ -154,6 +154,11 @@ class AbstractDestination(ABC):
     ) -> bool:
         """Write records to destination and update the cursor for the given iteration"""
 
+        # Case when producer failed to fetch data from first iteration
+        if iteration == 0 and len(source_records) == 0:
+            logger.warning("Source failed to fetch data from the first iteration, no records will be written.")
+            return False
+
         # Prepare destination
         if iteration == 0:
             self.prepare_destination()

@@ -1,5 +1,5 @@
+import concurrent.futures
 import time
-from threading import Thread
 
 from loguru import logger
 
@@ -19,25 +19,38 @@ class ThreadRunner(AbstractRunner):
 
         # Create the producer thread
         producer = self.get_producer()
-        threaded_producer = Thread(target=producer.run, args=(self.job.id,))
 
         # Create the destination thread
         consumer = self.queue.get_consumer(destination=self.destination)
-        threaded_consumer = Thread(target=consumer.run)
 
-        # Start the source thread (producer)
-        threaded_producer.start()
-        logger.info("Producer has started ...")
+        # Store the future results
+        result_producer = None
+        result_consumer = None
 
-        self._is_running = True
-        time.sleep(CONSUMER_START_DELAY)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_producer = executor.submit(producer.run, self.job.id)
+            logger.info("Producer has started ...")
 
-        # Start the destination thread (consumer)
-        threaded_consumer.start()
-        logger.info("Consumer has started ...")
+            time.sleep(CONSUMER_START_DELAY)
 
-        # TODO: add self-healing mechanism
-        while threaded_consumer.is_alive():
-            time.sleep(IS_ALIVE_CHECK_INTERVAL)
-        self._is_running = False
+            future_consumer = executor.submit(consumer.run)
+            logger.info("Consumer has started ...")
+
+            self._is_running = True
+
+            while future_producer.running() and future_consumer.running():
+                logger.debug("Producer and consumer are still running ...")
+                self._is_running = True
+                time.sleep(IS_ALIVE_CHECK_INTERVAL)
+
+            self._is_running = False
+
+            if not future_producer.running():
+                result_producer = future_producer.result()
+                logger.info(f"Producer stopped running with result: {result_producer}")
+
+            if not future_consumer.running():
+                result_consumer = future_consumer.result()
+                logger.info(f"Consumer stopped running with result: {result_consumer}")
+
         return True

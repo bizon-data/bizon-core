@@ -12,6 +12,10 @@ class GsheetsSourceConfig(SourceConfig):
         description="Service Account Key JSON string. If empty it will be infered",
         default="",
     )
+    column_names: list[str] = Field(
+        description="Column names to fetch from the worksheet, if empty all columns will be fetched",
+        default=[],
+    )
     convert_column_names_to_sql_format: bool = Field(
         description="Convert column names to SQL format (lowercase, no spaces, etc)",
         default=True,

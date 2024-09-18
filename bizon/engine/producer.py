@@ -1,5 +1,6 @@
 import ast
 from datetime import datetime
+from enum import Enum
 
 from loguru import logger
 from pytz import UTC
@@ -10,6 +11,15 @@ from bizon.source.source import Source
 
 from .backend.backend import AbstractBackend
 from .queue.queue import AbstractQueue
+
+
+class ProducerReturnValues(Enum):
+    """Producer error types"""
+
+    NO_ERROR = "no_error"
+    QUEUE_ERROR = "queue_error"
+    SOURCE_ERROR = "source_error"
+    BACKEND_ERROR = "backend_error"
 
 
 class Producer:
@@ -71,11 +81,28 @@ class Producer:
 
     def run(self, job_id: int):
 
+        return_value: ProducerReturnValues = ProducerReturnValues.NO_ERROR
+
         # Init queue
-        self.queue.connect()
+        try:
+            self.queue.connect()
+        except Exception as e:
+            logger.error(
+                f"Error while connecting to the queue: {e} for job_id {job_id}"
+                f"Check the queue error logs for more details."
+            )
+            return ProducerReturnValues.QUEUE_ERROR
 
         # Get or create the cursor
-        cursor = self.get_or_create_cursor(job_id=job_id)
+        try:
+            cursor = self.get_or_create_cursor(job_id=job_id)
+        except Exception as e:
+            logger.error(
+                f"Error while getting or creating cursor: {e} for job_id {job_id}"
+                f"Check the backend error logs for more details."
+            )
+            logger.info("Terminating destination ...")
+            self.queue.terminate(iteration=0)
 
         while not cursor.is_finished:
 
@@ -87,31 +114,76 @@ class Producer:
             # Check if we need to create a new cursor in the DB
             if cursor.iteration % self.backend.config.syncCursorInDBEvery == 0:
                 # Create a new cursor in the DB
-                self.backend.create_source_cursor(
-                    job_id=job_id,
-                    source_name=self.source.config.source_name,
-                    stream_name=self.source.config.stream_name,
-                    iteration=cursor.iteration,
-                    rows_fetched=cursor.rows_fetched,
-                    next_pagination=cursor.pagination,
-                    cursor_status=CursorStatus.PULLING,
-                )
+                try:
+                    self.backend.create_source_cursor(
+                        job_id=job_id,
+                        source_name=self.source.config.source_name,
+                        stream_name=self.source.config.stream_name,
+                        iteration=cursor.iteration,
+                        rows_fetched=cursor.rows_fetched,
+                        next_pagination=cursor.pagination,
+                        cursor_status=CursorStatus.PULLING,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error while creating cursor in the DB: {e} for iteration {cursor.iteration}"
+                        f"Check the backend error logs for more details."
+                    )
+                    return_value = ProducerReturnValues.BACKEND_ERROR
+                    break
 
             # Get the next data
-            source_iteration = self.source.get(pagination=cursor.pagination)
+            try:
+                source_iteration = self.source.get(pagination=cursor.pagination)
+            except Exception as e:
+                logger.error(
+                    f"Error while fetching data from source: {e} for iteration first iteration {cursor.iteration}"
+                    f"Check the backend error logs for more details."
+                )
+                return_value = ProducerReturnValues.SOURCE_ERROR
+                break
 
             # Get current time, we consider this as the time the data was extracted
             extracted_at = datetime.now(tz=UTC)
 
             # Put the data in the queue
-            self.queue.put(
-                source_records=source_iteration.records, iteration=cursor.iteration, extracted_at=extracted_at
-            )
+            try:
+                self.queue.put(
+                    source_records=source_iteration.records, iteration=cursor.iteration, extracted_at=extracted_at
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error while putting data in the queue: {e} for iteration {cursor.iteration}"
+                    f"Check the queue error logs for more details."
+                )
+                return_value = ProducerReturnValues.QUEUE_ERROR
+                break
 
             # Update the cursor state
-            cursor.update_state(
-                pagination_dict=source_iteration.next_pagination, nb_records_fetched=len(source_iteration.records)
-            )
+            try:
+                cursor.update_state(
+                    pagination_dict=source_iteration.next_pagination, nb_records_fetched=len(source_iteration.records)
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error while updating cursor state: {e} for iteration {cursor.iteration}"
+                    f"Check the source error logs for more details."
+                )
+                return_value = ProducerReturnValues.SOURCE_ERROR
+                break
 
         logger.info("Terminating destination ...")
-        self.queue.terminate(iteration=cursor.iteration)
+
+        try:
+            self.queue.terminate(iteration=cursor.iteration)
+        except Exception as e:
+            logger.error(
+                f"Error while terminating the queue: {e} for iteration {cursor.iteration}"
+                f"Check the queue error logs for more details."
+            )
+            # Prevent masking any previous error
+            return_value = (
+                ProducerReturnValues.QUEUE_ERROR if return_value == ProducerReturnValues.NO_ERROR else return_value
+            )
+
+        return return_value

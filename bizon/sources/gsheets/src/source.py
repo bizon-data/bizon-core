@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import google.auth
 import gspread
+import gspread.utils
 from google.oauth2.service_account import Credentials
 from loguru import logger
 from requests.auth import AuthBase
@@ -57,8 +58,11 @@ class GsheetsSource(Source):
         """Check if all column names are unique, otherwise raise an error listing duplicates"""
         if len(column_names) != len(set(column_names)):
             duplicates = [item for item, count in Counter(column_names).items() if count > 1]
-            logger.error(f"Column names are not unique: {duplicates}.")
-            raise ValueError(f"Column names are not unique: {duplicates}.")
+            logger.error(
+                f"Column names are not unique: {duplicates}, found following columns: {column_names}."
+                f"Please provide unique column names in the config using `column_names` param or remove duplicated column in sheets."
+            )
+            raise ValueError(f"Column names are not unique: {duplicates}, found following columns: {column_names}.")
         return True
 
     def normalize_record_to_sql_format_inplace(self, records: List[dict]) -> dict:
@@ -72,12 +76,28 @@ class GsheetsSource(Source):
         gc = self.get_gspread_client()
         worksheet = gc.open_by_url(self.config.spreadsheet_url).worksheet(self.config.worksheet_name)
 
-        # Ensure column names are unique
-        column_names = worksheet.row_values(1)
-        self.check_column_names_are_unique(column_names)
+        worksheet_column_names = worksheet.row_values(1)
 
-        # Get all records
-        all_records = worksheet.get_all_records()
+        if self.config.column_names:
+            logger.info(f"Using provided column names: {','.join(self.config.column_names)}")
+
+            self.check_column_names_are_unique(self.config.column_names)
+
+            # Ensure column names are all present in worksheet_column_names
+            for column_name in self.config.column_names:
+                if column_name not in worksheet_column_names:
+                    raise ValueError(f"Column name {column_name} not found in worksheet")
+
+            # Get all records
+            all_records = worksheet.get_all_records(expected_headers=self.config.column_names)
+            all_records = gspread.utils.to_records(headers=self.config.column_names, values=all_records)
+
+        else:
+            # Ensure column names are unique
+            self.check_column_names_are_unique(worksheet_column_names)
+
+            # Get all records
+            all_records = worksheet.get_all_records()
 
         if self.config.convert_column_names_to_sql_format:
             self.normalize_record_to_sql_format_inplace(all_records)
