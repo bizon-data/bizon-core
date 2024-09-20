@@ -1,0 +1,41 @@
+name: Publish Python Package to PyPI
+
+on:
+  push:
+    tags:
+      - 'v*'  # Triggers the workflow on tags starting with 'v'
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Poetry
+        run: |
+          pip install poetry
+
+      - name: Configure Poetry
+        run: |
+          poetry config virtualenvs.create false
+
+      - name: Install dependencies
+        run: |
+          poetry install --no-interaction --no-ansi
+
+      - name: Build package
+        run: |
+          poetry build
+
+      - name: Publish to PyPI
+        env:
+          PYPI_PASSWORD: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          poetry publish --username __token__ --password "$PYPI_PASSWORD" --no-interaction --no-ansi
