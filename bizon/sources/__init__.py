@@ -51,14 +51,13 @@ def find_inherited_classes(file_path, parent_class_name):
     return inherited_classes
 
 
-def find_all_source_paths(source_dir_name: str = "src"):
+def find_all_source_paths(source_dir_name: str = "src", base_dir: str = "bizon/sources") -> Mapping[str, str]:
     """Find all source code paths in the sources directory
     Return a dict mapping source_name to source_code_path
     Like {'gsheets': '/path/to/bizon/sources/gsheets/src'}
     """
 
     discovered_sources_paths = {}
-    base_dir = os.path.abspath(os.path.dirname(__file__))
 
     for source_name in os.listdir(base_dir):
 
@@ -74,7 +73,7 @@ def find_all_source_paths(source_dir_name: str = "src"):
     return discovered_sources_paths
 
 
-def get_sources_in_path(source_name: str, source_code_path: str) -> SourceModel:
+def get_sources_in_path(source_name: str, source_code_path: str, skip_unavailable_sources: bool = True) -> SourceModel:
     """Get all sources in a given path
     Return a SourceModel object with the source name and its streams
     """
@@ -108,7 +107,22 @@ def get_sources_in_path(source_name: str, source_code_path: str) -> SourceModel:
 
                         # Transform the relative path to a python import path and import the module
                         python_import_path = relative_path.replace("/", ".").replace(".py", "")
-                        source_module = importlib.import_module(python_import_path)
+                        logger.info(f"Importing {python_import_path}")
+
+                        try:
+                            source_module = importlib.import_module(python_import_path, package="sources")
+                        except ImportError as e:
+                            if not skip_unavailable_sources:
+                                raise e
+                            logger.warning(
+                                f"{source_name} is not available, run 'pip install bizon[{source_name}]' to install missing dependencies."
+                            )
+                            break
+                        except Exception as e:
+                            logger.error(f"Error while importing {python_import_path}: {e}")
+                            logger.error(traceback.format_exc())
+                            break
+
                         source_class: Type = getattr(source_module, source_class_name)
 
                         # Check if the class has a streams method
@@ -126,10 +140,6 @@ def get_sources_in_path(source_name: str, source_code_path: str) -> SourceModel:
                                 "Please add a streams method to the class to be able to use it."
                             )
 
-    if len(streams) == 0:
-        logger.error(f"No streams found for {source_name}. Please add a stream to the source to be able to use it.")
-        raise ValueError(f"No streams found for {source_name}")
-
     return SourceModel(name=source_name, streams=streams)
 
 
@@ -145,7 +155,15 @@ def get_internal_source_class_by_source_and_stream(source_name: str, stream_name
 
     source_code_path = discovered_sources_paths_dict[source_name]
 
-    source_model = get_sources_in_path(source_name=source_name, source_code_path=source_code_path)
+    source_model = get_sources_in_path(
+        source_name=source_name, source_code_path=source_code_path, skip_unavailable_sources=False
+    )
+
+    if len(source_model.streams) == 0:
+        raise ValueError(
+            f"No streams found for source {source_name}, ensure you installed required dependencies with pip install bizon[{source_name}] if needed."
+            "You should not have any warning related to your source when running 'bizon source list'."
+        )
 
     if stream_name not in source_model.available_streams:
         raise ValueError(f"Stream {stream_name} not found. Available streams are {source_model.available_streams}")

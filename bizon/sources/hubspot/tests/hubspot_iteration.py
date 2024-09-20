@@ -1,7 +1,7 @@
 import os
 from threading import Thread
 
-from bizon.cli.parser import parse_from_yaml
+from bizon.cli.util import parse_from_yaml
 from bizon.source.cursor import Cursor
 from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
 from bizon.sources.hubspot.src.source_objects import HubSpotSource

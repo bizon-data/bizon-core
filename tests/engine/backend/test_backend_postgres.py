@@ -44,10 +44,6 @@ def pg_db_session(my_pg_backend: SQLAlchemyBackend):
     session_.close()
 
 
-@pytest.mark.skipif(
-    os.getenv("POETRY_ENV_TEST") == "CI",
-    reason="Skipping tests that require a Postgres database",
-)
 def test_backend_client_instance(my_pg_backend: SQLAlchemyBackend):
     assert my_pg_backend.config.database == "bizon_test"
     assert my_pg_backend.config.schema == "public"
@@ -82,6 +78,10 @@ def test_create_stream_job(my_pg_backend: SQLAlchemyBackend, pg_db_session: Sess
     assert new_job_id
 
 
+@pytest.mark.skipif(
+    os.getenv("POETRY_ENV_TEST") == "CI",
+    reason="Skipping tests that require a Postgres database",
+)
 @pytest.mark.skip(reason="TO DEBUG: failing for now")
 def test_update_stream_job_status(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
     my_pg_backend.create_all_tables()

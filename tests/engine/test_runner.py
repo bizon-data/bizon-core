@@ -2,7 +2,7 @@ import os
 
 import pytest
 
-from bizon.cli.parser import parse_from_yaml
+from bizon.cli.util import parse_from_yaml
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus

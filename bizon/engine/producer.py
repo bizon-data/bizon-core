@@ -103,6 +103,7 @@ class Producer:
             )
             logger.info("Terminating destination ...")
             self.queue.terminate(iteration=0)
+            return ProducerReturnValues.BACKEND_ERROR
 
         while not cursor.is_finished:
 

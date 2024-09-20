@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 from loguru import logger
 
-from bizon.cli.parser import parse_from_yaml
+from bizon.cli.util import parse_from_yaml
 from bizon.common.models import BizonConfig, SyncMetadata
 from bizon.destinations.destination import AbstractDestination, DestinationFactory
 from bizon.source.source import Source

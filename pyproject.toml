@@ -39,6 +39,8 @@ python-dotenv = "^1.0.1"
 
 # Google
 gspread = { version = "^6.1.2", optional = true }
+click = "^8.1.7"
+pytz = "^2024.2"
 
 [tool.poetry.extras]
 postgres = ["psycopg2-binary"]
@@ -68,3 +70,6 @@ pre-commit = "^3.8.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+bizon = "bizon.cli.main:cli"

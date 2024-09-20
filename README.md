@@ -21,11 +21,10 @@ pip install bizon
 ```
 
 ## Usage
-```python
-from yaml import safe_load
-from bizon.engine.runner import RunnerFactory
 
-yaml_config = """
+Create a file named `config.yml` in your working directory with the following content:
+
+```yaml
 source:
   source_name: dummy
   stream_name: creatures
@@ -38,13 +37,13 @@ destination:
   name: logger
   config:
     dummy: dummy
-"""
-
-config = safe_load(yaml_config)
-runner = RunnerFactory.create_from_config_dict(config=config)
-runner.run()
 ```
 
+Run the pipeline with the following command:
+
+```bash
+bizon run config.yml
+```
 ## Backend configuration
 
 Backend is the interface used by Bizon to store its state. It can be configured in the `backend` section of the configuration file. The following backends are supported:
