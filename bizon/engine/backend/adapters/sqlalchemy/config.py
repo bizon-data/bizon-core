@@ -55,14 +55,18 @@ class SQLiteInMemoryConfig(AbstractBackendConfig):
 
 ## BIGQUERY ##
 class BigQueryConfigDetails(SQLAlchemyConfigDetails):
+
     database: str = Field(
         description="GCP Project name",
         default=...,
     )
-    schema: str = Field(
+
+    schema_name: str = Field(
         description="BigQuery Dataset name",
         default=...,
+        alias="schema",
     )
+
     service_account_key: str = Field(
         description="Service Account Key JSON string. If empty it will be infered",
         default="",

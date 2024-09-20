@@ -46,7 +46,7 @@ def pg_db_session(my_pg_backend: SQLAlchemyBackend):
 
 def test_backend_client_instance(my_pg_backend: SQLAlchemyBackend):
     assert my_pg_backend.config.database == "bizon_test"
-    assert my_pg_backend.config.schema == "public"
+    assert my_pg_backend.config.schema_name == "public"
     assert my_pg_backend.config.syncCursorInDBEvery == 2
 
 

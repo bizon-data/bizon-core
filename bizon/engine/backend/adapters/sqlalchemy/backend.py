@@ -54,11 +54,13 @@ class SQLAlchemyBackend(AbstractBackend):
     def _get_engine_bigquery(self) -> Engine:
         if hasattr(self.config, "service_account_key") and self.config.service_account_key:
             return create_engine(
-                f"bigquery://{self.config.database}/{self.config.schema}",
+                f"bigquery://{self.config.database}/{self.config.schema_name}",
                 echo=self.config.echoEngine,
                 credentials_info=self.config.service_account_key,
             )
-        return create_engine(f"bigquery://{self.config.database}/{self.config.schema}", echo=self.config.echoEngine)
+        return create_engine(
+            f"bigquery://{self.config.database}/{self.config.schema_name}", echo=self.config.echoEngine
+        )
 
     def _get_engine_postgres(self) -> Engine:
         return create_engine(
@@ -98,12 +100,12 @@ class SQLAlchemyBackend(AbstractBackend):
             return True
 
         with self.engine.connect() as connection:
-            if not inspect(connection).has_schema(self.config.schema):
+            if not inspect(connection).has_schema(self.config.schema_name):
                 logger.error(
-                    f"Schema or dataset {self.config.schema} does not exist in the database, you need to create it first."
+                    f"Schema or dataset {self.config.schema_name} does not exist in the database, you need to create it first."
                 )
                 raise Exception(
-                    f"Schema or dataset {self.config.schema} does not exist in the database, you need to create it first."
+                    f"Schema or dataset {self.config.schema_name} does not exist in the database, you need to create it first."
                 )
 
     #### INIT DATABASE ####

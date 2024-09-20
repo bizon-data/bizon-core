@@ -6,7 +6,7 @@ from bizon.engine.backend.models import CursorStatus, JobStatus, SourceCursor
 
 def test_backend_client_instance(my_backend: SQLAlchemyBackend):
     assert my_backend.config.database == "NOT_DATABASE_WITH_SQLITE"
-    assert my_backend.config.schema == "NOT_SCHEMA_IN_SQLITE"
+    assert my_backend.config.schema_name == "NOT_SCHEMA_IN_SQLITE"
     assert my_backend.config.syncCursorInDBEvery == 2
 
 

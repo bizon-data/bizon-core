@@ -15,7 +15,7 @@ class BackendTypes(str, Enum):
 
 class AbstractBackendConfigDetails(BaseModel, ABC):
     database: str = Field(..., description="Database name")
-    schema: str = Field(..., description="Schema name")
+    schema_name: str = Field(..., description="Schema name", alias="schema")
     syncCursorInDBEvery: int = Field(10, description="Number of iterations before syncing the cursor in the database")
 
 
