@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Type, Union
 
 from requests.auth import AuthBase
 
@@ -23,6 +23,18 @@ class Source(ABC):
 
     def __del__(self):
         self.session.close()
+
+    @staticmethod
+    @abstractmethod
+    def streams() -> List[str]:
+        """Return all the streams that the source supports"""
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def get_config_class() -> Type[SourceConfig]:
+        """Return the config class for the source"""
+        pass
 
     @abstractmethod
     def get_authenticator(self) -> Union[AuthBase, None]:

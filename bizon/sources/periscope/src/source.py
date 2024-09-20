@@ -1,17 +1,17 @@
 import itertools
 from concurrent.futures.thread import ThreadPoolExecutor
-from typing import Any, List, Tuple
+from typing import Any, List, Literal, Tuple
 
 from loguru import logger
+from pydantic import BaseModel, Field
 from requests.auth import AuthBase
 
 from bizon.source.auth.authenticators.cookies import CookiesAuthParams
 from bizon.source.auth.builder import AuthBuilder
-from bizon.source.auth.config import AuthType
+from bizon.source.auth.config import AuthConfig, AuthType
+from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.source import Source
-
-from .config import PeriscopeSourceConfig, PeriscopeStreams
 
 BASE_URL = "https://app.periscopedata.com"
 
@@ -20,11 +20,40 @@ URL_VIEWS = f"{BASE_URL}/login_state/sql_views"
 URL_DATABASES = f"{BASE_URL}/welcome/remaining_state/site_models"
 
 
+class PeriscopeCookies(BaseModel):
+    cf_bm: str = Field(..., description="Cloudflare bm cookie")
+    periscope_session: str = Field(..., description="Periscope session cookie")
+
+
+class PeriscopeCookiesAuthParams(CookiesAuthParams):
+    cookies: PeriscopeCookies = Field(..., description="Cookies configuration")
+
+
+class PeriscopeAuthConfig(AuthConfig):
+    type: Literal[AuthType.COOKIES]
+    params: PeriscopeCookiesAuthParams
+
+
+class PeriscopeSourceConfig(SourceConfig):
+    authentication: PeriscopeAuthConfig
+    workspace_name: str = Field(..., description="Name of the workspace")
+    client_site_id: int = Field(..., description="Client site ID")
+    database_id: int = Field(..., description="Fetch charts connected to this Database ID")
+
+
 class PeriscopeSource(Source):
 
     def __init__(self, config: PeriscopeSourceConfig):
         super().__init__(config)
         self.config: PeriscopeSourceConfig = config
+
+    @staticmethod
+    def streams() -> List[str]:
+        return ["dashboards", "charts", "users", "databases", "views"]
+
+    @staticmethod
+    def get_config_class() -> Source:
+        return PeriscopeSourceConfig
 
     @property
     def cookies(self) -> dict:
@@ -171,10 +200,10 @@ class PeriscopeSource(Source):
         )
 
     def get(self, pagination: dict = None) -> SourceIteration:
-        if self.config.stream_name == PeriscopeStreams.DASHBOARDS:
+        if self.config.stream_name == "dashboards":
             return self.get_dashboards(pagination)
 
-        if self.config.stream_name == PeriscopeStreams.CHARTS:
+        if self.config.stream_name == "charts":
             return self.get_charts(pagination)
 
         raise NotImplementedError(f"Stream {self.config.stream_name} not implemented for Periscope")

@@ -1,6 +1,9 @@
 from bizon.source.auth.config import AuthType
-from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
-from bizon.sources.hubspot.src.source import URL_TOKEN_REFRESH, HubSpotSource
+from bizon.sources.hubspot.src.source_objects import (
+    URL_TOKEN_REFRESH,
+    HubSpotObjectsSource,
+    HubSpotSourceConfig,
+)
 
 
 def test_source_config_valid():
@@ -44,7 +47,7 @@ def test_source_instanciation_contacts():
             },
         }
     }
-    client = HubSpotSource(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
+    client = HubSpotObjectsSource(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
     assert client.object == "contacts"
 
 
@@ -65,5 +68,5 @@ def test_source_instanciation_companies():
             },
         }
     }
-    client = HubSpotSource(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
+    client = HubSpotObjectsSource(config=HubSpotSourceConfig.model_validate(raw_config["source"]))
     assert client.object == "companies"

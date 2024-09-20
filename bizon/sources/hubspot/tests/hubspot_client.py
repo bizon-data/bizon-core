@@ -2,7 +2,7 @@ import os
 
 from bizon.cli.parser import parse_from_yaml
 from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
-from bizon.sources.hubspot.src.source import HubSpotSource
+from bizon.sources.hubspot.src.source_objects import HubSpotSource
 
 raw_config = parse_from_yaml(os.path.abspath("bizon/sources/hubspot/config/hubspot.yml"))
 

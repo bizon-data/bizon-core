@@ -1,8 +1,10 @@
 import json
+from enum import Enum
 from http import HTTPStatus
 from typing import Any, Generator, List, Optional, Tuple
 
 from loguru import logger
+from pydantic import BaseModel, Field
 from requests import HTTPError
 from requests.adapters import HTTPAdapter, Retry
 from requests.auth import AuthBase
@@ -11,12 +13,11 @@ from bizon.source.auth.authenticators.oauth import Oauth2AuthParams
 from bizon.source.auth.authenticators.token import TokenAuthParams
 from bizon.source.auth.builder import AuthBuilder
 from bizon.source.auth.config import AuthType
+from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.session import Session
 from bizon.source.source import Source
 
-from .errors import HubspotInvalidAuth
-from .models.config import HubSpotSourceConfig
 from .models.hs_object import AllObjectProperties, HubSpotProperty
 
 URL_BASE = "https://api.hubapi.com"
@@ -24,7 +25,21 @@ URL_GRANTED_SCOPES = f"{URL_BASE}/oauth/v1/access-tokens"
 URL_TOKEN_REFRESH = f"{URL_BASE}/oauth/v1/token"
 
 
-class HubSpotSource(Source):
+class PropertiesStrategy(str, Enum):
+    ALL = "all"
+    SELECTED = "selected"
+
+
+class PropertiesConfig(BaseModel):
+    strategy: PropertiesStrategy = Field(PropertiesStrategy.ALL, description="Properties strategy")
+    selected_properties: Optional[List[str]] = Field([], description="List of selected properties")
+
+
+class HubSpotSourceConfig(SourceConfig):
+    properties: PropertiesConfig = PropertiesConfig(strategy=PropertiesStrategy.ALL, selected_properties=None)
+
+
+class HubSpotObjectsSource(Source):
 
     api_version = "v3"
 
@@ -40,6 +55,14 @@ class HubSpotSource(Source):
         # If we are initializing the pipeline, we retrieve the selected properties from HubSpot
         if config.init_pipeline:
             self.selected_properties = self.get_selected_properties()
+
+    @staticmethod
+    def streams() -> List[str]:
+        return ["contacts", "companies", "deals"]
+
+    @staticmethod
+    def get_config_class() -> SourceConfig:
+        return HubSpotSourceConfig
 
     @property
     def url_list(self) -> str:
@@ -203,7 +226,7 @@ class HubSpotSource(Source):
                 error_msg = (
                     f"400 Bad Request: {response_json['message']}, please check if provided credentials are valid."
                 )
-        except HubspotInvalidAuth as e:
+        except Exception as e:
             alive = False
             error_msg = repr(e)
         return alive, error_msg

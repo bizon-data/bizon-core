@@ -1,4 +1,3 @@
-import ast
 from abc import ABC, abstractmethod
 
 from loguru import logger
@@ -6,9 +5,8 @@ from loguru import logger
 from bizon.cli.parser import parse_from_yaml
 from bizon.common.models import BizonConfig, SyncMetadata
 from bizon.destinations.destination import AbstractDestination, DestinationFactory
-from bizon.source.cursor import Cursor
 from bizon.source.source import Source
-from bizon.sources import SOURCES
+from bizon.sources import get_source_instance_by_source_and_stream
 
 from .backend.backend import AbstractBackend, BackendFactory
 from .backend.models import JobStatus, StreamJob
@@ -53,10 +51,10 @@ class AbstractRunner(ABC):
             f"Creating client for {self.bizon_config.source.source_name} - {self.bizon_config.source.stream_name} ..."
         )
         # Get the client class, validate the config and return the client
-        return SOURCES.get_instance(
+        return get_source_instance_by_source_and_stream(
             source_name=self.bizon_config.source.source_name,
             stream_name=self.bizon_config.source.stream_name,
-            source_config_dict=self.config["source"],
+            source_config=self.config["source"],  # We pass the raw config to have flexibility for custom sources
         )
 
     def get_destination(self) -> AbstractDestination:

@@ -25,6 +25,8 @@ class SourceConfig(BaseModel, ABC):
 
     stream_name: str = Field(..., description="Name of the stream to sync")
 
+    source_file_path: Optional[str] = Field(default=None, description="Path to the source file")
+
     sync_mode: SourceSyncModes = Field(
         description="Sync mode to use",
         default=SourceSyncModes.FULL_REFRESH,

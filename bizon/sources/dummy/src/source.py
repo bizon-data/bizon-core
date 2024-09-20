@@ -1,24 +1,42 @@
-from typing import List, Tuple
+from typing import List, Literal, Tuple, Type, Union
 
+from pydantic import Field
 from requests.auth import AuthBase
 
 from bizon.source.auth.authenticators.oauth import Oauth2AuthParams
 from bizon.source.auth.authenticators.token import TokenAuthParams
 from bizon.source.auth.builder import AuthBuilder
-from bizon.source.auth.config import AuthType
+from bizon.source.auth.config import AuthConfig, AuthType
+from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.source import Source
 
-from .config import DummySourceConfig
 from .fake_api import fake_api_call
 
 URL_TOKEN_REFRESH = "https://api.mydummysaas.com/oauth/v1/token"
+
+
+class DummyAuthConfig(AuthConfig):
+    type: Literal[AuthType.API_KEY, AuthType.OAUTH]
+    params: Union[TokenAuthParams, Oauth2AuthParams] = Field(None, description="OAuth or API configuration")
+
+
+class DummySourceConfig(SourceConfig):
+    authentication: DummyAuthConfig
 
 
 class DummySource(Source):
 
     def __init__(self, config: DummySourceConfig):
         super().__init__(config)
+
+    @staticmethod
+    def streams() -> List[str]:
+        return ["creatures", "plants"]
+
+    @staticmethod
+    def get_config_class() -> SourceConfig:
+        return DummySourceConfig
 
     @property
     def url_entity(self) -> str:

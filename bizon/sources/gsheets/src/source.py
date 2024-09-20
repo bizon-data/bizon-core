@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, Counter, List, Tuple
+from typing import Any, Counter, List, Tuple, Type
 from uuid import uuid4
 
 import google.auth
@@ -8,12 +8,29 @@ import gspread
 import gspread.utils
 from google.oauth2.service_account import Credentials
 from loguru import logger
+from pydantic import Field
 from requests.auth import AuthBase
 
+from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.source import Source
 
-from .config import GsheetsSourceConfig
+
+class GsheetsSourceConfig(SourceConfig):
+    worksheet_name: str = Field(description="Name of the worksheet to fetch data from", default=...)
+    spreadsheet_url: str = Field(description="URL of the spreadsheet", default=...)
+    service_account_key: str = Field(
+        description="Service Account Key JSON string. If empty it will be infered",
+        default="",
+    )
+    column_names: list[str] = Field(
+        description="Column names to fetch from the worksheet, if empty all columns will be fetched",
+        default=[],
+    )
+    convert_column_names_to_sql_format: bool = Field(
+        description="Convert column names to SQL format (lowercase, no spaces, etc)",
+        default=True,
+    )
 
 
 class GsheetsSource(Source):
@@ -22,6 +39,14 @@ class GsheetsSource(Source):
         super().__init__(config)
         self.config: GsheetsSourceConfig = config
         self.normalization_pattern = re.compile(r"(?<!^)(?=[A-Z])")
+
+    @staticmethod
+    def streams() -> List[str]:
+        return ["worksheet"]
+
+    @staticmethod
+    def get_config_class() -> SourceConfig:
+        return GsheetsSourceConfig
 
     def get_gspread_client(self) -> gspread.client.Client:
 
