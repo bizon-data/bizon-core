@@ -73,6 +73,62 @@ def find_all_source_paths(source_dir_name: str = "src", base_dir: str = "bizon/s
     return discovered_sources_paths
 
 
+def parse_streams_from_filepath(source_name: str, filepath: str, skip_unavailable_sources: bool) -> List[Stream]:
+
+    streams = []
+
+    # Find all classes that inherit from Source
+    source_classes_name = find_inherited_classes(file_path=filepath, parent_class_name="Source")
+
+    # If classes are found
+    if len(source_classes_name) > 0:
+
+        # Get the relative path of the file within bizon module
+        relative_path: str = os.path.relpath(filepath)
+
+        logger.debug(f"Found class {','.join(source_classes_name)} for {source_name} with path: {relative_path}")
+
+        for source_class_name in source_classes_name:
+
+            # Transform the relative path to a python import path and import the module
+            python_import_path = relative_path.replace("/", ".").replace(".py", "")
+            logger.info(f"Importing {python_import_path}")
+
+            try:
+                source_module = importlib.import_module(python_import_path, package="sources")
+            except ImportError as e:
+                if not skip_unavailable_sources:
+                    raise e
+                else:
+                    logger.warning(
+                        f"{source_name} is not available, run 'pip install bizon[{source_name}]' to install missing dependencies."
+                    )
+                break
+            except Exception as e:
+                logger.error(f"Error while importing {python_import_path}: {e}")
+                logger.error(traceback.format_exc())
+                break
+
+            source_class: Type = getattr(source_module, source_class_name)
+
+            # Check if the class has a streams method
+            if hasattr(source_class, "streams") and callable(source_class.streams):
+                for stream in source_class.streams():
+                    streams.append(
+                        Stream(
+                            name=stream,
+                            source_class=source_class,
+                        )
+                    )
+            else:
+                logger.warning(
+                    f"Class {source_class_name} in {relative_path} does not have a streams method."
+                    "Please add a streams method to the class to be able to use it."
+                )
+
+    return streams
+
+
 def get_sources_in_path(source_name: str, source_code_path: str, skip_unavailable_sources: bool = True) -> SourceModel:
     """Get all sources in a given path
     Return a SourceModel object with the source name and its streams
@@ -82,63 +138,15 @@ def get_sources_in_path(source_name: str, source_code_path: str, skip_unavailabl
 
     # Iterate all files in the source code path recursively
     for root, _, files in os.walk(source_code_path):
-
         for file in files:
-
-            # Check if the file is a python file
             if file.endswith(".py"):
-
-                # Find all classes that inherit from Source
-                source_classes_name = find_inherited_classes(
-                    file_path=os.path.join(root, file), parent_class_name="Source"
-                )
-
-                # If classes are found
-                if len(source_classes_name) > 0:
-
-                    # Get the relative path of the file within bizon module
-                    relative_path: str = os.path.join(os.path.relpath(root), file)
-
-                    logger.debug(
-                        f"Found class {','.join(source_classes_name)} for {source_name} with path: {relative_path}"
+                streams.extend(
+                    parse_streams_from_filepath(
+                        source_name=source_name,
+                        filepath=os.path.join(root, file),
+                        skip_unavailable_sources=skip_unavailable_sources,
                     )
-
-                    for source_class_name in source_classes_name:
-
-                        # Transform the relative path to a python import path and import the module
-                        python_import_path = relative_path.replace("/", ".").replace(".py", "")
-                        logger.info(f"Importing {python_import_path}")
-
-                        try:
-                            source_module = importlib.import_module(python_import_path, package="sources")
-                        except ImportError as e:
-                            if not skip_unavailable_sources:
-                                raise e
-                            logger.warning(
-                                f"{source_name} is not available, run 'pip install bizon[{source_name}]' to install missing dependencies."
-                            )
-                            break
-                        except Exception as e:
-                            logger.error(f"Error while importing {python_import_path}: {e}")
-                            logger.error(traceback.format_exc())
-                            break
-
-                        source_class: Type = getattr(source_module, source_class_name)
-
-                        # Check if the class has a streams method
-                        if hasattr(source_class, "streams") and callable(source_class.streams):
-                            for stream in source_class.streams():
-                                streams.append(
-                                    Stream(
-                                        name=stream,
-                                        source_class=source_class,
-                                    )
-                                )
-                        else:
-                            logger.warning(
-                                f"Class {source_class_name} in {relative_path} does not have a streams method."
-                                "Please add a streams method to the class to be able to use it."
-                            )
+                )
 
     return SourceModel(name=source_name, streams=streams)
 
@@ -173,6 +181,53 @@ def get_internal_source_class_by_source_and_stream(source_name: str, stream_name
     return stream.source_class
 
 
+def get_external_source_class_by_source_and_stream(source_name: str, stream_name: str, filepath: str) -> Type[Source]:
+    """Get the source class by source and stream name"""
+
+    if not os.path.exists(filepath):
+        raise ValueError(f"File {filepath} not found.")
+
+    if not filepath.endswith(".py"):
+        raise ValueError(f"File {filepath} is not a python file. File extension should be '.py'")
+
+    # Find  class that inherit from Source
+    source_classes_names = find_inherited_classes(file_path=filepath, parent_class_name="Source")
+
+    assert len(source_classes_names) > 0, f"No Class found in {filepath} that inherit from Source"
+
+    # Extract the module name from the file (remove directory and extension)
+    module_name = os.path.splitext(os.path.basename(filepath))[0]
+
+    # Create module spec from the file
+    spec = importlib.util.spec_from_file_location(module_name, filepath)
+
+    # Create a module from the spec
+    module = importlib.util.module_from_spec(spec)
+
+    # Execute the module (this loads the module into memory)
+    spec.loader.exec_module(module)
+
+    streams: list[Stream] = []
+
+    for source_class_name in source_classes_names:
+        source_class: Type = getattr(module, source_class_name)
+        streams.extend(
+            [
+                Stream(
+                    name=stream,
+                    source_class=source_class,
+                )
+                for stream in source_class.streams()
+            ]
+        )
+
+    for stream in streams:
+        if stream.name == stream_name:
+            return stream.source_class
+
+    raise ValueError(f"Stream {stream_name} not found. Available streams are {[stream.name for stream in streams]}")
+
+
 def discover_all_sources() -> Mapping[str, SourceModel]:
     """Discover all sources in the sources directory
     Return a dict mapping source_name to SourceModel object
@@ -199,18 +254,18 @@ def get_source_instance_by_source_and_stream(
 ) -> Source:
     """Get an instance of the source by source and stream name"""
 
-    source_class: Source = get_internal_source_class_by_source_and_stream(
-        source_name=source_name, stream_name=stream_name
-    )
+    if source_config.get("source_file_path"):
+        source_class: Source = get_external_source_class_by_source_and_stream(
+            source_name=source_name,
+            stream_name=stream_name,
+            filepath=source_config["source_file_path"],
+        )
+    else:
+        source_class: Source = get_internal_source_class_by_source_and_stream(
+            source_name=source_name, stream_name=stream_name
+        )
 
     config_class = source_class.get_config_class()
     config_parsed = config_class.model_validate(source_config)
 
     return source_class(config=config_parsed)
-
-
-__all__ = [
-    "get_internal_source_class_by_source_and_stream",
-    "get_source_instance_by_source_and_stream",
-    "discover_all_sources",
-]

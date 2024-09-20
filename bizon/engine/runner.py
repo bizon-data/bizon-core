@@ -5,8 +5,8 @@ from loguru import logger
 from bizon.cli.util import parse_from_yaml
 from bizon.common.models import BizonConfig, SyncMetadata
 from bizon.destinations.destination import AbstractDestination, DestinationFactory
+from bizon.source.discover import get_source_instance_by_source_and_stream
 from bizon.source.source import Source
-from bizon.sources import get_source_instance_by_source_and_stream
 
 from .backend.backend import AbstractBackend, BackendFactory
 from .backend.models import JobStatus, StreamJob

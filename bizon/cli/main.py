@@ -2,7 +2,7 @@ import click
 
 from bizon.cli.util import parse_from_yaml
 from bizon.engine.runner import RunnerFactory
-from bizon.sources import discover_all_sources
+from bizon.source.discover import discover_all_sources
 
 
 @click.group()
