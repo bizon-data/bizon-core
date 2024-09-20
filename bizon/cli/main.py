@@ -29,17 +29,17 @@ def list():
     for source_name, source_class in sources.items():
         if not source_class.available_streams:
             click.echo(
-                f"{source_name} - NOT AVAILABLE, run 'pip install bizon[gsheets]' to install missing dependencies."
+                f"{source_name} - NOT AVAILABLE, run 'pip install bizon[{source_name}]' to install missing dependencies."
             )
         else:
             click.echo(f"{source_name} - {source_class.available_streams}")
 
 
 # Create a 'destination' group under 'bizon'
-# @cli.group()
-# def destination():
-#     """Subcommands for handling destinations."""
-#     pass
+@cli.group()
+def destination():
+    """Subcommands for handling destinations."""
+    pass
 
 
 @cli.command()
