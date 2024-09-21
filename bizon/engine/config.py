@@ -34,10 +34,10 @@ class EngineConfig(BaseModel):
         BigQuerySQLAlchemyConfig,
     ] = Field(
         description="Configuration for the backend",
-        default=SQLiteInMemoryConfig(
-            type=BackendTypes.SQLITE_IN_MEMORY,
+        default=SQLiteSQLAlchemyConfig(
+            type=BackendTypes.SQLITE,
             config=SQLiteConfigDetails(
-                database="NOT_USED_IN_SQLITE",
+                database="bizon",
                 schema="NOT_USED_IN_SQLITE",
             ),
             syncCursorInDBEvery=2,

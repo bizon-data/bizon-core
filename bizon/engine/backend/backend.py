@@ -161,6 +161,7 @@ class BackendFactory:
 
             return SQLAlchemyBackend(config=config.config, type=config.type)
 
+        # ONLY FOR UNIT TESTS
         elif config.type == BackendTypes.SQLITE_IN_MEMORY:
             from .adapters.sqlalchemy.backend import SQLAlchemyBackend
 

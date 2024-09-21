@@ -36,7 +36,10 @@ def my_backend(my_backend_config: SQLiteInMemoryConfig) -> SQLAlchemyBackend:
 @pytest.fixture(scope="function")
 def db_session(my_backend: SQLAlchemyBackend):
     """yields a SQLAlchemy connection which is rollbacked after the test"""
-    session_ = scoped_session(sessionmaker(bind=my_backend.engine, expire_on_commit=False))
+
+    engine = my_backend.get_engine()
+
+    session_ = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
 
     yield session_
 

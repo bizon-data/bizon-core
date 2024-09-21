@@ -36,7 +36,10 @@ def my_pg_backend(my_pg_backend_config: PostgresSQLAlchemyConfig) -> SQLAlchemyB
 @pytest.fixture(scope="function")
 def pg_db_session(my_pg_backend: SQLAlchemyBackend):
     """yields a SQLAlchemy connection which is rollbacked after the test"""
-    session_ = scoped_session(sessionmaker(bind=my_pg_backend.engine, expire_on_commit=False))
+
+    engine = my_pg_backend.get_engine()
+
+    session_ = scoped_session(sessionmaker(bind=engine, expire_on_commit=False))
 
     yield session_
 

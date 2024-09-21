@@ -15,7 +15,7 @@ from bizon.engine.backend.backend import BackendFactory
 from bizon.engine.backend.config import BackendTypes
 
 
-def test_backend_factory_sqlite_in_memory():
+def test_backend_factory_sqlite():
 
     config = SQLiteInMemoryConfig(
         type=BackendTypes.SQLITE_IN_MEMORY,

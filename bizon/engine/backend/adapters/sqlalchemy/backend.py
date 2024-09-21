@@ -29,7 +29,8 @@ class SQLAlchemyBackend(AbstractBackend):
 
     def __init__(self, config: Union[PostgresConfigDetails, SQLiteConfigDetails], type: BackendTypes):
         super().__init__(config, type)
-        self.engine: Engine = self._get_engine()
+
+        self._engine = None
 
         self.config: Union[
             PostgresConfigDetails,
@@ -40,9 +41,10 @@ class SQLAlchemyBackend(AbstractBackend):
     @property
     def session(self) -> Generator[Session, None, None]:
         """yields a SQLAlchemy connection"""
+        engine = self.get_engine()
         session_ = scoped_session(
             sessionmaker(
-                bind=self.engine,
+                bind=engine,
                 expire_on_commit=False,
             )
         )
@@ -50,6 +52,9 @@ class SQLAlchemyBackend(AbstractBackend):
         yield session_
 
         session_.close()
+
+        # For SQLite, we need to dispose the engine after each operation to prevent database lock
+        self.handle_dispose_sqlite(engine)
 
     def _get_engine_bigquery(self) -> Engine:
         if hasattr(self.config, "service_account_key") and self.config.service_account_key:
@@ -77,14 +82,15 @@ class SQLAlchemyBackend(AbstractBackend):
         if self.type == BackendTypes.POSTGRES:
             return self._get_engine_postgres()
 
-        # SQLite in a file
+        # SQLite in a file, ok for small tests
         if self.type == BackendTypes.SQLITE:
             return create_engine(
-                f"sqlite:///{self.config.database}.db",
+                f"sqlite:///{self.config.database}.sqlite3",
                 echo=self.config.echoEngine,
+                connect_args={"check_same_thread": False},
             )
 
-        # SQLite in memory
+        # ONLY FOR UNIT TESTS: SQLite in memory
         if self.type == BackendTypes.SQLITE_IN_MEMORY:
             return create_engine(
                 f"sqlite:///:memory:",
@@ -99,7 +105,9 @@ class SQLAlchemyBackend(AbstractBackend):
             logger.warning("SQLite does not support schemas")
             return True
 
-        with self.engine.connect() as connection:
+        engine = self.get_engine()
+
+        with engine.connect() as connection:
             if not inspect(connection).has_schema(self.config.schema_name):
                 logger.error(
                     f"Schema or dataset {self.config.schema_name} does not exist in the database, you need to create it first."
@@ -108,13 +116,33 @@ class SQLAlchemyBackend(AbstractBackend):
                     f"Schema or dataset {self.config.schema_name} does not exist in the database, you need to create it first."
                 )
 
+        self.handle_dispose_sqlite(engine)
+
+    def handle_dispose_sqlite(self, engine: Engine):
+        if self.type == BackendTypes.SQLITE:
+            engine.dispose()
+
+    def get_engine(self) -> Engine:
+        """Return the SQLAlchemy engine"""
+        if self.type == BackendTypes.SQLITE:
+            return self._get_engine()
+
+        if not self._engine:
+            self._engine = self._get_engine()
+
+        return self._engine
+
     #### INIT DATABASE ####
 
     def create_all_tables(self):
-        Base.metadata.create_all(self.engine)
+        engine = self.get_engine()
+        Base.metadata.create_all(engine)
+        self.handle_dispose_sqlite(engine)
 
     def drop_all_tables(self):
-        Base.metadata.drop_all(self.engine)
+        engine = self.get_engine()
+        Base.metadata.drop_all(engine)
+        self.handle_dispose_sqlite(engine)
 
     def check_prerequisites(self) -> bool:
         """Check if the database contains the necessary tables, return True if entities are present
@@ -127,18 +155,22 @@ class SQLAlchemyBackend(AbstractBackend):
 
         all_entities_exist = True
 
+        engine = self.get_engine()
+
         # Check if TABLE_STREAM_INFO exists, otherwise create it
-        if not inspect(self.engine).has_table(TABLE_STREAM_INFO):
+        if not inspect(engine).has_table(TABLE_STREAM_INFO):
             all_entities_exist = False
             logger.info(f"Table {TABLE_STREAM_INFO} does not exist in the database, we will create it")
 
-        if not inspect(self.engine).has_table(TABLE_SOURCE_CURSOR):
+        if not inspect(engine).has_table(TABLE_SOURCE_CURSOR):
             all_entities_exist = False
             logger.info(f"Table {TABLE_SOURCE_CURSOR} does not exist in the database, we will create it")
 
-        if not inspect(self.engine).has_table(TABLE_DESTINATION_CURSOR):
+        if not inspect(engine).has_table(TABLE_DESTINATION_CURSOR):
             all_entities_exist = False
             logger.info(f"Table {TABLE_DESTINATION_CURSOR} does not exist in the database, we will create it")
+
+        self.handle_dispose_sqlite(engine)
 
         return all_entities_exist
 

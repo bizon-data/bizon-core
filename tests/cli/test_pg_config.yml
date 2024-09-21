@@ -13,8 +13,8 @@ destination:
 
 engine:
   backend:
-    type: sqlite_in_memory
+    type: sqlite
     config:
       syncCursorInDBEvery: 2
-      database: bizon_test
+      database: bizon
       schema: public
