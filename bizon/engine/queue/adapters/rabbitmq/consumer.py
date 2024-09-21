@@ -1,5 +1,3 @@
-import json
-
 import pika
 import pika.connection
 from loguru import logger
@@ -30,13 +28,13 @@ class RabbitMQConsumer(AbstractQueueConsumer):
 
         for method_frame, properties, body in channel.consume(self.config.queue.queue_name):
 
-            queue_message = QueueMessage.model_validate(json.loads(body))
-
+            queue_message = QueueMessage.model_validate_json(body)
             if queue_message.signal == QUEUE_TERMINATION:
                 logger.info("Received termination signal, waiting for destination to close gracefully ...")
                 self.destination.write_records_and_update_cursor(
                     source_records=queue_message.source_records,
                     iteration=queue_message.iteration,
+                    extracted_at=queue_message.extracted_at,
                     last_iteration=True,
                 )
                 channel.queue_delete(queue=self.config.queue.queue_name)
@@ -49,5 +47,6 @@ class RabbitMQConsumer(AbstractQueueConsumer):
             self.destination.write_records_and_update_cursor(
                 source_records=queue_message.source_records,
                 iteration=queue_message.iteration,
+                extracted_at=queue_message.extracted_at,
             )
             logger.info(f"Consumed data from queue: {len(queue_message.source_records)}")

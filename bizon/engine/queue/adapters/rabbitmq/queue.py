@@ -1,5 +1,3 @@
-import json
-
 import pika
 from loguru import logger
 
@@ -34,7 +32,7 @@ class RabbitMQ(AbstractQueue):
         self.channel.basic_publish(
             exchange=self.config.queue.exchange,
             routing_key=self.config.queue.queue_name,
-            body=json.dumps(queue_message.model_dump()),
+            body=queue_message.model_dump_json(),
         )
 
     def get(self) -> QueueMessage:

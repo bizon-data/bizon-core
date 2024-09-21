@@ -41,6 +41,7 @@ class KafkaConsumer_(AbstractQueueConsumer):
                     self.destination.write_records_and_update_cursor(
                         source_records=queue_message.source_records,
                         iteration=queue_message.iteration,
+                        extracted_at=queue_message.extracted_at,
                         last_iteration=True,
                     )
                     break
@@ -50,6 +51,7 @@ class KafkaConsumer_(AbstractQueueConsumer):
 
                 self.destination.write_records_and_update_cursor(
                     source_records=queue_message.source_records,
+                    extracted_at=queue_message.extracted_at,
                     iteration=queue_message.iteration,
                 )
 
