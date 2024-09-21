@@ -1,3 +1,5 @@
+import os
+
 import click
 
 from bizon.cli.util import parse_from_yaml
@@ -50,14 +52,30 @@ def destination():
     type=click.Path(exists=True),
     help="Custom Python file implementing a Bizon source.",
 )
-def run(filename: str, custom_source: str, help="Run a bizon pipeline from a YAML file."):
+@click.option(
+    "--debug",
+    required=False,
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Enable debug mode.",
+)
+def run(filename: str, custom_source: str, debug, help="Run a bizon pipeline from a YAML file."):
     """Run a bizon pipeline from a YAML file."""
     ctx = click.get_current_context()
+
+    # Set Log Level
+    if debug:
+        os.environ["LOGURU_LEVEL"] = "DEBUG"
+
+    # Parse config from YAML file as a dictionary
+    config = parse_from_yaml(filename)
+
+    # Override source_file_path param in config
     custom_source = ctx.get_parameter_source("custom-source")
     if custom_source:
-        # TODO Load the custom source
-        pass
-    config = parse_from_yaml(filename)
+        config["source"]["source_file_path"] = custom_source
+
     runner = RunnerFactory.create_from_config_dict(config=config)
     runner.run()
 
