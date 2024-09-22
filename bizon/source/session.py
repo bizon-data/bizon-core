@@ -2,6 +2,12 @@ import requests
 from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
 from requests.exceptions import HTTPError
+from requests.models import Response
+
+
+# Define a named function instead of using a lambda to be able to pickle it
+def raise_for_status_hook(response: Response, *args, **kwargs):
+    response.raise_for_status()
 
 
 class Session(requests.Session):
@@ -9,7 +15,7 @@ class Session(requests.Session):
         super().__init__()
 
         # call response.raise_for_status() after every response
-        self.hooks["response"] = [lambda response, *args, **kwargs: response.raise_for_status()]
+        self.hooks["response"] = [raise_for_status_hook]
 
         # Implement basic rety policy if rate-limited
         retries = Retry(

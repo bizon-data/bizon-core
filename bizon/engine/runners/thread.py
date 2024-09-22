@@ -6,51 +6,67 @@ from loguru import logger
 from bizon.common.models import BizonConfig
 from bizon.engine.runner import AbstractRunner
 
-IS_ALIVE_CHECK_INTERVAL = 2  # seconds
-CONSUMER_START_DELAY = 5  # seconds
-
 
 class ThreadRunner(AbstractRunner):
     def __init__(self, config: BizonConfig):
         super().__init__(config)
 
+    # TODO: refacto this
+    def get_kwargs(self):
+        if self.bizon_config.engine.queue.type == "python_queue":
+            from queue import Queue
+
+            queue = Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
+            return {"queue": queue}
+        return {}
+
     def run(self) -> bool:
         """Run the pipeline with dedicated threads for source and destination"""
 
-        # Create the producer thread
-        producer = self.get_producer()
-
-        # Create the destination thread
-        consumer = self.queue.get_consumer(destination=self.destination)
+        job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config)
 
         # Store the future results
         result_producer = None
         result_consumer = None
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            future_producer = executor.submit(producer.run, self.job.id)
-            logger.info("Producer has started ...")
+        extra_kwargs = self.get_kwargs()
 
-            time.sleep(CONSUMER_START_DELAY)
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=self.bizon_config.engine.runner.config.max_workers
+        ) as executor:
 
-            future_consumer = executor.submit(consumer.run)
-            logger.info("Consumer has started ...")
+            future_producer = executor.submit(
+                AbstractRunner.instanciate_and_run_producer,
+                self.bizon_config,
+                self.config,
+                job.id,
+                **extra_kwargs,
+            )
+            logger.info("Producer thread has started ...")
 
-            self._is_running = True
+            time.sleep(self.bizon_config.engine.runner.config.consumer_start_delay)
+
+            future_consumer = executor.submit(
+                AbstractRunner.instanciate_and_run_consumer,
+                self.bizon_config,
+                job.id,
+                **extra_kwargs,
+            )
+            logger.info("Consumer thread has started ...")
 
             while future_producer.running() and future_consumer.running():
                 logger.debug("Producer and consumer are still running ...")
                 self._is_running = True
-                time.sleep(IS_ALIVE_CHECK_INTERVAL)
+                time.sleep(self.bizon_config.engine.runner.config.is_alive_check_interval)
 
             self._is_running = False
 
             if not future_producer.running():
                 result_producer = future_producer.result()
-                logger.info(f"Producer stopped running with result: {result_producer}")
+                logger.info(f"Producer thread stopped running with result: {result_producer}")
 
             if not future_consumer.running():
                 result_consumer = future_consumer.result()
-                logger.info(f"Consumer stopped running with result: {result_consumer}")
+                logger.info(f"Consumer thread stopped running with result: {result_consumer}")
 
         return True

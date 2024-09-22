@@ -1,0 +1,70 @@
+import concurrent.futures
+import time
+
+from loguru import logger
+
+from bizon.engine.runner import AbstractRunner
+
+
+class ProcessRunner(AbstractRunner):
+
+    def __init__(self, config: dict):
+        super().__init__(config)
+
+    def run(self):
+        """Run the pipeline with dedicated threads for source and destination"""
+
+        job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config)
+
+        # Store the future results
+        result_producer = None
+        result_consumer = None
+
+        # TODO: fix multiprocessing.Queue with process runner
+        if self.bizon_config.engine.queue.type == "python_queue":
+            logger.error(
+                "PythonQueue is not supported for ProcessRunner. Use ThreadRunner instead with option '--runner thread'"
+            )
+            raise NotImplementedError(
+                "PythonQueue is not supported for ProcessRunner. Use ThreadRunner instead with option '--runner thread'"
+            )
+
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=self.bizon_config.engine.runner.config.max_workers
+        ) as executor:
+
+            future_producer = executor.submit(
+                AbstractRunner.instanciate_and_run_producer,
+                self.bizon_config,
+                self.config,
+                job.id,
+            )
+            logger.info("Producer process has started ...")
+
+            time.sleep(self.bizon_config.engine.runner.config.consumer_start_delay)
+
+            future_consumer = executor.submit(
+                AbstractRunner.instanciate_and_run_consumer,
+                self.bizon_config,
+                job.id,
+            )
+            logger.info("Consumer process has started ...")
+
+            self._is_running = True
+
+            while future_producer.running() and future_consumer.running():
+                logger.debug("Producer and consumer are still running ...")
+                self._is_running = True
+                time.sleep(self.bizon_config.engine.runner.config.is_alive_check_interval)
+
+            self._is_running = False
+
+            if not future_producer.running():
+                result_producer = future_producer.result()
+                logger.info(f"Producer process stopped running with result: {result_producer}")
+
+            if not future_consumer.running():
+                result_consumer = future_consumer.result()
+                logger.info(f"Consumer process stopped running with result: {result_consumer}")
+
+        return True

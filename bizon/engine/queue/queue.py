@@ -74,11 +74,14 @@ class QueueFactory:
     @staticmethod
     def get_queue(
         config: AbstractQueueConfig,
+        **kwargs,
     ) -> AbstractQueue:
         if config.type == QueueTypes.PYTHON_QUEUE:
             from .adapters.python_queue.queue import PythonQueue
 
-            return PythonQueue(config=config.config)
+            # For PythonQueue, queue param is required in kwargs
+            # It contains an instance of multiprocessing.Queue
+            return PythonQueue(config=config.config, **kwargs)
 
         if config.type == QueueTypes.KAFKA:
             from .adapters.kafka.queue import KafkaQueue

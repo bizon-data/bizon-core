@@ -1,4 +1,5 @@
 import os
+from queue import Queue
 
 import pytest
 
@@ -12,9 +13,10 @@ from bizon.engine.runner import RunnerFactory
 @pytest.fixture(scope="function")
 def my_producer(my_backend: AbstractBackend, db_session: SQLAlchemyBackend):
     runner = RunnerFactory.create_from_yaml(os.path.abspath("tests/engine/dummy_pipeline_sqlite.yml"))
-    source = runner.get_source()
+    source = runner.get_source(bizon_config=runner.bizon_config, config=runner.config)
     my_backend.create_all_tables()
-    return Producer(queue=runner.queue, source=source, backend=my_backend)
+    queue = runner.get_queue(bizon_config=runner.bizon_config, queue=Queue)
+    return Producer(queue=queue, source=source, backend=my_backend)
 
 
 @pytest.fixture(scope="function")

@@ -10,7 +10,7 @@ from bizon.engine.queue.config import (
 
 
 class PythonQueueQueueConfig(BaseModel):
-    max_size: int = Field(1000, description="Maximum size of the queue")
+    max_size: int = Field(0, description="Maximum size of the queue, by default 0 means unlimited")
 
 
 class PythonQueueConsumerConfig(BaseModel):

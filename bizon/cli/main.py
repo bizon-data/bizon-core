@@ -1,10 +1,14 @@
-import os
-
 import click
 
-from bizon.cli.util import parse_from_yaml
 from bizon.engine.runner import RunnerFactory
 from bizon.source.discover import discover_all_sources
+
+from .utils import (
+    parse_from_yaml,
+    set_custom_source_path_in_config,
+    set_debug_mode,
+    set_runner_in_config,
+)
 
 
 @click.group()
@@ -53,6 +57,14 @@ def destination():
     help="Custom Python file implementing a Bizon source.",
 )
 @click.option(
+    "--runner",
+    required=False,
+    type=click.Choice(["thread", "process"]),
+    default="thread",
+    show_default=True,
+    help="Runner type to use. Thread or Process.",
+)
+@click.option(
     "--debug",
     required=False,
     is_flag=True,
@@ -60,21 +72,21 @@ def destination():
     default=False,
     help="Enable debug mode.",
 )
-def run(filename: str, custom_source: str, debug, help="Run a bizon pipeline from a YAML file."):
+def run(filename: str, custom_source: str, runner: str, debug, help="Run a bizon pipeline from a YAML file."):
     """Run a bizon pipeline from a YAML file."""
     ctx = click.get_current_context()
-
-    # Set Log Level
-    if debug:
-        os.environ["LOGURU_LEVEL"] = "DEBUG"
 
     # Parse config from YAML file as a dictionary
     config = parse_from_yaml(filename)
 
+    # Set debug mode
+    set_debug_mode(debug)
+
     # Override source_file_path param in config
-    custom_source = ctx.get_parameter_source("custom-source")
-    if custom_source:
-        config["source"]["source_file_path"] = custom_source
+    set_custom_source_path_in_config(config=config, custom_source=ctx.get_parameter_source("custom-source"))
+
+    # Override runner param in config
+    set_runner_in_config(config=config, runner=runner)
 
     runner = RunnerFactory.create_from_config_dict(config=config)
     runner.run()

@@ -2,7 +2,7 @@ import os
 
 from yaml import safe_load
 
-from bizon.cli.util import parse_from_yaml
+from bizon.cli.utils import parse_from_yaml
 from bizon.destinations.logger.src.destination import LoggerDestination
 from bizon.engine.backend.config import BackendTypes
 from bizon.engine.queue.adapters.kafka.queue import KafkaQueue
@@ -42,16 +42,20 @@ def test_parse_task_runner_python_queue():
                 log_level: INFO
         """
     config = safe_load(config_yaml)
+
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    assert isinstance(runner.destination, LoggerDestination)
+    backend = runner.get_backend(bizon_config=runner.bizon_config)
+    destination = runner.get_destination(bizon_config=runner.bizon_config, backend=backend, job_id="123")
+
+    assert isinstance(destination, LoggerDestination)
 
     # Check if the backend per default is of type sqlite
-    assert runner.backend.type == BackendTypes.SQLITE_IN_MEMORY
+    assert backend.type == BackendTypes.SQLITE_IN_MEMORY
 
     assert runner.bizon_config.engine.runner.log_level == "INFO"
 
-    assert runner.backend.config.syncCursorInDBEvery == 400
+    assert backend.config.syncCursorInDBEvery == 400
 
 
 def test_parse_task_runner_kafka_queue():
@@ -89,12 +93,16 @@ def test_parse_task_runner_kafka_queue():
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    assert isinstance(runner.destination, LoggerDestination)
+    backend = runner.get_backend(bizon_config=runner.bizon_config)
+    destination = runner.get_destination(bizon_config=runner.bizon_config, backend=backend, job_id="123")
+    queue = runner.get_queue(bizon_config=runner.bizon_config)
 
-    assert runner.backend.type == BackendTypes.SQLITE_IN_MEMORY
+    assert isinstance(destination, LoggerDestination)
 
-    assert isinstance(runner.queue, KafkaQueue)
-    assert runner.queue.config.queue.bootstrap_server == "localhost:9092"
+    assert backend.type == BackendTypes.SQLITE_IN_MEMORY
+
+    assert isinstance(queue, KafkaQueue)
+    assert queue.config.queue.bootstrap_server == "localhost:9092"
 
 
 def test_parse_task_runner_rabbitmq_queue():
@@ -135,12 +143,16 @@ def test_parse_task_runner_rabbitmq_queue():
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
 
-    assert isinstance(runner.destination, LoggerDestination)
+    backend = runner.get_backend(bizon_config=runner.bizon_config)
+    destination = runner.get_destination(bizon_config=runner.bizon_config, backend=backend, job_id="123")
+    queue = runner.get_queue(bizon_config=runner.bizon_config)
 
-    assert runner.backend.type == BackendTypes.SQLITE_IN_MEMORY
+    assert isinstance(destination, LoggerDestination)
 
-    assert isinstance(runner.queue, RabbitMQ)
-    assert runner.queue.config.queue.queue_name == "bizon"
-    assert runner.queue.config.queue.host == "localhost"
-    assert runner.queue.config.queue.port == 5672
-    assert runner.queue.config.consumer.poll_interval == 1
+    assert backend.type == BackendTypes.SQLITE_IN_MEMORY
+
+    assert isinstance(queue, RabbitMQ)
+    assert queue.config.queue.queue_name == "bizon"
+    assert queue.config.queue.host == "localhost"
+    assert queue.config.queue.port == 5672
+    assert queue.config.consumer.poll_interval == 1

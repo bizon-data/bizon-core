@@ -1,3 +1,5 @@
+from queue import Queue
+
 import pytest
 
 from bizon.common.models import SyncMetadata
@@ -36,7 +38,9 @@ def test_queue_factory():
         ),
     )
 
-    queue = QueueFactory().get_queue(config=config)
+    kwargs = {"queue": Queue(maxsize=3000)}
+
+    queue = QueueFactory().get_queue(config=config, **kwargs)
     assert isinstance(queue, PythonQueue)
 
 

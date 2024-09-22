@@ -166,4 +166,5 @@ class BackendFactory:
             from .adapters.sqlalchemy.backend import SQLAlchemyBackend
 
             return SQLAlchemyBackend(config=config.config, type=config.type)
+
         raise ValueError(f"Unsupported backend type: {config.type}")

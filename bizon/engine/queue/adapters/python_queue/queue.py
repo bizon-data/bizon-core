@@ -1,6 +1,6 @@
-import queue
 import random
 import time
+from multiprocessing import Queue
 
 from loguru import logger
 
@@ -18,10 +18,12 @@ from .consumer import PythonQueueConsumer
 
 class PythonQueue(AbstractQueue):
 
-    def __init__(self, config: PythonQueueConfigDetails) -> None:
+    def __init__(self, config: PythonQueueConfigDetails, **kwargs) -> None:
         super().__init__(config)
         self.config: PythonQueueConfigDetails = config
-        self.queue = queue.Queue(maxsize=self.config.queue.max_size)
+
+        assert "queue" in kwargs, "queue param passed in kwargs is required for PythonQueue"
+        self.queue: Queue = kwargs["queue"]
 
     def connect(self):
         # No connection to establish for PythonQueue
@@ -33,7 +35,7 @@ class PythonQueue(AbstractQueue):
     def put_queue_message(self, queue_message: QueueMessage):
         if not self.queue.full():
             self.queue.put(queue_message.model_dump())
-            logger.debug(f"Putting data from iteration {queue_message.iteration} ({self.queue.qsize()} items in queue)")
+            logger.debug(f"Putting data from iteration {queue_message.iteration} items in queue)")
         else:
             logger.warning("Queue is full, waiting for consumer to consume data")
             time.sleep(random.random())

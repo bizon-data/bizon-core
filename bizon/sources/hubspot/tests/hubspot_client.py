@@ -1,6 +1,6 @@
 import os
 
-from bizon.cli.util import parse_from_yaml
+from bizon.cli.utils import parse_from_yaml
 from bizon.sources.hubspot.src.models.config import HubSpotSourceConfig
 from bizon.sources.hubspot.src.source_objects import HubSpotSource
 

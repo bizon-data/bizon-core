@@ -19,7 +19,7 @@ from .queue.adapters.python_queue.config import (
 )
 from .queue.adapters.rabbitmq.config import RabbitMQConfig
 from .queue.config import QueueTypes
-from .runners.config import RunnerConfig, RunnerTypes, ThreadsConfig
+from .runners.config import RunnerConfig, RunnerFuturesConfig, RunnerTypes
 
 
 class EngineConfig(BaseModel):
@@ -54,7 +54,7 @@ class EngineConfig(BaseModel):
         default=PythonQueueConfig(
             type=QueueTypes.PYTHON_QUEUE,
             config=PythonQueueConfigDetails(
-                queue=PythonQueueQueueConfig(max_size=1000),
+                queue=PythonQueueQueueConfig(max_size=0),
                 consumer=PythonQueueConsumerConfig(poll_interval=2),
             ),
         ),
@@ -64,10 +64,8 @@ class EngineConfig(BaseModel):
     runner: RunnerConfig = Field(
         description="Runner to use for the pipeline",
         default=RunnerConfig(
-            type=RunnerTypes.THREADS,
-            config=ThreadsConfig(
-                consumer_start_delay=2,
-            ),
+            type=RunnerTypes.THREAD,
+            config=RunnerFuturesConfig(),
             log_level="INFO",
         ),
     )
