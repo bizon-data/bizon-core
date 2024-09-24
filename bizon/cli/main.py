@@ -20,7 +20,7 @@ def cli():
 # Create a 'destination' group under 'bizon'
 @cli.group()
 def source():
-    """Subcommands for handling destinations."""
+    """Subcommands for handling sources."""
     pass
 
 
@@ -32,13 +32,36 @@ def list():
     sources = discover_all_sources()
 
     click.echo("Available sources:")
-    for source_name, source_class in sources.items():
-        if not source_class.available_streams:
+    for source_name, source_model in sources.items():
+        if not source_model.available_streams:
             click.echo(
                 f"{source_name} - NOT AVAILABLE, run 'pip install bizon[{source_name}]' to install missing dependencies."
             )
         else:
-            click.echo(f"{source_name} - {source_class.available_streams}")
+            click.echo(f"{source_name} - {source_model.available_streams}")
+
+
+# Create a 'destination' group under 'bizon'
+@cli.group()
+def stream():
+    """Subcommands for handling streams."""
+    pass
+
+
+@stream.command()
+@click.argument("source_name", type=click.STRING)
+def list(source_name: str):
+    """List available streams for a source."""
+    sources = discover_all_sources()
+    source_model = sources.get(source_name)
+    if not source_model:
+        click.echo(f"Source {source_name} not found.")
+        return
+
+    click.echo(f"Available streams for {source_name}:")
+    for stream in source_model.streams:
+        stream_mode = "[Supports incremental]" if stream.supports_incremental else "[Full refresh only]"
+        click.echo(f"{stream_mode} - {stream.name}")
 
 
 # Create a 'destination' group under 'bizon'

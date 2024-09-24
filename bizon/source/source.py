@@ -1,4 +1,6 @@
+import inspect
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, List, Optional, Tuple, Type, Union
 
 from requests.auth import AuthBase
@@ -9,7 +11,7 @@ from .config import SourceConfig
 from .session import Session
 
 
-class Source(ABC):
+class AbstractSource(ABC):
 
     def __init__(self, config: SourceConfig):
         self.config = config
@@ -62,6 +64,10 @@ class Source(ABC):
     @abstractmethod
     def get_total_records_count(self) -> Optional[int]:
         """Return the total count of records available in the source"""
+        pass
+
+    def get_records_updated_after(self, after: datetime) -> SourceIteration:
+        """Return the records updated after the given datetime"""
         pass
 
     def get_session(self) -> Session:

@@ -11,7 +11,7 @@ from bizon.source.auth.builder import AuthBuilder
 from bizon.source.auth.config import AuthConfig, AuthType
 from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
-from bizon.source.source import Source
+from bizon.source.source import AbstractSource
 
 BASE_URL = "https://app.periscopedata.com"
 
@@ -41,7 +41,7 @@ class PeriscopeSourceConfig(SourceConfig):
     database_id: int = Field(..., description="Fetch charts connected to this Database ID")
 
 
-class PeriscopeSource(Source):
+class PeriscopeSource(AbstractSource):
 
     def __init__(self, config: PeriscopeSourceConfig):
         super().__init__(config)
@@ -52,7 +52,7 @@ class PeriscopeSource(Source):
         return ["dashboards", "charts", "users", "databases", "views"]
 
     @staticmethod
-    def get_config_class() -> Source:
+    def get_config_class() -> AbstractSource:
         return PeriscopeSourceConfig
 
     @property

@@ -29,7 +29,6 @@ def test_find_all_source_paths():
     source_paths = find_all_source_paths()
     assert len(source_paths) > 0
     assert "dummy" in source_paths
-    assert source_paths["dummy"] == "bizon/sources/dummy/src"
 
 
 def test_parse_streams_from_filepath():

@@ -6,7 +6,7 @@ from bizon.cli.utils import parse_from_yaml
 from bizon.common.models import BizonConfig, SyncMetadata
 from bizon.destinations.destination import AbstractDestination, DestinationFactory
 from bizon.source.discover import get_source_instance_by_source_and_stream
-from bizon.source.source import Source
+from bizon.source.source import AbstractSource
 
 from .backend.backend import AbstractBackend, BackendFactory
 from .backend.models import JobStatus, StreamJob
@@ -35,7 +35,7 @@ class AbstractRunner(ABC):
         return cls(config=config)
 
     @staticmethod
-    def get_source(bizon_config: BizonConfig, config: dict) -> Source:
+    def get_source(bizon_config: BizonConfig, config: dict) -> AbstractSource:
         """Get an instance of the source based on the source config dict"""
 
         logger.info(f"Creating client for {bizon_config.source.source_name} - {bizon_config.source.stream_name} ...")
@@ -67,7 +67,7 @@ class AbstractRunner(ABC):
         )
 
     @staticmethod
-    def get_producer(source: Source, queue: AbstractQueue, backend: AbstractBackend) -> Producer:
+    def get_producer(source: AbstractSource, queue: AbstractQueue, backend: AbstractBackend) -> Producer:
         return Producer(
             source=source,
             queue=queue,
@@ -83,7 +83,11 @@ class AbstractRunner(ABC):
 
     @staticmethod
     def get_or_create_job(
-        bizon_config: BizonConfig, backend: AbstractBackend, source: Source, force_create: bool = False, session=None
+        bizon_config: BizonConfig,
+        backend: AbstractBackend,
+        source: AbstractSource,
+        force_create: bool = False,
+        session=None,
     ) -> StreamJob:
         """Get or create a job for the current stream, return its ID"""
         # Retrieve the last job for this stream

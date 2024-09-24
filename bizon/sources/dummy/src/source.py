@@ -9,7 +9,7 @@ from bizon.source.auth.builder import AuthBuilder
 from bizon.source.auth.config import AuthConfig, AuthType
 from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
-from bizon.source.source import Source
+from bizon.source.source import AbstractSource
 
 from .fake_api import fake_api_call
 
@@ -25,7 +25,7 @@ class DummySourceConfig(SourceConfig):
     authentication: DummyAuthConfig
 
 
-class DummySource(Source):
+class DummySource(AbstractSource):
 
     def __init__(self, config: DummySourceConfig):
         super().__init__(config)

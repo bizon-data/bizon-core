@@ -26,4 +26,14 @@ def test_run_command_debug():
 def test_source_list_command():
     runner = CliRunner(mix_stderr=False)
     result = runner.invoke(cli, ["source", "list"])
+    assert "Available sources:" in result.output
+    assert "dummy" in result.output
+    assert result.exit_code == 0
+
+
+def test_stream_list_command():
+    runner = CliRunner(mix_stderr=False)
+    result = runner.invoke(cli, ["stream", "list", "dummy"])
+    assert "Available streams for dummy:" in result.output
+    assert "[Full refresh only] - plants" in result.output
     assert result.exit_code == 0

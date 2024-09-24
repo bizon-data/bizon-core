@@ -13,7 +13,7 @@ from requests.auth import AuthBase
 
 from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
-from bizon.source.source import Source
+from bizon.source.source import AbstractSource
 
 
 class GsheetsSourceConfig(SourceConfig):
@@ -33,7 +33,7 @@ class GsheetsSourceConfig(SourceConfig):
     )
 
 
-class GsheetsSource(Source):
+class GsheetsSource(AbstractSource):
 
     def __init__(self, config: GsheetsSourceConfig):
         super().__init__(config)

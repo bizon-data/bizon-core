@@ -9,7 +9,7 @@ from bizon.source.auth.builder import AuthBuilder
 from bizon.source.auth.config import AuthConfig, AuthType
 from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
-from bizon.source.source import Source
+from bizon.source.source import AbstractSource
 
 URL_TOKEN_REFRESH = "https://api.mydummysaas.com/oauth/v1/token"
 
@@ -23,7 +23,7 @@ class DummySourceConfig(SourceConfig):
     authentication: DummyAuthConfig
 
 
-class MyDummyCustomSource(Source):
+class MyDummyCustomSource(AbstractSource):
 
     def __init__(self, config: DummySourceConfig):
         super().__init__(config)

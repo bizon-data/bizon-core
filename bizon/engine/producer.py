@@ -7,7 +7,7 @@ from pytz import UTC
 
 from bizon.engine.backend.models import CursorStatus
 from bizon.source.cursor import Cursor
-from bizon.source.source import Source
+from bizon.source.source import AbstractSource
 
 from .backend.backend import AbstractBackend
 from .queue.queue import AbstractQueue
@@ -23,7 +23,7 @@ class ProducerReturnValues(Enum):
 
 
 class Producer:
-    def __init__(self, queue: AbstractQueue, source: Source, backend: AbstractBackend):
+    def __init__(self, queue: AbstractQueue, source: AbstractSource, backend: AbstractBackend):
         self.queue = queue
         self.source = source
         self.backend = backend

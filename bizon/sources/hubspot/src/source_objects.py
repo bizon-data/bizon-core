@@ -16,7 +16,7 @@ from bizon.source.auth.config import AuthType
 from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.session import Session
-from bizon.source.source import Source
+from bizon.source.source import AbstractSource
 
 from .models.hs_object import AllObjectProperties, HubSpotProperty
 
@@ -39,7 +39,7 @@ class HubSpotSourceConfig(SourceConfig):
     properties: PropertiesConfig = PropertiesConfig(strategy=PropertiesStrategy.ALL, selected_properties=None)
 
 
-class HubSpotObjectsSource(Source):
+class HubSpotObjectsSource(AbstractSource):
 
     api_version = "v3"
 

@@ -1,19 +1,22 @@
 import ast
 import importlib
 import importlib.util
+import inspect
 import os
 import traceback
+from pathlib import Path
 from typing import Any, List, Mapping, Type
 
 from loguru import logger
 from pydantic import BaseModel
 
-from bizon.source.source import Source
+from bizon.source.source import AbstractSource
 
 
 class Stream(BaseModel):
     name: str
-    source_class: Type[Source]
+    source_class: Type[AbstractSource]
+    supports_incremental: bool
 
 
 class SourceModel(BaseModel):
@@ -29,6 +32,13 @@ class SourceModel(BaseModel):
             if stream.name == name:
                 return stream
         raise ValueError(f"Stream {name} not found. Available streams are {self.available_streams}")
+
+
+def is_source_class_implementing_incremental(source_class: Type[AbstractSource]) -> bool:
+    """Check if a source class implements incremental"""
+    source_code = inspect.getsource(source_class.get_records_updated_after).strip()
+    supports_incremental = not source_code.endswith("pass")
+    return supports_incremental
 
 
 def find_inherited_classes(file_path, parent_class_name):
@@ -51,7 +61,19 @@ def find_inherited_classes(file_path, parent_class_name):
     return inherited_classes
 
 
-def find_all_source_paths(source_dir_name: str = "src", base_dir: str = "bizon/sources") -> Mapping[str, str]:
+def get_python_import_path(relative_path: str) -> str:
+    """Transform a relative path to a python import path"""
+    python_path = relative_path.replace("/", ".").replace(".py", "")
+    # Find the index where the desired substring starts
+    start_index = python_path.find("bizon.sources.")
+
+    # Extract the substring from that point onwards
+    if start_index != -1:
+        return python_path[start_index:]
+    raise ValueError("Substring not found.")
+
+
+def find_all_source_paths(source_dir_name: str = "src") -> Mapping[str, str]:
     """Find all source code paths in the sources directory
     Return a dict mapping source_name to source_code_path
     Like {'gsheets': '/path/to/bizon/sources/gsheets/src'}
@@ -59,13 +81,16 @@ def find_all_source_paths(source_dir_name: str = "src", base_dir: str = "bizon/s
 
     discovered_sources_paths = {}
 
+    # Leading to the bizon internal sources directory
+    base_dir = str(Path(os.path.dirname(os.path.abspath(__file__))).parents[0])
+    base_dir = os.path.join(base_dir, "sources")
+
     for source_name in os.listdir(base_dir):
 
         # First check that it's a dir and contains a dir called src
         if os.path.isdir(os.path.join(base_dir, source_name)) and os.path.exists(
             os.path.join(base_dir, source_name, source_dir_name)
         ):
-
             # Store path to source code
             source_code_path = os.path.join(base_dir, source_name, source_dir_name)
             discovered_sources_paths[source_name] = source_code_path
@@ -77,8 +102,8 @@ def parse_streams_from_filepath(source_name: str, filepath: str, skip_unavailabl
 
     streams = []
 
-    # Find all classes that inherit from Source
-    source_classes_name = find_inherited_classes(file_path=filepath, parent_class_name="Source")
+    # Find all classes that inherit from AbstractSource
+    source_classes_name = find_inherited_classes(file_path=filepath, parent_class_name="AbstractSource")
 
     # If classes are found
     if len(source_classes_name) > 0:
@@ -91,7 +116,7 @@ def parse_streams_from_filepath(source_name: str, filepath: str, skip_unavailabl
         for source_class_name in source_classes_name:
 
             # Transform the relative path to a python import path and import the module
-            python_import_path = relative_path.replace("/", ".").replace(".py", "")
+            python_import_path = get_python_import_path(relative_path)
             logger.info(f"Importing {python_import_path}")
 
             try:
@@ -109,15 +134,17 @@ def parse_streams_from_filepath(source_name: str, filepath: str, skip_unavailabl
                 logger.error(traceback.format_exc())
                 break
 
-            source_class: Type = getattr(source_module, source_class_name)
+            source_class: AbstractSource = getattr(source_module, source_class_name)
 
             # Check if the class has a streams method
             if hasattr(source_class, "streams") and callable(source_class.streams):
+
                 for stream in source_class.streams():
                     streams.append(
                         Stream(
                             name=stream,
                             source_class=source_class,
+                            supports_incremental=is_source_class_implementing_incremental(source_class),
                         )
                     )
             else:
@@ -151,7 +178,7 @@ def get_sources_in_path(source_name: str, source_code_path: str, skip_unavailabl
     return SourceModel(name=source_name, streams=streams)
 
 
-def get_internal_source_class_by_source_and_stream(source_name: str, stream_name: str) -> Type[Source]:
+def get_internal_source_class_by_source_and_stream(source_name: str, stream_name: str) -> Type[AbstractSource]:
     """Get the source class by source and stream name"""
 
     discovered_sources_paths_dict = find_all_source_paths()
@@ -181,7 +208,9 @@ def get_internal_source_class_by_source_and_stream(source_name: str, stream_name
     return stream.source_class
 
 
-def get_external_source_class_by_source_and_stream(source_name: str, stream_name: str, filepath: str) -> Type[Source]:
+def get_external_source_class_by_source_and_stream(
+    source_name: str, stream_name: str, filepath: str
+) -> Type[AbstractSource]:
     """Get the source class by source and stream name"""
 
     if not os.path.exists(filepath):
@@ -190,8 +219,8 @@ def get_external_source_class_by_source_and_stream(source_name: str, stream_name
     if not filepath.endswith(".py"):
         raise ValueError(f"File {filepath} is not a python file. File extension should be '.py'")
 
-    # Find  class that inherit from Source
-    source_classes_names = find_inherited_classes(file_path=filepath, parent_class_name="Source")
+    # Find  class that inherit from AbstractSource
+    source_classes_names = find_inherited_classes(file_path=filepath, parent_class_name="AbstractSource")
 
     assert len(source_classes_names) > 0, f"No Class found in {filepath} that inherit from Source"
 
@@ -216,6 +245,7 @@ def get_external_source_class_by_source_and_stream(source_name: str, stream_name
                 Stream(
                     name=stream,
                     source_class=source_class,
+                    supports_incremental=is_source_class_implementing_incremental(source_class),
                 )
                 for stream in source_class.streams()
             ]
@@ -251,17 +281,17 @@ def discover_all_sources() -> Mapping[str, SourceModel]:
 
 def get_source_instance_by_source_and_stream(
     source_name: str, stream_name: str, source_config: Mapping[str, Any]
-) -> Source:
+) -> AbstractSource:
     """Get an instance of the source by source and stream name"""
 
     if source_config.get("source_file_path"):
-        source_class: Source = get_external_source_class_by_source_and_stream(
+        source_class: AbstractSource = get_external_source_class_by_source_and_stream(
             source_name=source_name,
             stream_name=stream_name,
             filepath=source_config["source_file_path"],
         )
     else:
-        source_class: Source = get_internal_source_class_by_source_and_stream(
+        source_class: AbstractSource = get_internal_source_class_by_source_and_stream(
             source_name=source_name, stream_name=stream_name
         )
 

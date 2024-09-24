@@ -1,15 +1,15 @@
 from abc import ABC
 from enum import Enum
-from typing import Optional, Union
+from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from .auth.config import AuthConfig
 
 
 class SourceSyncModes(str, Enum):
     FULL_REFRESH = "full_refresh"
-    # INCREMENTAL = "incremental"
+    INCREMENTAL = "incremental"
 
 
 class APIConfig(BaseModel):
@@ -17,9 +17,6 @@ class APIConfig(BaseModel):
 
 
 class SourceConfig(BaseModel, ABC):
-
-    # Forbid extra keys in the model
-    # model_config = ConfigDict(extra="forbid")
 
     source_name: str = Field(..., description="Name of the source to sync")
 
