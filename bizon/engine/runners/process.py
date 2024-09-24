@@ -11,6 +11,17 @@ class ProcessRunner(AbstractRunner):
     def __init__(self, config: dict):
         super().__init__(config)
 
+    # TODO: refacto this
+    def get_kwargs(self):
+        if self.bizon_config.engine.queue.type == "python_queue":
+            from multiprocessing import Manager, Queue
+
+            manager = Manager()
+            queue = manager.Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
+            return {"queue": queue}
+
+        return {}
+
     def run(self):
         """Run the pipeline with dedicated threads for source and destination"""
 
@@ -20,14 +31,11 @@ class ProcessRunner(AbstractRunner):
         result_producer = None
         result_consumer = None
 
-        # TODO: fix multiprocessing.Queue with process runner
-        if self.bizon_config.engine.queue.type == "python_queue":
-            logger.error(
-                "PythonQueue is not supported for ProcessRunner. Use ThreadRunner instead with option '--runner thread'"
-            )
-            raise NotImplementedError(
-                "PythonQueue is not supported for ProcessRunner. Use ThreadRunner instead with option '--runner thread'"
-            )
+        extra_kwargs = self.get_kwargs()
+
+        if self.bizon_config.engine.queue.type == "python_queue" and "sqlite" in self.bizon_config.engine.backend.type:
+            logger.error("Multiprocessing.Queue is not compatible with sqlite backend")
+            raise ValueError("Multiprocessing.Queue is not compatible with sqlite backend")
 
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=self.bizon_config.engine.runner.config.max_workers
@@ -38,6 +46,7 @@ class ProcessRunner(AbstractRunner):
                 self.bizon_config,
                 self.config,
                 job.id,
+                **extra_kwargs,
             )
             logger.info("Producer process has started ...")
 
@@ -47,6 +56,7 @@ class ProcessRunner(AbstractRunner):
                 AbstractRunner.instanciate_and_run_consumer,
                 self.bizon_config,
                 job.id,
+                **extra_kwargs,
             )
             logger.info("Consumer process has started ...")
 
