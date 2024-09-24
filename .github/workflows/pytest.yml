@@ -12,32 +12,29 @@ jobs:
 
     runs-on: ubuntu-latest
 
-    # services:
-    #   postgres:
-    #     image: postgres:13
-    #     env:
-    #       POSTGRES_USER: postgres
-    #       POSTGRES_PASSWORD: bizon
-    #       POSTGRES_DB: bizon_test
-    #     ports:
-    #       - 5432:5432
-    #     options: >-
-    #       --health-cmd pg_isready
-    #       --health-interval 10s
-    #       --health-timeout 5s
-    #       --health-retries 5
+    container: python:3.10
+
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: bizon
+          POSTGRES_DB: bizon_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bizon_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
     - uses: actions/checkout@v4
 
-    - name: Set up Python 3.10
-      uses: actions/setup-python@v3
-      with:
-        python-version: "3.10"
-
     - name: Install Poetry
       run: |
-        curl -sSL https://install.python-poetry.org | python3 -
+        pip install poetry
 
     - name: Configure Poetry for CI
       run: |
@@ -50,3 +47,9 @@ jobs:
     - name: Run tests
       run: |
         POETRY_ENV_TEST=CI poetry run pytest tests/
+
+      env:
+        # The hostname used to communicate with the PostgreSQL service container
+        POSTGRES_HOST: postgres
+        # The default PostgreSQL port
+        POSTGRES_PORT: 5432
