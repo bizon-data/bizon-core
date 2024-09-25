@@ -6,8 +6,8 @@ import pytest
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus, StreamJob
-from bizon.engine.producer import Producer
-from bizon.engine.runner import RunnerFactory
+from bizon.engine.engine import RunnerFactory
+from bizon.engine.pipeline.producer import Producer
 
 
 @pytest.fixture(scope="function")
@@ -24,7 +24,7 @@ def my_job(my_producer: Producer, db_session):
     job = my_producer.backend.create_stream_job(
         source_name=my_producer.source.config.source_name,
         stream_name=my_producer.source.config.stream_name,
-        job_status=JobStatus.NOT_STARTED,
+        job_status=JobStatus.STARTED,
         session=db_session,
     )
     return job

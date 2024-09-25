@@ -2,12 +2,8 @@ import pika
 from loguru import logger
 
 from bizon.destinations.destination import AbstractDestination
-from bizon.engine.queue.queue import (
-    QUEUE_TERMINATION,
-    AbstractQueue,
-    AbstractQueueConsumer,
-    QueueMessage,
-)
+from bizon.engine.pipeline.consumer import AbstractQueueConsumer
+from bizon.engine.queue.queue import QUEUE_TERMINATION, AbstractQueue, QueueMessage
 
 from .config import RabbitMQConfigDetails
 from .consumer import RabbitMQConsumer

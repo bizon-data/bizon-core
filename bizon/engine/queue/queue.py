@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from pytz import UTC
 
 from bizon.destinations.destination import AbstractDestination
+from bizon.engine.pipeline.consumer import AbstractQueueConsumer
 from bizon.source.models import SourceRecord
 
 from .config import AbastractQueueConfigDetails, AbstractQueueConfig, QueueTypes
@@ -18,16 +19,6 @@ class QueueMessage(BaseModel):
     source_records: List[SourceRecord]
     extracted_at: datetime = datetime.now(tz=UTC)
     signal: Optional[str] = None
-
-
-class AbstractQueueConsumer(ABC):
-    def __init__(self, config: AbstractQueueConfig, destination: AbstractDestination):
-        self.config = config
-        self.destination = destination
-
-    @abstractmethod
-    def run(self):
-        pass
 
 
 class AbstractQueue(ABC):

@@ -4,7 +4,7 @@ from time import sleep
 import yappi
 
 from bizon.cli.utils import parse_from_yaml
-from bizon.engine.runner import RunnerFactory
+from bizon.engine.engine import RunnerFactory
 
 raw_config = parse_from_yaml("/Users/antoineballiet/Documents/GitHub/bizon/bizon/sources/hubspot/config/hubspot.yml")
 

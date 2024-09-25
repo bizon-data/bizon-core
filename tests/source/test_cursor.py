@@ -20,7 +20,7 @@ def test_cursor_instance(my_cursor: Cursor):
     assert my_cursor.source_full_name == "dummy.test"
     assert my_cursor.total_records == 100
     assert my_cursor.iteration == 0
-    assert my_cursor.job_status == JobStatus.NOT_STARTED
+    assert my_cursor.job_status == JobStatus.STARTED
     assert my_cursor.is_finished == False
 
 

@@ -5,27 +5,27 @@ from loguru import logger
 from bizon.cli.utils import parse_from_yaml
 from bizon.common.models import BizonConfig, SyncMetadata
 from bizon.destinations.destination import AbstractDestination, DestinationFactory
+from bizon.engine.backend.backend import AbstractBackend, BackendFactory
+from bizon.engine.backend.models import JobStatus, StreamJob
+from bizon.engine.pipeline.producer import Producer
+from bizon.engine.queue.queue import AbstractQueue, QueueFactory
 from bizon.source.discover import get_source_instance_by_source_and_stream
 from bizon.source.source import AbstractSource
-
-from .backend.backend import AbstractBackend, BackendFactory
-from .backend.models import JobStatus, StreamJob
-from .config import RunnerTypes
-from .producer import Producer
-from .queue.queue import AbstractQueue, QueueFactory
 
 
 class AbstractRunner(ABC):
     def __init__(self, config: dict):
 
+        # Internal state
+        self._is_running: bool = False
+
         # Attributes should be serializable for multiprocessing
         self.config: dict = config
         self.bizon_config = BizonConfig.model_validate(obj=config)
-        self._is_running: bool = False
 
     @property
     def is_running(self) -> bool:
-        """Check if the pipeline is running"""
+        """Return True if the pipeline is running"""
         return self._is_running
 
     @classmethod
@@ -98,11 +98,12 @@ class AbstractRunner(ABC):
         )
 
         if job:
-            # If a job is already running, we cancel it and create a new one
+            # If force_create and a job is already running, we cancel it and create a new one
             if force_create:
                 logger.info(f"Found an existing job, cancelling it...")
                 backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.CANCELED)
                 logger.info(f"Job {job.id} canceled. Creating a new one...")
+            # Otherwise we return the existing job
             else:
                 logger.debug(f"Found an existing job: {job.id}")
                 return job
@@ -117,6 +118,7 @@ class AbstractRunner(ABC):
             stream_name=bizon_config.source.stream_name,
             total_records_to_fetch=total_records,
             session=session,
+            job_status=JobStatus.STARTED,
         )
 
         return job
@@ -133,10 +135,13 @@ class AbstractRunner(ABC):
         source = AbstractRunner.get_source(bizon_config=bizon_config, config=config)
 
         check_connection, connection_error = source.check_connection()
+        logger.info(
+            f"Connection to source {bizon_config.source.source_name} - {bizon_config.source.stream_name} successful"
+        )
 
         if not check_connection:
             logger.error(f"Error while connecting to source: {connection_error}")
-            return
+            raise ConnectionError(f"Error while connecting to source: {connection_error}")
 
         # Get or create the job, if force_ignore_checkpoint, we cancel the existing job and create a new one
         job = AbstractRunner.get_or_create_job(
@@ -183,27 +188,3 @@ class AbstractRunner(ABC):
     def run(self) -> bool:
         """Run the pipeline with dedicated adapter for source and destination"""
         pass
-
-
-class RunnerFactory:
-    @staticmethod
-    def create_from_config_dict(config: dict) -> AbstractRunner:
-
-        bizon_config = BizonConfig.model_validate(obj=config)
-
-        if bizon_config.engine.runner.type == RunnerTypes.THREAD:
-            from .runners.thread import ThreadRunner
-
-            return ThreadRunner(config=config)
-
-        if bizon_config.engine.runner.type == RunnerTypes.PROCESS:
-            from .runners.process import ProcessRunner
-
-            return ProcessRunner(config=config)
-
-        raise ValueError(f"Runner type {bizon_config.engine.runner.type} is not supported")
-
-    @staticmethod
-    def create_from_yaml(filepath: str) -> AbstractRunner:
-        config = parse_from_yaml(filepath)
-        return RunnerFactory.create_from_config_dict(config)

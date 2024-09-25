@@ -6,9 +6,9 @@ import pytest
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus
-from bizon.engine.producer import Producer
-from bizon.engine.runner import RunnerFactory
-from bizon.engine.runners.thread import ThreadRunner
+from bizon.engine.engine import RunnerFactory
+from bizon.engine.pipeline.producer import Producer
+from bizon.engine.runners.adapters.thread import ThreadRunner
 
 
 def test_load_from_config():

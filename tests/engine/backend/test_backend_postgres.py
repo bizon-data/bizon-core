@@ -67,7 +67,7 @@ def test_create_stream_job(my_pg_backend: SQLAlchemyBackend, pg_db_session: Sess
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
-        job_status=JobStatus.NOT_STARTED,
+        job_status=JobStatus.STARTED,
     )
 
     assert new_job_id
@@ -82,7 +82,7 @@ def test_update_stream_job_status(my_pg_backend: SQLAlchemyBackend, pg_db_sessio
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
-        job_status=JobStatus.NOT_STARTED,
+        job_status=JobStatus.STARTED,
     )
 
     # If no job is running, get_running_job_id should return None
@@ -107,7 +107,7 @@ def test_stream_job_create_and_get(my_pg_backend: SQLAlchemyBackend, pg_db_sessi
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
-        job_status=JobStatus.NOT_STARTED,
+        job_status=JobStatus.STARTED,
     )
 
     job = my_pg_backend.get_stream_job_by_id(session=pg_db_session, job_id=new_job.id)
@@ -122,7 +122,7 @@ def test_create_source_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: S
         source_name="sourcetest",
         stream_name="streamtest",
         total_records_to_fetch=200,
-        job_status=JobStatus.NOT_STARTED,
+        job_status=JobStatus.STARTED,
     )
 
     new_cursor_id = my_pg_backend.create_source_cursor(
@@ -133,7 +133,7 @@ def test_create_source_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: S
         iteration=0,
         rows_fetched=0,
         next_pagination=None,
-        cursor_status=CursorStatus.NOT_STARTED,
+        cursor_status=CursorStatus.STARTED,
     )
 
     assert new_cursor_id
@@ -184,7 +184,7 @@ def test_update_source_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: S
         iteration=0,
         rows_fetched=0,
         next_pagination=None,
-        cursor_status=CursorStatus.NOT_STARTED,
+        cursor_status=CursorStatus.STARTED,
     )
 
     my_pg_backend.update_source_cursor_status(
@@ -216,7 +216,7 @@ def test_source_cursor_get_last_after_destination_iteration(my_pg_backend: SQLAl
         iteration=0,
         rows_fetched=0,
         next_pagination=None,
-        cursor_status=CursorStatus.NOT_STARTED,
+        cursor_status=CursorStatus.STARTED,
     )
 
     cursor = my_pg_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=pg_db_session)

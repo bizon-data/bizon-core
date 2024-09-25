@@ -16,7 +16,7 @@ def generate_uuid():
 
 
 class JobStatus(str, Enum):
-    NOT_STARTED = "not_started"
+    STARTED = "started"
     RUNNING = "running"
     SUCCESS = "success"
     FAILED = "failed"
@@ -25,7 +25,7 @@ class JobStatus(str, Enum):
 
 
 class CursorStatus(str, Enum):
-    NOT_STARTED = "not_started"
+    STARTED = "started"
     PULLING = "pulling"
     PULLED = "pulled"
     WRITTEN_IN_DESTINATION = "written_in_destination"
@@ -50,7 +50,7 @@ class StreamJob(Base):
         DateTime, nullable=False, default=datetime.now(tz=UTC), doc="Timestamp when the job was created"
     )
     updated_at = Column(DateTime, nullable=True, default=None, doc="Timestamp when the job was last updated")
-    status = Column(String(100), default=JobStatus.NOT_STARTED, doc="Status of the job")
+    status = Column(String(100), default=JobStatus.STARTED, doc="Status of the job")
     error_message = Column(String(255), nullable=True, doc="Error message if the job failed", default=None)
 
     source_cursor = relationship("SourceCursor", cascade="all, delete")
@@ -71,7 +71,7 @@ class SourceCursor(Base):
     rows_fetched = Column(Integer, default=0)
     next_pagination = Column(String, nullable=True)
     attempt = Column(Integer, default=0, doc="Number of attempts to pull the data for this cursor")
-    status = Column(String(100), default=CursorStatus.NOT_STARTED, doc="Status of the cursor")
+    status = Column(String(100), default=CursorStatus.STARTED, doc="Status of the cursor")
     error_message = Column(
         String(500), nullable=True, doc="Error message if pulling failed for this cursor", default=None
     )
@@ -94,7 +94,7 @@ class DestinationCursor(Base):
     to_source_iteration = Column(Integer, default=0)
     rows_written = Column(Integer, default=0)
     attempt = Column(Integer, default=0, doc="Number of attempts to pull the data for this cursor")
-    status = Column(String(100), default=CursorStatus.NOT_STARTED, doc="Status of the cursor")
+    status = Column(String(100), default=CursorStatus.STARTED, doc="Status of the cursor")
     error_message = Column(
         String(500), nullable=True, doc="Error message if pulling failed for this cursor", default=None
     )

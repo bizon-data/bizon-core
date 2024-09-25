@@ -192,7 +192,7 @@ class SQLAlchemyBackend(AbstractBackend):
         source_name: str,
         stream_name: str,
         total_records_to_fetch: Optional[int] = None,
-        job_status: JobStatus = JobStatus.NOT_STARTED,
+        job_status: JobStatus = JobStatus.STARTED,
         session: Optional[Session] = None,
     ) -> StreamJob:
         """Create new StreamJob record in dbt and return its ID"""
@@ -262,7 +262,7 @@ class SQLAlchemyBackend(AbstractBackend):
         iteration: int,
         rows_fetched: int,
         next_pagination: dict,
-        cursor_status: CursorStatus = CursorStatus.NOT_STARTED,
+        cursor_status: CursorStatus = CursorStatus.STARTED,
         error_message: Optional[str] = None,
         session: Optional[Session] = None,
     ) -> str:

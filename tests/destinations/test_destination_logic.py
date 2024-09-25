@@ -17,7 +17,7 @@ def logger_destination(my_backend: SQLAlchemyBackend, db_session):
     job = my_backend.create_stream_job(
         source_name="dummy",
         stream_name="test",
-        job_status=JobStatus.NOT_STARTED,
+        job_status=JobStatus.STARTED,
         session=db_session,
     )
 

@@ -5,21 +5,13 @@ from enum import Enum
 from loguru import logger
 from pytz import UTC
 
+from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import CursorStatus
+from bizon.engine.queue.queue import AbstractQueue
 from bizon.source.cursor import Cursor
 from bizon.source.source import AbstractSource
 
-from .backend.backend import AbstractBackend
-from .queue.queue import AbstractQueue
-
-
-class ProducerReturnValues(Enum):
-    """Producer error types"""
-
-    NO_ERROR = "no_error"
-    QUEUE_ERROR = "queue_error"
-    SOURCE_ERROR = "source_error"
-    BACKEND_ERROR = "backend_error"
+from .models import PipelineReturnStatus
 
 
 class Producer:
@@ -81,7 +73,7 @@ class Producer:
 
     def run(self, job_id: int):
 
-        return_value: ProducerReturnValues = ProducerReturnValues.NO_ERROR
+        return_value: PipelineReturnStatus = PipelineReturnStatus.SUCCESS
 
         # Init queue
         try:
@@ -91,7 +83,7 @@ class Producer:
                 f"Error while connecting to the queue: {e} for job_id {job_id}"
                 f"Check the queue error logs for more details."
             )
-            return ProducerReturnValues.QUEUE_ERROR
+            return PipelineReturnStatus.QUEUE_ERROR
 
         # Get or create the cursor
         try:
@@ -103,7 +95,7 @@ class Producer:
             )
             logger.info("Terminating destination ...")
             self.queue.terminate(iteration=0)
-            return ProducerReturnValues.BACKEND_ERROR
+            return PipelineReturnStatus.BACKEND_ERROR
 
         while not cursor.is_finished:
 
@@ -130,7 +122,7 @@ class Producer:
                         f"Error while creating cursor in the DB: {e} for iteration {cursor.iteration}"
                         f"Check the backend error logs for more details."
                     )
-                    return_value = ProducerReturnValues.BACKEND_ERROR
+                    return_value = PipelineReturnStatus.BACKEND_ERROR
                     break
 
             # Get the next data
@@ -141,7 +133,7 @@ class Producer:
                     f"Error while fetching data from source: {e} for iteration first iteration {cursor.iteration}"
                     f"Check the backend error logs for more details."
                 )
-                return_value = ProducerReturnValues.SOURCE_ERROR
+                return_value = PipelineReturnStatus.SOURCE_ERROR
                 break
 
             # Get current time, we consider this as the time the data was extracted
@@ -157,7 +149,7 @@ class Producer:
                     f"Error while putting data in the queue: {e} for iteration {cursor.iteration}"
                     f"Check the queue error logs for more details."
                 )
-                return_value = ProducerReturnValues.QUEUE_ERROR
+                return_value = PipelineReturnStatus.QUEUE_ERROR
                 break
 
             # Update the cursor state
@@ -170,7 +162,7 @@ class Producer:
                     f"Error while updating cursor state: {e} for iteration {cursor.iteration}"
                     f"Check the source error logs for more details."
                 )
-                return_value = ProducerReturnValues.SOURCE_ERROR
+                return_value = PipelineReturnStatus.SOURCE_ERROR
                 break
 
         logger.info("Terminating destination ...")
@@ -184,7 +176,7 @@ class Producer:
             )
             # Prevent masking any previous error
             return_value = (
-                ProducerReturnValues.QUEUE_ERROR if return_value == ProducerReturnValues.NO_ERROR else return_value
+                PipelineReturnStatus.QUEUE_ERROR if return_value == PipelineReturnStatus.SUCCESS else return_value
             )
 
         return return_value

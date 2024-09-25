@@ -1,6 +1,6 @@
 import click
 
-from bizon.engine.runner import RunnerFactory
+from bizon.engine.engine import RunnerFactory
 from bizon.source.discover import discover_all_sources
 
 from .utils import (

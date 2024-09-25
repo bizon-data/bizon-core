@@ -16,7 +16,7 @@ class Cursor:
         self.iteration: int = 0
         self.rows_fetched: int = 0
         self.total_records = total_records
-        self.job_status: JobStatus = JobStatus.NOT_STARTED
+        self.job_status: JobStatus = JobStatus.STARTED
         self.created_at: datetime = datetime.now(tz=UTC)
 
         # Instantiate empty pagination
