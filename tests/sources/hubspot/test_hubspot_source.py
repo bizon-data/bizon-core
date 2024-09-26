@@ -1,5 +1,5 @@
 from bizon.source.auth.config import AuthType
-from bizon.sources.hubspot.src.source_objects import (
+from bizon.sources.hubspot.src.hubspot_objects import (
     URL_TOKEN_REFRESH,
     HubSpotObjectsSource,
     HubSpotSourceConfig,
