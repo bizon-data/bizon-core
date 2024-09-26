@@ -3,7 +3,8 @@ Extract and load your largest data streams with a framework you can trust for bi
 
 ## Features
 - **Natively fault-tolerant**: Bizon uses a checkpointing mechanism to keep track of the progress and recover from the last checkpoint.
-- **Queue system agnostic**: Bizon is agnostic of the queuing system, you can use any queuing system like Python Queue, Kafka or Redpanda. Thanks to the `bizon.queue.Queue` interface, adapters can be written for any queuing system.
+- **High throughput**: Bizon is designed to handle high throughput and can process billions of records.
+- **Queue system agnostic**: Bizon is agnostic of the queuing system, you can use any queuing system among Python Queue, RabbitMQ, Kafka or Redpanda. Thanks to the `bizon.engine.queue.Queue` interface, adapters can be written for any queuing system.
 - **Pipeline metrics**: Bizon provides exhaustive pipeline metrics and implement OpenTelemetry for tracing. You can monitor:
     - ETAs for completion
     - Number of records processed
@@ -21,6 +22,14 @@ pip install bizon
 ```
 
 ## Usage
+
+### List available sources and streams
+```bash
+bizon source list
+bizon stream list <source_name>
+```
+
+### Create a pipeline
 
 Create a file named `config.yml` in your working directory with the following content:
 
@@ -55,7 +64,8 @@ Backend is the interface used by Bizon to store its state. It can be configured 
 
 Queue is the interface used by Bizon to exchange data between `Source` and `Destination`. It can be configured in the `queue` section of the configuration file. The following queues are supported:
 - `python_queue`: Python Queue, useful for testing and development.
-- `kafka`: Apache Kafka, for production use and high throughput.
+- `rabbitmq`: RabbitMQ, for production use and high throughput.
+- `kafka`: Apache Kafka, for production use and high throughput and strong persistence.
 
 ## Start syncing your data 🚀
 
