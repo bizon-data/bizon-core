@@ -8,7 +8,7 @@ from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus
 from bizon.engine.engine import RunnerFactory
 from bizon.engine.pipeline.producer import Producer
-from bizon.engine.runners.adapters.thread import ThreadRunner
+from bizon.engine.runner.adapters.thread import ThreadRunner
 
 
 def test_load_from_config():

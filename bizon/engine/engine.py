@@ -4,7 +4,7 @@ from bizon.cli.utils import parse_from_yaml
 from bizon.common.models import BizonConfig
 
 from .config import RunnerTypes
-from .runners.runner import AbstractRunner
+from .runner.runner import AbstractRunner
 
 
 class RunnerFactory:
@@ -14,12 +14,12 @@ class RunnerFactory:
         bizon_config = BizonConfig.model_validate(obj=config)
 
         if bizon_config.engine.runner.type == RunnerTypes.THREAD:
-            from .runners.adapters.thread import ThreadRunner
+            from .runner.adapters.thread import ThreadRunner
 
             return ThreadRunner(config=config)
 
         if bizon_config.engine.runner.type == RunnerTypes.PROCESS:
-            from .runners.adapters.process import ProcessRunner
+            from .runner.adapters.process import ProcessRunner
 
             return ProcessRunner(config=config)
 

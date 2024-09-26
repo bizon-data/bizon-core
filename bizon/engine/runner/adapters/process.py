@@ -3,24 +3,26 @@ import time
 
 from loguru import logger
 
-from bizon.common.models import BizonConfig
-from bizon.engine.runners.runner import AbstractRunner
+from bizon.engine.runner.runner import AbstractRunner
 
 
-class ThreadRunner(AbstractRunner):
-    def __init__(self, config: BizonConfig):
+class ProcessRunner(AbstractRunner):
+
+    def __init__(self, config: dict):
         super().__init__(config)
 
     # TODO: refacto this
     def get_kwargs(self):
         if self.bizon_config.engine.queue.type == "python_queue":
-            from queue import Queue
+            from multiprocessing import Manager
 
-            queue = Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
+            manager = Manager()
+            queue = manager.Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
             return {"queue": queue}
+
         return {}
 
-    def run(self) -> bool:
+    def run(self):
         """Run the pipeline with dedicated threads for source and destination"""
 
         job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config)
@@ -31,7 +33,11 @@ class ThreadRunner(AbstractRunner):
 
         extra_kwargs = self.get_kwargs()
 
-        with concurrent.futures.ThreadPoolExecutor(
+        if self.bizon_config.engine.queue.type == "python_queue" and "sqlite" in self.bizon_config.engine.backend.type:
+            logger.error("Multiprocessing.Queue is not compatible with sqlite backend")
+            raise ValueError("Multiprocessing.Queue is not compatible with sqlite backend")
+
+        with concurrent.futures.ProcessPoolExecutor(
             max_workers=self.bizon_config.engine.runner.config.max_workers
         ) as executor:
 
@@ -42,7 +48,7 @@ class ThreadRunner(AbstractRunner):
                 job.id,
                 **extra_kwargs,
             )
-            logger.info("Producer thread has started ...")
+            logger.info("Producer process has started ...")
 
             time.sleep(self.bizon_config.engine.runner.config.consumer_start_delay)
 
@@ -52,7 +58,9 @@ class ThreadRunner(AbstractRunner):
                 job.id,
                 **extra_kwargs,
             )
-            logger.info("Consumer thread has started ...")
+            logger.info("Consumer process has started ...")
+
+            self._is_running = True
 
             while future_producer.running() and future_consumer.running():
                 logger.debug("Producer and consumer are still running ...")
@@ -63,10 +71,10 @@ class ThreadRunner(AbstractRunner):
 
             if not future_producer.running():
                 result_producer = future_producer.result()
-                logger.info(f"Producer thread stopped running with result: {result_producer}")
+                logger.info(f"Producer process stopped running with result: {result_producer}")
 
             if not future_consumer.running():
                 result_consumer = future_consumer.result()
-                logger.info(f"Consumer thread stopped running with result: {result_consumer}")
+                logger.info(f"Consumer process stopped running with result: {result_consumer}")
 
         return True

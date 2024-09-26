@@ -19,7 +19,7 @@ from .queue.adapters.python_queue.config import (
 )
 from .queue.adapters.rabbitmq.config import RabbitMQConfig
 from .queue.config import QueueTypes
-from .runners.config import RunnerConfig, RunnerFuturesConfig, RunnerTypes
+from .runner.config import RunnerConfig, RunnerFuturesConfig, RunnerTypes
 
 
 class EngineConfig(BaseModel):
