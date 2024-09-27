@@ -27,7 +27,7 @@ from .config import BigQueryConfigDetails, PostgresConfigDetails, SQLiteConfigDe
 
 class SQLAlchemyBackend(AbstractBackend):
 
-    def __init__(self, config: Union[PostgresConfigDetails, SQLiteConfigDetails], type: BackendTypes):
+    def __init__(self, config: Union[PostgresConfigDetails, SQLiteConfigDetails], type: BackendTypes, **kwargs):
         super().__init__(config, type)
 
         self._engine = None
@@ -37,6 +37,8 @@ class SQLAlchemyBackend(AbstractBackend):
             SQLiteConfigDetails,
             BigQueryConfigDetails,
         ] = config
+
+        self.kwargs = kwargs
 
     @property
     def session(self) -> Generator[Session, None, None]:
@@ -125,7 +127,8 @@ class SQLAlchemyBackend(AbstractBackend):
     def get_engine(self) -> Engine:
         """Return the SQLAlchemy engine"""
         if self.type == BackendTypes.SQLITE:
-            return self._get_engine()
+            assert "sqlalchemy_engine" in self.kwargs
+            return self.kwargs["sqlalchemy_engine"]
 
         if not self._engine:
             self._engine = self._get_engine()

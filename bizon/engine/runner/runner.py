@@ -60,11 +60,9 @@ class AbstractRunner(ABC):
         )
 
     @staticmethod
-    def get_backend(bizon_config: BizonConfig) -> AbstractBackend:
+    def get_backend(bizon_config: BizonConfig, **kwargs) -> AbstractBackend:
         """Get an instance of the backend based on the backend config dict"""
-        return BackendFactory.get_backend(
-            config=bizon_config.engine.backend,
-        )
+        return BackendFactory.get_backend(config=bizon_config.engine.backend, **kwargs)
 
     @staticmethod
     def get_producer(source: AbstractSource, queue: AbstractQueue, backend: AbstractBackend) -> Producer:
@@ -124,10 +122,10 @@ class AbstractRunner(ABC):
         return job
 
     @staticmethod
-    def init_job(bizon_config: BizonConfig, config: dict) -> StreamJob:
+    def init_job(bizon_config: BizonConfig, config: dict, **kwargs) -> StreamJob:
         """Initialize a job for the current stream"""
 
-        backend = AbstractRunner.get_backend(bizon_config=bizon_config)
+        backend = AbstractRunner.get_backend(bizon_config=bizon_config, **kwargs)
         backend.check_prerequisites()
         backend.create_all_tables()
 
@@ -161,7 +159,7 @@ class AbstractRunner(ABC):
 
         source = AbstractRunner.get_source(bizon_config=bizon_config, config=config)
         queue = AbstractRunner.get_queue(bizon_config=bizon_config, **kwargs)
-        backend = AbstractRunner.get_backend(bizon_config=bizon_config)
+        backend = AbstractRunner.get_backend(bizon_config=bizon_config, **kwargs)
 
         producer = AbstractRunner.get_producer(
             source=source,
@@ -176,7 +174,7 @@ class AbstractRunner(ABC):
     def instanciate_and_run_consumer(bizon_config: BizonConfig, job_id: str, **kwargs):
 
         queue = AbstractRunner.get_queue(bizon_config=bizon_config, **kwargs)
-        backend = AbstractRunner.get_backend(bizon_config=bizon_config)
+        backend = AbstractRunner.get_backend(bizon_config=bizon_config, **kwargs)
         destination = AbstractRunner.get_destination(bizon_config=bizon_config, backend=backend, job_id=job_id)
 
         consumer = queue.get_consumer(destination=destination)

@@ -13,17 +13,33 @@ class ThreadRunner(AbstractRunner):
 
     # TODO: refacto this
     def get_kwargs(self):
+
+        extra_kwargs = {}
+
         if self.bizon_config.engine.queue.type == "python_queue":
             from queue import Queue
 
             queue = Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
-            return {"queue": queue}
-        return {}
+            extra_kwargs["queue"] = queue
+
+        if self.bizon_config.engine.backend.type == "sqlite":
+            from sqlalchemy.engine import create_engine
+            from sqlalchemy.pool import StaticPool
+
+            engine = create_engine(
+                f"sqlite:///{self.bizon_config.engine.backend.config.database}.sqlite3",
+                connect_args={"check_same_thread": False},
+                poolclass=StaticPool,
+            )
+            extra_kwargs["sqlalchemy_engine"] = engine
+
+        return extra_kwargs
 
     def run(self) -> bool:
         """Run the pipeline with dedicated threads for source and destination"""
 
-        job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config)
+        extra_kwargs = self.get_kwargs()
+        job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config, **extra_kwargs)
 
         # Store the future results
         result_producer = None

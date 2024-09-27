@@ -8,7 +8,7 @@ from .models import CursorStatus, DestinationCursor, JobStatus, SourceCursor, St
 
 
 class AbstractBackend(ABC):
-    def __init__(self, config: AbstractBackendConfigDetails, type: BackendTypes):
+    def __init__(self, config: AbstractBackendConfigDetails, type: BackendTypes, **kwargs):
         self.type = type
         self.config = config
 
@@ -144,27 +144,27 @@ class AbstractBackend(ABC):
 
 class BackendFactory:
     @staticmethod
-    def get_backend(config: AbstractBackendConfig) -> AbstractBackend:
+    def get_backend(config: AbstractBackendConfig, **kwargs) -> AbstractBackend:
         """Create a backend instance from the given config"""
         if config.type == BackendTypes.POSTGRES:
             from .adapters.sqlalchemy.backend import SQLAlchemyBackend
 
-            return SQLAlchemyBackend(config=config.config, type=config.type)
+            return SQLAlchemyBackend(config=config.config, type=config.type, **kwargs)
 
         elif config.type == BackendTypes.BIGQUERY:
             from .adapters.sqlalchemy.backend import SQLAlchemyBackend
 
-            return SQLAlchemyBackend(config=config.config, type=config.type)
+            return SQLAlchemyBackend(config=config.config, type=config.type, **kwargs)
 
         elif config.type == BackendTypes.SQLITE:
             from .adapters.sqlalchemy.backend import SQLAlchemyBackend
 
-            return SQLAlchemyBackend(config=config.config, type=config.type)
+            return SQLAlchemyBackend(config=config.config, type=config.type, **kwargs)
 
         # ONLY FOR UNIT TESTS
         elif config.type == BackendTypes.SQLITE_IN_MEMORY:
             from .adapters.sqlalchemy.backend import SQLAlchemyBackend
 
-            return SQLAlchemyBackend(config=config.config, type=config.type)
+            return SQLAlchemyBackend(config=config.config, type=config.type, **kwargs)
 
         raise ValueError(f"Unsupported backend type: {config.type}")

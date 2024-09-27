@@ -1,6 +1,5 @@
 import ast
 from datetime import datetime
-from enum import Enum
 
 from loguru import logger
 from pytz import UTC

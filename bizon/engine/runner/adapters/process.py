@@ -25,13 +25,12 @@ class ProcessRunner(AbstractRunner):
     def run(self):
         """Run the pipeline with dedicated threads for source and destination"""
 
-        job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config)
+        extra_kwargs = self.get_kwargs()
+        job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config, **extra_kwargs)
 
         # Store the future results
         result_producer = None
         result_consumer = None
-
-        extra_kwargs = self.get_kwargs()
 
         if self.bizon_config.engine.queue.type == "python_queue" and "sqlite" in self.bizon_config.engine.backend.type:
             logger.error("Multiprocessing.Queue is not compatible with sqlite backend")

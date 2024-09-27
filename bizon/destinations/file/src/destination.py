@@ -1,4 +1,3 @@
-import json
 from typing import List, Tuple
 
 from loguru import logger
@@ -26,6 +25,5 @@ class FileDestination(AbstractDestination):
     def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, str]:
         with open(self.config.filepath, "a") as f:
             for record in destination_records:
-                json.dump(record.model_dump_json(), f)
-                f.write("\n")
+                f.write(record.model_dump_json() + "\n")
         return True, ""
