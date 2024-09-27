@@ -80,6 +80,14 @@ class AbstractDestination(ABC):
                     session=session,
                 )
 
+            else:
+                self.backend.update_stream_job_status(
+                    job_id=self.sync_metadata.job_id,
+                    job_status=JobStatus.FAILED,
+                    error_message=error_msg,
+                    session=session,
+                )
+
             destination_iteration = DestinationIteration(
                 success=success,
                 error_message=error_msg,
@@ -164,7 +172,8 @@ class AbstractDestination(ABC):
             self.prepare_destination()
 
         destination_records = self.convert_source_records_to_destination_records(
-            source_records=source_records, extracted_at=extracted_at
+            source_records=source_records,
+            extracted_at=extracted_at,
         )
 
         # Buffer records otherwise write to destination
