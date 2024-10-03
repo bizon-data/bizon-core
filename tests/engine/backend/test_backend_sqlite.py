@@ -160,7 +160,7 @@ def test_update_source_cursor(my_backend: SQLAlchemyBackend, db_session: Session
     assert cursor.status == CursorStatus.WRITTEN_IN_DESTINATION
 
 
-def test_source_cursor_get_last_after_destination_iteration(my_backend: SQLAlchemyBackend, db_session: Session):
+def test_get_last_iteration_cursor(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
 
     new_job = my_backend.create_stream_job(
@@ -171,30 +171,23 @@ def test_source_cursor_get_last_after_destination_iteration(my_backend: SQLAlche
         job_status=JobStatus.RUNNING,
     )
 
-    new_cursor_id = my_backend.create_source_cursor(
+    cursor = my_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=db_session)
+    assert cursor is None
+
+    my_backend.create_destination_cursor(
         session=db_session,
         job_id=new_job.id,
         source_name="sourcetest",
         stream_name="streamtest",
-        iteration=0,
-        rows_fetched=0,
-        next_pagination=None,
-        cursor_status=CursorStatus.STARTED,
+        destination_name="destinationtest",
+        from_source_iteration=0,
+        to_source_iteration=0,
+        rows_written=0,
+        success=True,
     )
 
-    cursor = my_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=db_session)
-    assert cursor is None
+    cursor = my_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=db_session)
 
-    # We recover from the cursor only if data has been written in destination
-    my_backend.update_source_cursor_status(
-        cursor_id=new_cursor_id,
-        cursor_status=CursorStatus.WRITTEN_IN_DESTINATION,
-        session=db_session,
-    )
-
-    cursor = my_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=db_session)
-
-    assert cursor.id == new_cursor_id
     assert cursor.job_id == new_job.id
 
 
@@ -218,34 +211,42 @@ def test_create_destination_cursor(my_backend: SQLAlchemyBackend, db_session: Se
         from_source_iteration=0,
         to_source_iteration=0,
         rows_written=0,
+        success=True,
     )
 
     assert new_destination_cursor.rows_written == 0
 
 
-def test_update_destination_cursor(my_backend: SQLAlchemyBackend, db_session: Session):
-
+def test_number_of_rows_written(my_backend: SQLAlchemyBackend, db_session: Session):
     my_backend.create_all_tables()
-
-    new_destination_cursor = my_backend.create_destination_cursor(
+    new_job = my_backend.create_stream_job(
         session=db_session,
-        job_id="crfrifjpduehdpziuh",
+        source_name="sourcetest",
+        stream_name="streamtest",
+        total_records_to_fetch=200,
+        job_status=JobStatus.RUNNING,
+    )
+
+    my_backend.create_destination_cursor(
+        session=db_session,
+        job_id=new_job.id,
         source_name="sourcetest",
         stream_name="streamtest",
         destination_name="destinationtest",
         from_source_iteration=0,
         to_source_iteration=0,
-        rows_written=0,
+        rows_written=5,
+        success=True,
     )
-
-    assert new_destination_cursor.rows_written == 0
-
-    my_backend.update_destination_cursor(
+    my_backend.create_destination_cursor(
         session=db_session,
-        cursor_id=new_destination_cursor.id,
-        status=CursorStatus.WRITTEN_IN_DESTINATION,
+        job_id=new_job.id,
+        source_name="sourcetest",
+        stream_name="streamtest",
+        destination_name="destinationtest",
+        from_source_iteration=0,
+        to_source_iteration=0,
         rows_written=10,
+        success=True,
     )
-
-    cursor = my_backend.get_destination_cursor_by_id(cursor_id=new_destination_cursor.id, session=db_session)
-    assert cursor.rows_written == 10
+    assert my_backend.get_number_of_written_rows_for_job(job_id=new_job.id, session=db_session) == 15

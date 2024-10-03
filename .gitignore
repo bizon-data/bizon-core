@@ -62,3 +62,5 @@ bizon/**/config/*.yml
 # IPython
 profile_default/
 ipython_config.py
+
+hubspot_credentials.json

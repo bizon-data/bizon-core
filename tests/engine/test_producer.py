@@ -37,7 +37,7 @@ def test_cursor_recovery_after_iteration(my_producer: Producer, db_session: SQLA
     my_producer.run(job_id=my_job.id)
 
     # Here we did not run the job, so the cursor should be None
-    cursor_from_db = my_producer.backend.get_last_source_cursor_by_job_id(job_id=my_job.id, session=db_session)
+    cursor_from_db = my_producer.backend.get_last_cursor_by_job_id(job_id=my_job.id, session=db_session)
     assert cursor_from_db is None
 
 
@@ -47,7 +47,7 @@ def test_cursor_recovery_not_running(my_producer: Producer, db_session: SQLAlche
     assert cursor is not None
 
     # Here we did not run the job, so the cursor should be None
-    cursor_from_db = my_producer.backend.get_last_source_cursor_by_job_id(job_id=my_job.id, session=db_session)
+    cursor_from_db = my_producer.backend.get_last_cursor_by_job_id(job_id=my_job.id, session=db_session)
     assert cursor_from_db is None
 
 

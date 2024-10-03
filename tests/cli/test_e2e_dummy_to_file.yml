@@ -1,0 +1,24 @@
+
+source:
+  source_name: dummy
+  stream_name: creatures
+  authentication:
+    type: api_key
+    params:
+      token: dummy_key
+
+destination:
+  name: file
+  config:
+    filepath: ./tests/cli/dummy_e2e_test.jsonl
+
+engine:
+  backend:
+    type: sqlite
+    config:
+      syncCursorInDBEvery: 100
+      database: bizon
+      schema: public
+
+  runner:
+    type: process

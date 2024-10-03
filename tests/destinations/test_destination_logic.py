@@ -1,6 +1,9 @@
+import sys
+
 import pytest
 
 from bizon.common.models import SyncMetadata
+from bizon.destinations.destination import DestinationBufferStatus
 from bizon.destinations.logger.src.config import LoggerDestinationConfig
 from bizon.destinations.logger.src.destination import LoggerDestination
 from bizon.destinations.models import DestinationRecord
@@ -35,135 +38,54 @@ def logger_destination(my_backend: SQLAlchemyBackend, db_session):
 
 
 def test_logger_destination(logger_destination: LoggerDestination):
-    assert logger_destination.buffer.current_size == 0
-    assert logger_destination.buffer.buffer_free_space == 2000
+    assert logger_destination.buffer.records == []
 
 
 def test_buffer_records(logger_destination: LoggerDestination):
-    assert logger_destination.buffer.current_size == 0
-
     sources_records = [
         SourceRecord(id=1, data={"name": "John", "age": 30}),
         SourceRecord(id=2, data={"name": "Tom", "age": 25}),
     ]
     logger_destination.buffer.add_source_iteration_records_to_buffer(iteration=0, records=sources_records)
-    assert logger_destination.buffer.current_size == 2
-    assert logger_destination.buffer.buffer_free_space == 1998
+    assert logger_destination.buffer.records == sources_records
 
 
 def test_write_or_buffer_records(logger_destination: LoggerDestination):
 
-    # Set buffer size to 3
-    logger_destination.buffer.buffer_size = 3
-    assert logger_destination.buffer.current_size == 0
+    TEST_RECORDS = [
+        DestinationRecord(
+            bizon_id=str(i),
+            bizon_extracted_at="2021-07-01T00:00:00Z",
+            bizon_loaded_at="2021-07-01T00:00:00Z",
+            source_record_id="3",
+            source_data={"name": "Alice", "age": 35},
+        )
+        for i in range(1000)
+    ]
 
-    destination_iteration = logger_destination.write_or_buffer_records(
-        destination_records=[
-            DestinationRecord(
-                bizon_id="fjdjfkdfj",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="3",
-                source_data={"name": "Alice", "age": 35},
-            ),
-            DestinationRecord(
-                bizon_id="fjdj9787j",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="6",
-                source_data={"name": "Tom", "age": 29},
-            ),
-        ],
-        iteration=1,
+    # Overriding buffer size to bytes instead of mbs
+    logger_destination.buffer.buffer_size = sys.getsizeof(TEST_RECORDS)
+
+    buffer_status = logger_destination.write_or_buffer_records(
+        destination_records=[TEST_RECORDS[0]],
+        iteration=0,
+    )
+    assert buffer_status == DestinationBufferStatus.RECORDS_BUFFERED
+
+    # Reset buffer
+    logger_destination.buffer.buffer_size = sys.getsizeof(TEST_RECORDS)
+
+    # Write twice
+    buffer_status = logger_destination.write_or_buffer_records(
+        destination_records=TEST_RECORDS + TEST_RECORDS, iteration=1
     )
 
-    assert logger_destination.buffer.current_size == 2
-    assert destination_iteration.success == True
-    assert destination_iteration.records_written == 0
-
-    destination_iteration = logger_destination.write_or_buffer_records(
-        destination_records=[
-            DestinationRecord(
-                bizon_id="fjdjfkdf9999j",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="9",
-                source_data={"name": "Coco", "age": 35},
-            )
-        ],
-        iteration=1,
-    )
-
-    assert logger_destination.buffer.current_size == 3
-    assert destination_iteration.success == True
-    assert destination_iteration.records_written == 0
-
-    destination_iteration = logger_destination.write_or_buffer_records(
-        destination_records=[
-            DestinationRecord(
-                bizon_id="fjdjfkdf9999j",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="9",
-                source_data={"name": "Coco", "age": 35},
-            )
-        ],
-        iteration=1,
-    )
-    assert logger_destination.buffer.current_size == 1
-    assert destination_iteration.success == True
-    assert destination_iteration.records_written == 3
+    assert buffer_status == DestinationBufferStatus.RECORDS_WRITTEN_THEN_BUFFERED
 
 
 def test_write_last_iteration(logger_destination: LoggerDestination, db_session):
 
-    # Set buffer size to 3
-    logger_destination.buffer.buffer_size = 3
-    assert logger_destination.buffer.current_size == 0
-
-    destination_iteration = logger_destination.write_or_buffer_records(
-        destination_records=[
-            DestinationRecord(
-                bizon_id="fjdjfkdfj",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="3",
-                source_data={"name": "John", "age": 14},
-            ),
-            DestinationRecord(
-                bizon_id="fjdj9787j",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="6",
-                source_data={"name": "David", "age": 10},
-            ),
-        ],
-        iteration=1,
-    )
-
-    assert logger_destination.buffer.current_size == 2
-    assert destination_iteration.success == True
-    assert destination_iteration.records_written == 0
-
-    destination_iteration = logger_destination.write_or_buffer_records(
-        destination_records=[],
-        iteration=1,
-        last_iteration=True,
-        session=db_session,
-    )
-
-    assert logger_destination.buffer.current_size == 0
-    assert destination_iteration.success == True
-    assert destination_iteration.records_written == 2
-
-
-def test_from_to_iteration(logger_destination: LoggerDestination, db_session):
-
-    # Set buffer size to 15
-    logger_destination.buffer.buffer_size = 15
-    assert logger_destination.buffer.current_size == 0
-
-    destination_iteration_0 = logger_destination.write_or_buffer_records(
+    buffer_status = logger_destination.write_or_buffer_records(
         destination_records=[
             DestinationRecord(
                 bizon_id="fjdjfkdfj",
@@ -183,48 +105,25 @@ def test_from_to_iteration(logger_destination: LoggerDestination, db_session):
         iteration=0,
     )
 
-    destination_iteration_1 = logger_destination.write_or_buffer_records(
-        destination_records=[
-            DestinationRecord(
-                bizon_id="hhhu",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="3",
-                source_data={"name": "John", "age": 14},
-            ),
-            DestinationRecord(
-                bizon_id="iiiio",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="6",
-                source_data={"name": "David", "age": 10},
-            ),
-        ],
+    assert buffer_status == DestinationBufferStatus.RECORDS_BUFFERED
+
+    # Write the last iteration
+    buffer_status = logger_destination.write_or_buffer_records(
+        destination_records=[],
         iteration=1,
+        last_iteration=True,
+        session=db_session,
     )
 
-    assert logger_destination.buffer.from_iteration == 0
-    assert logger_destination.buffer.to_iteration == 1
+    assert buffer_status == DestinationBufferStatus.RECORDS_WRITTEN
 
-    destination_iteration_2 = logger_destination.write_or_buffer_records(
-        destination_records=[
-            DestinationRecord(
-                bizon_id="hhhu",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="3",
-                source_data={"name": "John", "age": 14},
-            ),
-            DestinationRecord(
-                bizon_id="iiiio",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="6",
-                source_data={"name": "David", "age": 10},
-            ),
-        ],
-        iteration=2,
+
+def test_no_records_written(logger_destination: LoggerDestination, db_session):
+
+    buffer_status = logger_destination.write_or_buffer_records(
+        destination_records=[],
+        iteration=0,
+        session=db_session,
     )
 
-    assert logger_destination.buffer.from_iteration == 0
-    assert logger_destination.buffer.to_iteration == 2
+    assert buffer_status == DestinationBufferStatus.NO_RECORDS

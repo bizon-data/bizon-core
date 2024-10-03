@@ -82,7 +82,9 @@ class ThreadRunner(AbstractRunner):
                 logger.info(f"Producer thread stopped running with result: {result_producer}")
 
             if not future_consumer.running():
-                result_consumer = future_consumer.result()
-                logger.info(f"Consumer thread stopped running with result: {result_consumer}")
+                try:
+                    future_consumer.result()
+                except Exception as e:
+                    logger.error(f"Consumer thread stopped running with error {e}")
 
         return True

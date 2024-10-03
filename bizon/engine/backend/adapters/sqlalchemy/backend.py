@@ -4,7 +4,7 @@ from typing import Generator, Optional, Union
 
 from loguru import logger
 from pytz import UTC
-from sqlalchemy import Result, Select, create_engine, inspect, select, update
+from sqlalchemy import Result, Select, create_engine, func, inspect, select, update
 from sqlalchemy.engine import Engine, create_engine
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
@@ -313,20 +313,16 @@ class SQLAlchemyBackend(AbstractBackend):
         logger.warning(f"No cursor found for id={cursor_id}")
         return None
 
-    def get_last_source_cursor_by_job_id(
-        self, job_id: str, session: Optional[Session] = None
-    ) -> Optional[SourceCursor]:
-        """Get the last cursor we should start source from for the given job id
-        The cursor should have status CursorStatus.WRITTEN_IN_DESTINATION
-        """
+    def get_last_cursor_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[SourceCursor]:
+        """Get the last cursor we should start source from for the given job id"""
 
         smt = (
-            select(SourceCursor)
+            select(DestinationCursor)
             .filter(
-                SourceCursor.job_id == job_id,
-                SourceCursor.status == CursorStatus.WRITTEN_IN_DESTINATION,
+                DestinationCursor.job_id == job_id,
+                DestinationCursor.success == True,  # noqa
             )
-            .order_by(SourceCursor.iteration.desc())
+            .order_by(DestinationCursor.to_source_iteration.desc())
         )
 
         results = self._execute(smt, session=session).first()
@@ -358,8 +354,6 @@ class SQLAlchemyBackend(AbstractBackend):
         logger.warning(f"No last cursor found for source={source_name} stream={stream_name} iteration={iteration}")
         return None
 
-    ### DESTINATION CURSOR ###
-
     def create_destination_cursor(
         self,
         job_id: str,
@@ -369,6 +363,8 @@ class SQLAlchemyBackend(AbstractBackend):
         from_source_iteration: int,
         to_source_iteration: int,
         rows_written: int,
+        success: bool,
+        pagination: Optional[dict] = None,
         session: Session | None = None,
     ) -> DestinationCursor:
 
@@ -380,29 +376,12 @@ class SQLAlchemyBackend(AbstractBackend):
             from_source_iteration=from_source_iteration,
             to_source_iteration=to_source_iteration,
             rows_written=rows_written,
+            pagination=json.dumps(pagination) if pagination else None,
+            success=success,
         )
         new_destination_cursor = self._add_and_commit(destination_cursor, session=session)
         logger.debug(f"New Destination Cursor has been created: {new_destination_cursor}")
         return new_destination_cursor
-
-    def update_destination_cursor(
-        self,
-        cursor_id: str,
-        rows_written: int,
-        status: CursorStatus,
-        error_message: Optional[str] = None,
-        session: Session | None = None,
-    ):
-        """Update the status of the stream job with the given id"""
-        stmt = (
-            update(DestinationCursor)
-            .where(DestinationCursor.id == cursor_id)
-            .values(
-                status=status, error_message=error_message, rows_written=rows_written, updated_at=datetime.now(tz=UTC)
-            )
-            .execution_options(synchronize_session="fetch")
-        )
-        self._execute(stmt, session=session)
 
     def get_destination_cursor_by_id(
         self, cursor_id: str, session: Optional[Session] = None
@@ -417,3 +396,15 @@ class SQLAlchemyBackend(AbstractBackend):
             return results[0]
         logger.warning(f"No job found for id={cursor_id}")
         return None
+
+    def get_number_of_written_rows_for_job(self, job_id: str, session: Optional[Session] = None) -> Optional[int]:
+        """Get the number of written rows for the given job"""
+        smt = select(func.sum(DestinationCursor.rows_written)).filter(
+            DestinationCursor.job_id == job_id,
+            DestinationCursor.success == True,  # noqa
+        )
+        results = self._execute(smt, session=session).one_or_none()
+        if results:
+            return results[0]
+        else:
+            raise Exception(f"No rows written found for job_id={job_id}")

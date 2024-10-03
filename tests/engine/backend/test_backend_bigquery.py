@@ -258,7 +258,7 @@ def test_source_cursor_get_last_after_destination_iteration(my_bq_backend: SQLAl
         cursor_status=CursorStatus.STARTED,
     )
 
-    cursor = my_bq_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=bq_session)
+    cursor = my_bq_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=bq_session)
     assert cursor is None
 
     # We recover from the cursor only if data has been written in destination
@@ -268,7 +268,7 @@ def test_source_cursor_get_last_after_destination_iteration(my_bq_backend: SQLAl
         session=bq_session,
     )
 
-    cursor = my_bq_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=bq_session)
+    cursor = my_bq_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=bq_session)
 
     assert cursor.id == new_cursor_id
     assert cursor.job_id == new_job.id

@@ -92,12 +92,8 @@ class AbstractBackend(ABC):
         pass
 
     @abstractmethod
-    def get_last_source_cursor_by_job_id(
-        self, job_id: str, session: Optional[Session] = None
-    ) -> Optional[SourceCursor]:
-        """Get the last cursor we should start source from for the given job id
-        The cursor should have status CursorStatus.WRITTEN_IN_DESTINATION
-        """
+    def get_last_cursor_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[SourceCursor]:
+        """Get the last cursor we should start source from for the given job id"""
         pass
 
     @abstractmethod
@@ -117,21 +113,11 @@ class AbstractBackend(ABC):
         from_source_iteration: int,
         to_source_iteration: int,
         rows_written: int,
+        success: bool,
+        pagination: Optional[dict] = None,
         session: Optional[Session] = None,
     ) -> DestinationCursor:
         """Create a new DestinationCursor record in db and return it"""
-        pass
-
-    @abstractmethod
-    def update_destination_cursor(
-        self,
-        cursor_id: str,
-        rows_written: int,
-        status: CursorStatus,
-        error_message: Optional[str] = None,
-        session: Session | None = None,
-    ):
-        """Update the destination cursor with the given ID"""
         pass
 
     @abstractmethod
@@ -139,6 +125,11 @@ class AbstractBackend(ABC):
         self, cursor_id: str, session: Optional[Session] = None
     ) -> Optional[DestinationCursor]:
         """Get the destination cursor by its ID"""
+        pass
+
+    @abstractmethod
+    def get_number_of_written_rows_for_job(self, job_id: str, session: Optional[Session] = None) -> Optional[int]:
+        """Get the number of written rows for the given job"""
         pass
 
 

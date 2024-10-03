@@ -73,7 +73,6 @@ def test_create_stream_job(my_pg_backend: SQLAlchemyBackend, pg_db_session: Sess
     assert new_job_id
 
 
-@pytest.mark.skip(reason="TO DEBUG: failing for now")
 def test_update_stream_job_status(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
     my_pg_backend.create_all_tables()
 
@@ -197,7 +196,7 @@ def test_update_source_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: S
     assert cursor.status == CursorStatus.WRITTEN_IN_DESTINATION
 
 
-def test_source_cursor_get_last_after_destination_iteration(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+def test_get_last_iteration_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
     my_pg_backend.create_all_tables()
 
     new_job = my_pg_backend.create_stream_job(
@@ -208,28 +207,47 @@ def test_source_cursor_get_last_after_destination_iteration(my_pg_backend: SQLAl
         job_status=JobStatus.RUNNING,
     )
 
-    new_cursor_id = my_pg_backend.create_source_cursor(
+    cursor = my_pg_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=pg_db_session)
+    assert cursor is None
+
+    my_pg_backend.create_destination_cursor(
         session=pg_db_session,
         job_id=new_job.id,
         source_name="sourcetest",
         stream_name="streamtest",
-        iteration=0,
-        rows_fetched=0,
-        next_pagination=None,
-        cursor_status=CursorStatus.STARTED,
+        destination_name="destinationtest",
+        from_source_iteration=0,
+        to_source_iteration=0,
+        rows_written=0,
+        success=True,
     )
 
-    cursor = my_pg_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=pg_db_session)
-    assert cursor is None
+    cursor = my_pg_backend.get_last_cursor_by_job_id(job_id=new_job.id, session=pg_db_session)
 
-    # We recover from the cursor only if data has been written in destination
-    my_pg_backend.update_source_cursor_status(
-        cursor_id=new_cursor_id,
-        cursor_status=CursorStatus.WRITTEN_IN_DESTINATION,
-        session=pg_db_session,
-    )
-
-    cursor = my_pg_backend.get_last_source_cursor_by_job_id(job_id=new_job.id, session=pg_db_session)
-
-    assert cursor.id == new_cursor_id
     assert cursor.job_id == new_job.id
+
+
+def test_create_destination_cursor(my_pg_backend: SQLAlchemyBackend, pg_db_session: Session):
+    my_pg_backend.create_all_tables()
+
+    new_job = my_pg_backend.create_stream_job(
+        session=pg_db_session,
+        source_name="sourcetest",
+        stream_name="streamtest",
+        total_records_to_fetch=200,
+        job_status=JobStatus.RUNNING,
+    )
+
+    new_destination_cursor = my_pg_backend.create_destination_cursor(
+        session=pg_db_session,
+        job_id=new_job.id,
+        source_name="sourcetest",
+        stream_name="streamtest",
+        destination_name="destinationtest",
+        from_source_iteration=0,
+        to_source_iteration=0,
+        rows_written=0,
+        success=True,
+    )
+
+    assert new_destination_cursor.rows_written == 0

@@ -5,7 +5,7 @@ from loguru import logger
 from pytz import UTC
 
 from bizon.engine.backend.backend import AbstractBackend
-from bizon.engine.backend.models import CursorStatus
+from bizon.engine.backend.models import CursorStatus, DestinationCursor
 from bizon.engine.queue.queue import AbstractQueue
 from bizon.source.cursor import Cursor
 from bizon.source.source import AbstractSource
@@ -26,25 +26,25 @@ class Producer:
     def get_or_create_cursor(self, job_id: str, session=None) -> Cursor:
         """Get or create a cursor for the current stream, return the cursor"""
         # Try to get the cursor from the DB
-        cursor_from_bd = self.backend.get_last_source_cursor_by_job_id(job_id=job_id)
+        cursor_from_db = self.backend.get_last_cursor_by_job_id(job_id=job_id)
 
         cursor = None
 
-        if cursor_from_bd:
+        if cursor_from_db:
             # Retrieve the job
-            job = self.backend.get_stream_job_by_id(job_id=job_id, session=session)
+            job = self.backend.get_stream_job_by_id(job_id=job_id)
 
-            logger.info(f"Recovering cursor from DB: {cursor_from_bd}")
+            logger.info(f"Recovering cursor from DB: {cursor_from_db}")
 
-            # Initialize the cursor from the DB
+            # Initialize the recovery from the DestinationCursor
             cursor = Cursor.from_db(
                 source_name=self.source.config.source_name,
                 stream_name=self.source.config.stream_name,
                 job_id=job_id,
                 total_records=job.total_records_to_fetch,
-                iteration=cursor_from_bd.iteration,
-                rows_fetched=cursor_from_bd.rows_fetched,
-                pagination=ast.literal_eval(cursor_from_bd.next_pagination),
+                iteration=cursor_from_db.to_source_iteration + 1,
+                rows_fetched=self.backend.get_number_of_written_rows_for_job(job_id=job_id),
+                pagination=ast.literal_eval(cursor_from_db.pagination),
             )
         else:
             # Get the total number of records
@@ -86,7 +86,7 @@ class Producer:
 
         # Get or create the cursor
         try:
-            cursor = self.get_or_create_cursor(job_id=job_id)
+            cursor = self.get_or_create_cursor(job_id=job_id, session=self.backend.session)
         except Exception as e:
             logger.error(
                 f"Error while getting or creating cursor: {e} for job_id {job_id}"
@@ -141,7 +141,10 @@ class Producer:
             # Put the data in the queue
             try:
                 self.queue.put(
-                    source_records=source_iteration.records, iteration=cursor.iteration, extracted_at=extracted_at
+                    source_records=source_iteration.records,
+                    iteration=cursor.iteration,
+                    extracted_at=extracted_at,
+                    pagination=source_iteration.next_pagination,
                 )
             except Exception as e:
                 logger.error(

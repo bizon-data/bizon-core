@@ -3,7 +3,7 @@ from enum import Enum
 from uuid import uuid4
 
 from pytz import UTC
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 TABLE_STREAM_INFO = "stream_jobs"
@@ -93,10 +93,13 @@ class DestinationCursor(Base):
     from_source_iteration = Column(Integer, default=0)
     to_source_iteration = Column(Integer, default=0)
     rows_written = Column(Integer, default=0)
+    success = Column(Boolean, nullable=False, doc="Whether the write operation was successful")
     attempt = Column(Integer, default=0, doc="Number of attempts to pull the data for this cursor")
-    status = Column(String(100), default=CursorStatus.STARTED, doc="Status of the cursor")
     error_message = Column(
         String(500), nullable=True, doc="Error message if pulling failed for this cursor", default=None
     )
     created_at = Column(DateTime, default=datetime.now(tz=UTC))
     updated_at = Column(DateTime, nullable=True, default=None, doc="Timestamp when the job was last updated")
+    pagination = Column(
+        String, nullable=True, default=None, doc="Pagination source information from latest written buffer"
+    )

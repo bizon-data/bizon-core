@@ -23,6 +23,7 @@ class PythonQueueConsumer(AbstractQueueConsumer):
                     source_records=queue_message.source_records,
                     iteration=queue_message.iteration,
                     extracted_at=queue_message.extracted_at,
+                    pagination=queue_message.pagination,
                     last_iteration=True,
                 )
                 break
@@ -34,6 +35,6 @@ class PythonQueueConsumer(AbstractQueueConsumer):
                 source_records=queue_message.source_records,
                 iteration=queue_message.iteration,
                 extracted_at=queue_message.extracted_at,
+                pagination=queue_message.pagination,
             )
-
-            logger.info(f"Consumed data from queue: {len(queue_message.source_records)}")
+            self.queue.task_done()

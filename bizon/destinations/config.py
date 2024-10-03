@@ -20,7 +20,14 @@ class NormalizationConfig(BaseModel):
 
 
 class AbstractDestinationDetailsConfig(BaseModel):
-    buffer_size: int = Field(default=2000, description="Buffer size for the destination")
+    buffer_size: int = Field(
+        default=50,
+        description="Buffer size in Mb for the destination. Set to 0 to disable and write directly to the destination.",
+    )
+    buffer_flush_timeout: int = Field(
+        default=600,
+        description="Maximum time in seconds for buffering after which the records will be written to the destination. Set to 0 to deactivate the timeout buffer check.",
+    )
     normalization: Optional[NormalizationConfig] = Field(
         description="Normalization configuration, by default no normalization is applied",
         default=NormalizationConfig(type=NormalizationType.NONE),

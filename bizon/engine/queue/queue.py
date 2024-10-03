@@ -18,6 +18,7 @@ class QueueMessage(BaseModel):
     iteration: int
     source_records: List[SourceRecord]
     extracted_at: datetime = datetime.now(tz=UTC)
+    pagination: Optional[dict] = None
     signal: Optional[str] = None
 
 
@@ -50,12 +51,18 @@ class AbstractQueue(ABC):
         pass
 
     def put(
-        self, source_records: List[SourceRecord], iteration: int, signal: str = None, extracted_at: datetime = None
+        self,
+        source_records: List[SourceRecord],
+        iteration: int,
+        signal: str = None,
+        extracted_at: datetime = None,
+        pagination: dict = None,
     ):
         queue_message = QueueMessage(
             iteration=iteration,
             source_records=source_records,
             extracted_at=extracted_at if extracted_at else datetime.now(tz=UTC),
+            pagination=pagination,
             signal=signal,
         )
         self.put_queue_message(queue_message)

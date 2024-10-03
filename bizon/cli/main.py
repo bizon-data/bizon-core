@@ -50,7 +50,7 @@ def stream():
 
 @stream.command()
 @click.argument("source_name", type=click.STRING)
-def list(source_name: str):
+def list(source_name: str):  # noqa
     """List available streams for a source."""
     sources = discover_all_sources()
     source_model = sources.get(source_name)
@@ -113,6 +113,8 @@ def run(filename: str, custom_source: str, runner: str, debug, help="Run a bizon
 
     runner = RunnerFactory.create_from_config_dict(config=config)
     runner.run()
+
+    click.echo("Pipeline finished.")
 
 
 if __name__ == "__main__":

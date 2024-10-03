@@ -1,0 +1,12 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python Debugger: Hubspot pipeline",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/bizon/sources/hubspot/tests/hubspot_pipeline.py",
+            "console": "integratedTerminal"
+        }
+    ]
+}

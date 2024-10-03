@@ -13,6 +13,8 @@ destination:
   # Must have the bigquery.dataEditor and storage.objectUser on the supplied dataset and bucket
   name: bigquery
   config:
+    buffer_size: 10 # in Mb
+    buffer_flush_timeout: 300 # in seconds
     dataset_id: bizon_test
     dataset_location: US
     project_id: my-gcp-project-id
