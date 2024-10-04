@@ -166,7 +166,8 @@ class PeriscopeSource(AbstractSource):
         return dashboard_charts
 
     def get_charts(self, pagination: dict = None) -> SourceIteration:
-        MAX_CONCURRENT_REQUESTS = 10
+
+        BATCH_SIZE = 10
 
         if not pagination:
             dashboard_ids = self.get_dashboard_ids()
@@ -177,14 +178,15 @@ class PeriscopeSource(AbstractSource):
 
             pagination = {"dashboard_ids": dashboard_ids}
 
-        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_REQUESTS) as executor:
-            result = list(executor.map(self._get_charts, pagination["dashboard_ids"][:10]))
+        with ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
+            result = list(executor.map(self._get_charts, pagination["dashboard_ids"][:BATCH_SIZE]))
 
         # Remove the first 10 dashboard ids if there are more
-        if len(pagination["dashboard_ids"]) > 10:
-            pagination["dashboard_ids"] = pagination["dashboard_ids"][10:]
+        if len(pagination["dashboard_ids"]) > BATCH_SIZE:
+            pagination["dashboard_ids"] = pagination["dashboard_ids"][BATCH_SIZE:]
         else:
-            pagination["dashboard_ids"] = []
+            # We end the pagination
+            pagination = {}
 
         records = list(itertools.chain.from_iterable(result))
 
