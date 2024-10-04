@@ -8,7 +8,7 @@ from bizon.destinations.logger.src.config import LoggerDestinationConfig
 from bizon.destinations.logger.src.destination import LoggerDestination
 from bizon.destinations.models import DestinationRecord
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
-from bizon.engine.backend.models import JobStatus
+from bizon.engine.backend.models import JobStatus, StreamJob
 from bizon.source.models import SourceRecord
 
 
@@ -20,7 +20,7 @@ def logger_destination(my_backend: SQLAlchemyBackend, db_session):
     job = my_backend.create_stream_job(
         source_name="dummy",
         stream_name="test",
-        job_status=JobStatus.STARTED,
+        job_status=JobStatus.RUNNING,
         session=db_session,
     )
 
@@ -103,9 +103,15 @@ def test_write_last_iteration(logger_destination: LoggerDestination, db_session)
             ),
         ],
         iteration=0,
+        session=db_session,
     )
 
     assert buffer_status == DestinationBufferStatus.RECORDS_BUFFERED
+
+    running_job: StreamJob = logger_destination.backend.get_stream_job_by_id(
+        job_id=logger_destination.sync_metadata.job_id, session=db_session
+    )
+    assert running_job.status == JobStatus.RUNNING
 
     # Write the last iteration
     buffer_status = logger_destination.write_or_buffer_records(
@@ -116,6 +122,11 @@ def test_write_last_iteration(logger_destination: LoggerDestination, db_session)
     )
 
     assert buffer_status == DestinationBufferStatus.RECORDS_WRITTEN
+
+    finished_job: StreamJob = logger_destination.backend.get_stream_job_by_id(
+        job_id=logger_destination.sync_metadata.job_id, session=db_session
+    )
+    assert finished_job.status == JobStatus.SUCCEEDED
 
 
 def test_no_records_written(logger_destination: LoggerDestination, db_session):

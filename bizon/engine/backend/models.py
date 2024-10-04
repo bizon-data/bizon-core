@@ -18,7 +18,6 @@ def generate_uuid():
 class JobStatus(str, Enum):
     STARTED = "started"
     RUNNING = "running"
-    SUCCESS = "success"
     FAILED = "failed"
     CANCELED = "cancelled"
     SUCCEEDED = "succeeded"

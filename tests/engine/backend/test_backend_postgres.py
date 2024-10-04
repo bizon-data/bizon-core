@@ -79,21 +79,21 @@ def test_update_stream_job_status(my_pg_backend: SQLAlchemyBackend, pg_db_sessio
     new_job = my_pg_backend.create_stream_job(
         session=pg_db_session,
         source_name="sourcetest",
-        stream_name="streamtest",
+        stream_name="cookie",
         total_records_to_fetch=200,
         job_status=JobStatus.STARTED,
     )
 
     # If no job is running, get_running_job_id should return None
     job_running_not_found = my_pg_backend.get_running_stream_job(
-        session=pg_db_session, source_name="sourcetest", stream_name="streamtest"
+        session=pg_db_session, source_name="sourcetest", stream_name="cookie"
     )
     assert job_running_not_found == None
 
     my_pg_backend.update_stream_job_status(session=pg_db_session, job_id=new_job.id, job_status=JobStatus.RUNNING)
 
     job_running = my_pg_backend.get_running_stream_job(
-        session=pg_db_session, source_name="sourcetest", stream_name="streamtest"
+        session=pg_db_session, source_name="sourcetest", stream_name="cookie"
     )
     assert new_job.id == job_running.id
 

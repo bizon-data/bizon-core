@@ -83,29 +83,24 @@ class AbstractDestination(ABC):
             self.delete_table()
 
     def buffer_flush_handler(self, session=None) -> DestinationIteration:
-        nb_records_to_write = len(self.buffer.records)
+        # TODO: Add retry strategy
+
         # Initialize destination iteration
         destination_iteration = DestinationIteration(
             success=False,
             records_written=0,
             pagination=self.buffer.pagination,
         )
+
         success, error_msg = self.write_records(destination_records=self.buffer.records)
+
         if success:
-            destination_iteration.records_written = nb_records_to_write
-            self.backend.update_stream_job_status(
-                job_id=self.sync_metadata.job_id,
-                job_status=JobStatus.SUCCEEDED,
-                session=session,
-            )
+            # We wrote records to destination so we keep it
+            destination_iteration.records_written = len(self.buffer.records)
 
         else:
-            self.backend.update_stream_job_status(
-                job_id=self.sync_metadata.job_id,
-                job_status=JobStatus.FAILED,
-                error_message=error_msg,
-                session=session,
-            )
+            # We failed to write records to destination so we keep the error message
+            destination_iteration.error_message = error_msg
 
         destination_iteration.success = success
         destination_iteration.from_source_iteration = self.buffer.from_iteration
@@ -114,6 +109,8 @@ class AbstractDestination(ABC):
 
         # Update destination cursor
         self.create_cursors(destination_iteration=destination_iteration)
+
+        return destination_iteration
 
     def write_or_buffer_records(
         self,
@@ -129,7 +126,16 @@ class AbstractDestination(ABC):
         if last_iteration:
             logger.debug("Writing last iteration records to destination")
             assert len(destination_records) == 0, "Last iteration should not have any records"
-            self.buffer_flush_handler(session=session)
+            destination_iteration = self.buffer_flush_handler(session=session)
+
+            if destination_iteration.success:
+                # Update job status to success
+                self.backend.update_stream_job_status(
+                    job_id=self.sync_metadata.job_id,
+                    job_status=JobStatus.SUCCEEDED,
+                    session=session,
+                )
+
             self.buffer.flush()
             return DestinationBufferStatus.RECORDS_WRITTEN
 
