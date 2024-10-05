@@ -1,3 +1,5 @@
+import os
+import sys
 from abc import ABC, abstractmethod
 
 from loguru import logger
@@ -22,6 +24,11 @@ class AbstractRunner(ABC):
         # Attributes should be serializable for multiprocessing
         self.config: dict = config
         self.bizon_config = BizonConfig.model_validate(obj=config)
+
+        # Set log level
+        logger.info(f"Setting log level to {self.bizon_config.engine.runner.log_level.name}")
+        logger.remove()
+        logger.add(sys.stderr, level=self.bizon_config.engine.runner.log_level)
 
     @property
     def is_running(self) -> bool:
@@ -103,7 +110,7 @@ class AbstractRunner(ABC):
                 logger.info(f"Job {job.id} canceled. Creating a new one...")
             # Otherwise we return the existing job
             else:
-                logger.debug(f"Found an existing job: {job.id}")
+                logger.info(f"Found an existing job: {job.id}")
                 return job
 
         # If no job is running, we create a new one:
@@ -118,6 +125,8 @@ class AbstractRunner(ABC):
             session=session,
             job_status=JobStatus.STARTED,
         )
+
+        logger.info(f"Created a new job: {job.id}")
 
         return job
 

@@ -146,7 +146,7 @@ class AbstractDestination(ABC):
 
         # Write records to destination if buffer size is 0
         if self.buffer.buffer_size == 0:
-            logger.debug("Writing last iteration records to destination")
+            logger.info("Writing last iteration records to destination")
             self.buffer.add_source_iteration_records_to_buffer(
                 iteration=iteration, records=destination_records, pagination=pagination
             )
@@ -154,15 +154,15 @@ class AbstractDestination(ABC):
             self.buffer.flush()
             return DestinationBufferStatus.RECORDS_WRITTEN
 
-        logger.info(f"Buffer free space {self.buffer.buffer_free_space_pct}%")
-        logger.info(f"Buffer current size {self.buffer.current_size} bytes")
+        logger.debug(f"Buffer free space {self.buffer.buffer_free_space_pct}%")
+        logger.debug(f"Buffer current size {self.buffer.current_size} bytes")
         logger.info(
             f"Buffer ripeness {self.buffer.ripeness / 60} min. Max ripeness {self.buffer.buffer_flush_timeout / 60} min."  # noqa
         )
 
         # Write buffer to destination if buffer is ripe and create a new buffer for the new iteration
         if self.buffer.is_ripe:
-            logger.debug(
+            logger.info(
                 f"Buffer is ripe (buffering for longer than buffer_flush_timeout: {self.buffer.buffer_flush_timeout} seconds), writing buffer to destination"  # noqa
             )
             self.buffer_flush_handler(session=session)

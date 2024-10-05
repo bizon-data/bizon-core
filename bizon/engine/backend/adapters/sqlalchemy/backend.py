@@ -252,7 +252,7 @@ class SQLAlchemyBackend(AbstractBackend):
         if job:
             return job
 
-        logger.debug(f"No running job found for source={source_name} stream={stream_name}")
+        logger.info(f"No running job found for source={source_name} stream={stream_name}")
         return None
 
     #### SOURCE CURSOR ####

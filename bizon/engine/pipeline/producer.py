@@ -1,11 +1,12 @@
 import ast
+import os
 from datetime import datetime
 
 from loguru import logger
 from pytz import UTC
 
 from bizon.engine.backend.backend import AbstractBackend
-from bizon.engine.backend.models import CursorStatus, DestinationCursor
+from bizon.engine.backend.models import CursorStatus
 from bizon.engine.queue.queue import AbstractQueue
 from bizon.source.cursor import Cursor
 from bizon.source.source import AbstractSource

@@ -9,6 +9,15 @@ class RunnerTypes(str, Enum):
     PROCESS = "process"
 
 
+class LoggerLevel(str, Enum):
+    TRACE = "TRACE"
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+
 class RunnerFuturesConfig(BaseModel):
     max_workers: Optional[int] = Field(
         description="Number of workers to use for the runner",
@@ -36,7 +45,7 @@ class RunnerConfig(BaseModel):
         default=RunnerFuturesConfig(),
     )
 
-    log_level: str = Field(
+    log_level: LoggerLevel = Field(
         description="Logging level",
-        default="INFO",
+        default=LoggerLevel.INFO,
     )

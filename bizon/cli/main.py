@@ -1,12 +1,13 @@
 import click
 
 from bizon.engine.engine import RunnerFactory
+from bizon.engine.runner.config import LoggerLevel
 from bizon.source.discover import discover_all_sources
 
 from .utils import (
     parse_from_yaml,
     set_custom_source_path_in_config,
-    set_debug_mode,
+    set_log_level,
     set_runner_in_config,
 )
 
@@ -88,25 +89,29 @@ def destination():
     help="Runner type to use. Thread or Process.",
 )
 @click.option(
-    "--debug",
+    "--log-level",
     required=False,
-    is_flag=True,
+    type=click.Choice([level.name for level in LoggerLevel]),
     show_default=True,
-    default=False,
-    help="Enable debug mode.",
+    help="Log level to use.",
 )
-def run(filename: str, custom_source: str, runner: str, debug, help="Run a bizon pipeline from a YAML file."):
+def run(
+    filename: str,
+    custom_source: str,
+    runner: str,
+    log_level: LoggerLevel,
+    help="Run a bizon pipeline from a YAML file.",
+):
     """Run a bizon pipeline from a YAML file."""
-    ctx = click.get_current_context()
 
     # Parse config from YAML file as a dictionary
     config = parse_from_yaml(filename)
 
     # Set debug mode
-    set_debug_mode(debug)
+    set_log_level(config=config, level=log_level)
 
     # Override source_file_path param in config
-    set_custom_source_path_in_config(config=config, custom_source=ctx.get_parameter_source("custom-source"))
+    set_custom_source_path_in_config(config=config, custom_source=custom_source)
 
     # Override runner param in config
     set_runner_in_config(config=config, runner=runner)
