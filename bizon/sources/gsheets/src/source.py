@@ -97,6 +97,10 @@ class GsheetsSource(AbstractSource):
                 self.normalization_pattern.sub("_", k).lower().replace(" ", "_"): v for k, v in record.items()
             }
 
+    def keep_only_selected_columns(self, records: List[dict], column_names: List[str]) -> List[dict]:
+        """Keep only selected columns in records"""
+        return [{k: v for k, v in record.items() if k in column_names} for record in records]
+
     def get(self, pagination: dict = None) -> SourceIteration:
         gc = self.get_gspread_client()
         worksheet = gc.open_by_url(self.config.spreadsheet_url).worksheet(self.config.worksheet_name)
@@ -115,7 +119,7 @@ class GsheetsSource(AbstractSource):
 
             # Get all records
             all_records = worksheet.get_all_records(expected_headers=self.config.column_names)
-            all_records = gspread.utils.to_records(headers=self.config.column_names, values=all_records)
+            all_records = self.keep_only_selected_columns(all_records, self.config.column_names)
 
         else:
             # Ensure column names are unique
