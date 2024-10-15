@@ -18,6 +18,7 @@ from bizon.destinations.config import NormalizationType
 from bizon.destinations.destination import AbstractDestination
 from bizon.destinations.models import DestinationRecord
 from bizon.engine.backend.backend import AbstractBackend
+from bizon.source.config import SourceSyncModes
 
 from .config import BigQueryConfigDetails
 
@@ -48,9 +49,12 @@ class BigQueryDestination(AbstractDestination):
         tabled_id = self.config.table_id or f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
         return f"{self.project_id}.{self.dataset_id}.{tabled_id}"
 
-    def delete_table(self) -> bool:
-        self.bq_client.delete_table(self.table_id, not_found_ok=True)  # Make an API request.
-        return True
+    @property
+    def temp_table_id(self) -> str:
+        if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
+            return f"{self.table_id}_temp"
+        if self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
+            return f"{self.table_id}_incremental"
 
     def get_bigquery_schema(self, destination_records: List[DestinationRecord]) -> List[bigquery.SchemaField]:
 
@@ -141,7 +145,7 @@ class BigQueryDestination(AbstractDestination):
         )
 
         load_job = self.bq_client.load_table_from_uri(
-            f"gs://{self.buffer_bucket_name}/{gcs_file}", self.table_id, job_config=job_config
+            f"gs://{self.buffer_bucket_name}/{gcs_file}", self.temp_table_id, job_config=job_config
         )
         load_job.result()
 
@@ -159,3 +163,14 @@ class BigQueryDestination(AbstractDestination):
             self.cleanup(gs_file_name)
             raise e
         return True, ""
+
+    def finalize(self):
+        if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
+            logger.info(f"Loading temp table {self.temp_table_id} data into {self.table_id} ...")
+            self.bq_client.query(f"CREATE OR REPLACE TABLE {self.table_id} AS SELECT * FROM {self.temp_table_id}")
+            logger.info(f"Deleting temp table {self.temp_table_id} ...")
+            self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
+            return True
+        if self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
+            # TO DO: Implement incremental sync
+            return True
