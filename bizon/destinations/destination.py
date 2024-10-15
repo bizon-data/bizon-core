@@ -57,11 +57,6 @@ class AbstractDestination(ABC):
         pass
 
     @abstractmethod
-    def finalize(self) -> bool:
-        """Finalize destination after writing records, usually used to copy data from temp table to main table"""
-        pass
-
-    @abstractmethod
     def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, Union[str, None]]:
         """Write records to destination for the given iteration and return success status and error message"""
         pass
@@ -75,6 +70,10 @@ class AbstractDestination(ABC):
             DestinationRecord.from_source_record(source_record=source_record, extracted_at=extracted_at)
             for source_record in source_records
         ]
+
+    def finalize(self) -> bool:
+        """Finalize destination after writing records, usually used to copy data from temp table to main table"""
+        pass
 
     def buffer_flush_handler(self, session=None) -> DestinationIteration:
         # TODO: Add retry strategy
