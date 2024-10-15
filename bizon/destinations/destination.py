@@ -57,8 +57,8 @@ class AbstractDestination(ABC):
         pass
 
     @abstractmethod
-    def delete_table(self) -> bool:
-        """Delete table in destination"""
+    def finalize(self) -> bool:
+        """Finalize destination after writing records, usually used to copy data from temp table to main table"""
         pass
 
     @abstractmethod
@@ -75,12 +75,6 @@ class AbstractDestination(ABC):
             DestinationRecord.from_source_record(source_record=source_record, extracted_at=extracted_at)
             for source_record in source_records
         ]
-
-    def prepare_destination(self):
-        """Prepare destination before writing records"""
-        # Delete table if full refresh
-        if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
-            self.delete_table()
 
     def buffer_flush_handler(self, session=None) -> DestinationIteration:
         # TODO: Add retry strategy
@@ -136,7 +130,10 @@ class AbstractDestination(ABC):
                     session=session,
                 )
 
+            # Flush buffer
             self.buffer.flush()
+            # Call the finalizing operations to wrap up sync
+            self.finalize()
             return DestinationBufferStatus.RECORDS_WRITTEN
 
         # Don't write empty records to destination
@@ -219,10 +216,6 @@ class AbstractDestination(ABC):
         if iteration == 0 and len(source_records) == 0:
             logger.warning("Source failed to fetch data from the first iteration, no records will be written.")
             return False
-
-        # Prepare destination
-        if iteration == 0:
-            self.prepare_destination()
 
         destination_records = self.convert_source_records_to_destination_records(
             source_records=source_records,
