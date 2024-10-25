@@ -25,12 +25,14 @@ engine:
   backend:
     type: sqlite
     config:
-      syncCursorInDBEvery: 100
-      database: bizon
+      database: bizon_test_e2e
       schema: public
+      port: 5432
+      username: postgres
+      password: bizon
 
   runner:
-    type: thread
+    type: process
 """
 
 

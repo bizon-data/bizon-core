@@ -29,9 +29,9 @@ class BigQueryDestination(AbstractDestination):
         super().__init__(sync_metadata, config, backend)
         self.config: BigQueryConfigDetails = config
 
-        if bool(config.service_account_key):
+        if config.authentication and config.authentication.service_account_key:
             with tempfile.NamedTemporaryFile(delete=False) as temp:
-                temp.write(config.service_account_key.encode())
+                temp.write(config.authentication.service_account_key.encode())
                 temp_file_path = temp.name
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_file_path
 

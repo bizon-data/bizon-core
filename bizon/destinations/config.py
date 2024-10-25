@@ -26,11 +26,14 @@ class AbstractDestinationDetailsConfig(BaseModel):
     )
     buffer_flush_timeout: int = Field(
         default=600,
-        description="Maximum time in seconds for buffering after which the records will be written to the destination. Set to 0 to deactivate the timeout buffer check.",
+        description="Maximum time in seconds for buffering after which the records will be written to the destination. Set to 0 to deactivate the timeout buffer check.",  # noqa
     )
     normalization: Optional[NormalizationConfig] = Field(
         description="Normalization configuration, by default no normalization is applied",
         default=NormalizationConfig(type=NormalizationType.NONE),
+    )
+    authentication: Optional[BaseModel] = Field(
+        description="Authentication configuration for the destination, if needed", default=None
     )
 
 

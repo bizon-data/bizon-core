@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from bizon.destinations.config import (
     AbstractDestinationConfig,
@@ -15,6 +15,13 @@ class GCSBufferFormat(str, Enum):
     CSV = "csv"
 
 
+class BigQueryAuthentication(BaseModel):
+    service_account_key: str = Field(
+        description="Service Account Key JSON string. If empty it will be infered",
+        default="",
+    )
+
+
 class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     project_id: str
     dataset_id: str
@@ -24,10 +31,7 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     )
     gcs_buffer_bucket: str
     gcs_buffer_format: Optional[GCSBufferFormat] = GCSBufferFormat.PARQUET
-    service_account_key: str = Field(
-        description="Service Account Key JSON string. If empty it will be infered",
-        default="",
-    )
+    authentication: Optional[BigQueryAuthentication] = None
 
 
 class BigQueryConfig(AbstractDestinationConfig):

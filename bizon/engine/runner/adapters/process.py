@@ -32,10 +32,6 @@ class ProcessRunner(AbstractRunner):
         result_producer = None
         result_consumer = None
 
-        if self.bizon_config.engine.queue.type == "python_queue" and "sqlite" in self.bizon_config.engine.backend.type:
-            logger.error("Multiprocessing.Queue is not compatible with sqlite backend")
-            raise ValueError("Multiprocessing.Queue is not compatible with sqlite backend")
-
         with concurrent.futures.ProcessPoolExecutor(
             max_workers=self.bizon_config.engine.runner.config.max_workers
         ) as executor:

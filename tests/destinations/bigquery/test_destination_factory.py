@@ -38,13 +38,13 @@ def test_bigquery_factory(sync_metadata, my_backend):
             credentials_path="credentials_path",
             gcs_buffer_bucket="gcs_buffer_bucket",
             gcs_buffer_format=GCSBufferFormat.PARQUET,
-            service_account_key="",
+            authentication={"service_account_key": ""},
         ),
     )
 
     destination = DestinationFactory().get_destination(sync_metadata=sync_metadata, config=config, backend=my_backend)
     assert isinstance(destination, BigQueryDestination)
-    assert destination.config.service_account_key == ""
+    assert destination.config.authentication.service_account_key == ""
     assert destination.config.project_id == "project_id"
     assert destination.config.dataset_id == "dataset_id"
 
@@ -68,4 +68,4 @@ def test_bigquery_factory_empty_service_account(sync_metadata, my_backend):
 
     destination = DestinationFactory().get_destination(sync_metadata=sync_metadata, config=config, backend=my_backend)
     assert isinstance(destination, BigQueryDestination)
-    assert destination.config.service_account_key == ""
+    assert destination.config.authentication is None

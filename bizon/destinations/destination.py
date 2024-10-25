@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field
 from bizon.common.models import SyncMetadata
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus
-from bizon.source.config import SourceSyncModes
 from bizon.source.models import SourceRecord
 
 from .buffer import DestinationBuffer

@@ -75,6 +75,12 @@ class SQLAlchemyBackend(AbstractBackend):
             echo=self.config.echoEngine,
         )
 
+    def _get_engine_sqlite(self) -> Engine:
+        return create_engine(
+            f"sqlite:///{self.config.database}.sqlite3",
+            connect_args={"check_same_thread": False},
+        )
+
     def _get_engine(self) -> Engine:
 
         if self.type == BackendTypes.BIGQUERY:
@@ -86,11 +92,7 @@ class SQLAlchemyBackend(AbstractBackend):
 
         # SQLite in a file, ok for small tests
         if self.type == BackendTypes.SQLITE:
-            return create_engine(
-                f"sqlite:///{self.config.database}.sqlite3",
-                echo=self.config.echoEngine,
-                connect_args={"check_same_thread": False},
-            )
+            return self._get_engine_sqlite()
 
         # ONLY FOR UNIT TESTS: SQLite in memory
         if self.type == BackendTypes.SQLITE_IN_MEMORY:
@@ -126,10 +128,6 @@ class SQLAlchemyBackend(AbstractBackend):
 
     def get_engine(self) -> Engine:
         """Return the SQLAlchemy engine"""
-        if self.type == BackendTypes.SQLITE:
-            assert "sqlalchemy_engine" in self.kwargs
-            return self.kwargs["sqlalchemy_engine"]
-
         if not self._engine:
             self._engine = self._get_engine()
 

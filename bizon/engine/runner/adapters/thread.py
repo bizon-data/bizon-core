@@ -22,17 +22,6 @@ class ThreadRunner(AbstractRunner):
             queue = Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
             extra_kwargs["queue"] = queue
 
-        if self.bizon_config.engine.backend.type == "sqlite":
-            from sqlalchemy.engine import create_engine
-            from sqlalchemy.pool import StaticPool
-
-            engine = create_engine(
-                f"sqlite:///{self.bizon_config.engine.backend.config.database}.sqlite3",
-                connect_args={"check_same_thread": False},
-                poolclass=StaticPool,
-            )
-            extra_kwargs["sqlalchemy_engine"] = engine
-
         return extra_kwargs
 
     def run(self) -> bool:

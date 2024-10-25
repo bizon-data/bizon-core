@@ -42,7 +42,7 @@ class SourceConfig(BaseModel, ABC):
     )
 
     max_iterations: Optional[int] = Field(
-        description="Maximum number of iterations for pulling from source, if None, run till all records are synced from source",
+        description="Maximum number of iterations for pulling from source, if None, run till all records are synced from source",  # noqa
         default=None,
     )
 
