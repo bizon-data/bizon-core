@@ -1,4 +1,5 @@
 import json
+import os
 from tempfile import NamedTemporaryFile
 
 import yaml
@@ -8,6 +9,8 @@ from bizon.engine.engine import RunnerFactory
 temporary_file = NamedTemporaryFile()
 
 BIZON_CONFIG_DUMMY_TO_FILE = f"""
+name: test_job_3
+
 source:
   source_name: dummy
   stream_name: creatures
@@ -23,20 +26,22 @@ destination:
 
 engine:
   backend:
-    type: sqlite
+    type: postgres
     config:
-      database: bizon_test_e2e
+      database: bizon_test
       schema: public
+      syncCursorInDBEvery: 2
+      host: {os.environ.get("POSTGRES_HOST", "localhost")}
       port: 5432
       username: postgres
       password: bizon
 
   runner:
-    type: process
+    type: thread
 """
 
 
-def test_e2e_dummy_to_file():
+def test_e2e_dummy_to_file(pg_db_session):
 
     runner = RunnerFactory.create_from_config_dict(yaml.safe_load(BIZON_CONFIG_DUMMY_TO_FILE))
     runner.run()

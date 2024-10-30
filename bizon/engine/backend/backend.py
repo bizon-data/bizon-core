@@ -32,8 +32,10 @@ class AbstractBackend(ABC):
     @abstractmethod
     def create_stream_job(
         self,
+        name: str,
         source_name: str,
         stream_name: str,
+        sync_mode: str,
         total_records_to_fetch: Optional[int] = None,
         job_status: JobStatus = JobStatus.STARTED,
         session: Optional[Session] = None,
@@ -55,15 +57,23 @@ class AbstractBackend(ABC):
 
     @abstractmethod
     def get_running_stream_job(
-        self, source_name: str, stream_name: str, session: Optional[Session] = None
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
     ) -> Optional[StreamJob]:
         """Get the job id for the given source and stream name"""
+        pass
+
+    @abstractmethod
+    def get_last_successful_stream_job(
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
+    ) -> Optional[StreamJob]:
+        """Get the last successful job for the given source and stream name"""
         pass
 
     @abstractmethod
     def create_source_cursor(
         self,
         job_id: str,
+        name: str,
         source_name: str,
         stream_name: str,
         iteration: int,
@@ -98,7 +108,7 @@ class AbstractBackend(ABC):
 
     @abstractmethod
     def get_last_source_cursor_by_stream_and_iteration(
-        self, source_name: str, stream_name: str, iteration: int, session: Optional[Session] = None
+        self, name: str, source_name: str, stream_name: str, iteration: int, session: Optional[Session] = None
     ) -> Optional[SourceCursor]:
         """Get the last cursor for the given stream and iteration"""
         pass
@@ -107,6 +117,7 @@ class AbstractBackend(ABC):
     def create_destination_cursor(
         self,
         job_id: str,
+        name: str,
         source_name: str,
         stream_name: str,
         destination_name: str,

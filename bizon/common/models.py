@@ -14,6 +14,9 @@ class BizonConfig(BaseModel):
     # Forbid extra keys in the model
     model_config = ConfigDict(extra="forbid")
 
+    # Unique name to identify the sync configuration
+    name: str = Field(..., description="Unique name for this sync configuration")
+
     source: SourceConfig = Field(
         description="Source configuration",
         default=...,
@@ -40,6 +43,7 @@ class SyncMetadata(BaseModel):
     Facilitate usage of basic info across entities
     """
 
+    name: str
     job_id: str
     source_name: str
     stream_name: str
@@ -49,6 +53,7 @@ class SyncMetadata(BaseModel):
     @classmethod
     def from_bizon_config(cls, job_id: str, config: BizonConfig) -> "SyncMetadata":
         return cls(
+            name=config.name,
             job_id=job_id,
             source_name=config.source.source_name,
             stream_name=config.source.stream_name,

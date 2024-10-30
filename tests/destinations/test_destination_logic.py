@@ -13,27 +13,30 @@ from bizon.source.models import SourceRecord
 
 
 @pytest.fixture(scope="function")
-def logger_destination(my_backend: SQLAlchemyBackend, db_session):
+def logger_destination(my_sqlite_backend: SQLAlchemyBackend, sqlite_db_session):
 
-    my_backend.create_all_tables()
+    my_sqlite_backend.create_all_tables()
 
-    job = my_backend.create_stream_job(
+    job = my_sqlite_backend.create_stream_job(
+        name="job_test",
         source_name="dummy",
         stream_name="test",
+        sync_mode="full_refresh",
         job_status=JobStatus.RUNNING,
-        session=db_session,
+        session=sqlite_db_session,
     )
 
     return LoggerDestination(
         sync_metadata=SyncMetadata(
             job_id=job.id,
+            name="job_test",
             source_name="dummy",
             stream_name="test",
             destination_name="logger",
             sync_mode="full_refresh",
         ),
         config=LoggerDestinationConfig(dummy="bizon"),
-        backend=my_backend,
+        backend=my_sqlite_backend,
     )
 
 
@@ -83,7 +86,7 @@ def test_write_or_buffer_records(logger_destination: LoggerDestination):
     assert buffer_status == DestinationBufferStatus.RECORDS_WRITTEN_THEN_BUFFERED
 
 
-def test_write_last_iteration(logger_destination: LoggerDestination, db_session):
+def test_write_last_iteration(logger_destination: LoggerDestination, sqlite_db_session):
 
     buffer_status = logger_destination.write_or_buffer_records(
         destination_records=[
@@ -103,13 +106,13 @@ def test_write_last_iteration(logger_destination: LoggerDestination, db_session)
             ),
         ],
         iteration=0,
-        session=db_session,
+        session=sqlite_db_session,
     )
 
     assert buffer_status == DestinationBufferStatus.RECORDS_BUFFERED
 
     running_job: StreamJob = logger_destination.backend.get_stream_job_by_id(
-        job_id=logger_destination.sync_metadata.job_id, session=db_session
+        job_id=logger_destination.sync_metadata.job_id, session=sqlite_db_session
     )
     assert running_job.status == JobStatus.RUNNING
 
@@ -118,23 +121,23 @@ def test_write_last_iteration(logger_destination: LoggerDestination, db_session)
         destination_records=[],
         iteration=1,
         last_iteration=True,
-        session=db_session,
+        session=sqlite_db_session,
     )
 
     assert buffer_status == DestinationBufferStatus.RECORDS_WRITTEN
 
     finished_job: StreamJob = logger_destination.backend.get_stream_job_by_id(
-        job_id=logger_destination.sync_metadata.job_id, session=db_session
+        job_id=logger_destination.sync_metadata.job_id, session=sqlite_db_session
     )
     assert finished_job.status == JobStatus.SUCCEEDED
 
 
-def test_no_records_written(logger_destination: LoggerDestination, db_session):
+def test_no_records_written(logger_destination: LoggerDestination, sqlite_db_session):
 
     buffer_status = logger_destination.write_or_buffer_records(
         destination_records=[],
         iteration=0,
-        session=db_session,
+        session=sqlite_db_session,
     )
 
     assert buffer_status == DestinationBufferStatus.NO_RECORDS

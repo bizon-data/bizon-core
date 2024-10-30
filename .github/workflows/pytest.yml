@@ -27,7 +27,7 @@ jobs:
           --health-cmd "pg_isready -U postgres -d bizon_test"
           --health-interval 10s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     steps:
     - uses: actions/checkout@v4
@@ -47,7 +47,6 @@ jobs:
     - name: Run tests
       run: |
         POETRY_ENV_TEST=CI poetry run pytest tests/
-
       env:
         # The hostname used to communicate with the PostgreSQL service container
         POSTGRES_HOST: postgres

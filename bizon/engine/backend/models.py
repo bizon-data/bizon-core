@@ -39,8 +39,10 @@ class StreamJob(Base):
     __tablename__ = TABLE_STREAM_INFO
 
     id = Column(String(100), primary_key=True, default=generate_uuid, doc="Unique identifier for the job")
+    name = Column(String(100), nullable=False, doc="Name of the configuration, must be unique for a given pipeline")
     source_name = Column(String(100), nullable=False, doc="Name of the source")
     stream_name = Column(String(100), nullable=False, doc="Name of the stream")
+    sync_mode = Column(String(100), nullable=False, doc="Mode of the sync")
     attempt = Column(Integer, default=0, doc="Number of attempts to run the job")
     total_records_to_fetch = Column(
         Integer, nullable=True, default=None, doc="Total number of records present in the source"
@@ -49,6 +51,9 @@ class StreamJob(Base):
         DateTime, nullable=False, default=datetime.now(tz=UTC), doc="Timestamp when the job was created"
     )
     updated_at = Column(DateTime, nullable=True, default=None, doc="Timestamp when the job was last updated")
+    incremental_state = Column(
+        String, nullable=True, default=None, doc="Incremental state information from latest sync"
+    )
     status = Column(String(100), default=JobStatus.STARTED, doc="Status of the job")
     error_message = Column(String(255), nullable=True, doc="Error message if the job failed", default=None)
 
@@ -64,6 +69,7 @@ class SourceCursor(Base):
 
     id = Column(String(100), primary_key=True, default=generate_uuid, doc="Unique identifier for the cursor")
     job_id = Column(ForeignKey(f"{TABLE_STREAM_INFO}.id"))
+    name = Column(String(100), nullable=False, doc="Name of the configuration, must be unique for a given pipeline")
     source_name = Column(String(100), nullable=False, doc="Name of the source")
     stream_name = Column(String(100), nullable=False, doc="Name of the stream")
     iteration = Column(Integer, default=0)
@@ -86,6 +92,7 @@ class DestinationCursor(Base):
 
     id = Column(String(100), primary_key=True, default=generate_uuid, doc="Unique identifier for the cursor")
     job_id = Column(ForeignKey(f"{TABLE_STREAM_INFO}.id"))
+    name = Column(String(100), nullable=False, doc="Name of the configuration, must be unique for a given pipeline")
     source_name = Column(String(100), nullable=False, doc="Name of the source")
     stream_name = Column(String(100), nullable=False, doc="Name of the stream")
     destination_name = Column(String(100), nullable=False, doc="Name of the destination")

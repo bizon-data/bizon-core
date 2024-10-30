@@ -18,6 +18,8 @@ def test_parse_from_yaml():
 
 def test_parse_task_runner_python_queue():
     config_yaml = """
+        name: test_job
+
         source:
             source_name: dummy
             stream_name: creatures
@@ -60,6 +62,8 @@ def test_parse_task_runner_python_queue():
 
 def test_parse_task_runner_kafka_queue():
     config_yaml = """
+        name: test_job
+
         source:
             source_name: dummy
             stream_name: creatures
@@ -107,6 +111,9 @@ def test_parse_task_runner_kafka_queue():
 
 def test_parse_task_runner_rabbitmq_queue():
     config_yaml = """
+
+        name: test_job
+
         source:
             source_name: dummy
             stream_name: creatures
@@ -142,6 +149,8 @@ def test_parse_task_runner_rabbitmq_queue():
         """
     config = safe_load(config_yaml)
     runner = RunnerFactory.create_from_config_dict(config=config)
+
+    assert runner.bizon_config.name == "test_job"
 
     backend = runner.get_backend(bizon_config=runner.bizon_config)
     destination = runner.get_destination(bizon_config=runner.bizon_config, backend=backend, job_id="123")

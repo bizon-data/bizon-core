@@ -8,8 +8,21 @@ from .auth.config import AuthConfig
 
 
 class SourceSyncModes(str, Enum):
+
+    # Full refresh
+    # - creates a new StreamJob
+    # - start syncing data from scratch till pagination is empty
     FULL_REFRESH = "full_refresh"
+
+    # Incremental syncs data
+    # - get the last successful sync start_date from previous succeeded StreamJob
+    # - create a new StreamJob
+    # - sync data till pagination is empty
     INCREMENTAL = "incremental"
+
+    # Stream mode
+    # - get single RUNNING streamJob  syncs data from the last destination cursor using last pagination, a single RUNNING StreamJob will be created and considered as always running.
+    STREAM = "stream"
 
 
 class APIConfig(BaseModel):
@@ -18,8 +31,8 @@ class APIConfig(BaseModel):
 
 class SourceConfig(BaseModel, ABC):
 
+    # Connector identifier to use, match a unique connector code
     source_name: str = Field(..., description="Name of the source to sync")
-
     stream_name: str = Field(..., description="Name of the stream to sync")
 
     source_file_path: Optional[str] = Field(

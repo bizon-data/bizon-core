@@ -5,6 +5,8 @@ from click.testing import CliRunner
 from bizon.cli.main import cli
 
 BIZON_CONFIG_DUMMY_TO_FILE = f"""
+    name: test_job
+
     source:
       source_name: dummy
       stream_name: creatures

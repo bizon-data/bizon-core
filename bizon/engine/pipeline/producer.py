@@ -5,6 +5,7 @@ from datetime import datetime
 from loguru import logger
 from pytz import UTC
 
+from bizon.common.models import BizonConfig
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import CursorStatus
 from bizon.engine.queue.queue import AbstractQueue
@@ -15,7 +16,10 @@ from .models import PipelineReturnStatus
 
 
 class Producer:
-    def __init__(self, queue: AbstractQueue, source: AbstractSource, backend: AbstractBackend):
+    def __init__(
+        self, bizon_config: BizonConfig, queue: AbstractQueue, source: AbstractSource, backend: AbstractBackend
+    ):
+        self.bizon_config = bizon_config
         self.queue = queue
         self.source = source
         self.backend = backend
@@ -110,6 +114,7 @@ class Producer:
                 try:
                     self.backend.create_source_cursor(
                         job_id=job_id,
+                        name=self.bizon_config.name,
                         source_name=self.source.config.source_name,
                         stream_name=self.source.config.stream_name,
                         iteration=cursor.iteration,

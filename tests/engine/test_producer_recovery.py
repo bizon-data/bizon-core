@@ -17,6 +17,8 @@ from bizon.engine.runner.runner import AbstractRunner
 temporary_file = NamedTemporaryFile()
 
 BIZON_CONFIG_DUMMY_TO_FILE = f"""
+name: test_job
+
 source:
   source_name: dummy
   stream_name: creatures
@@ -44,20 +46,23 @@ engine:
 
 
 @pytest.fixture(scope="function")
-def file_destination(my_backend: SQLAlchemyBackend, db_session):
+def file_destination(my_sqlite_backend: SQLAlchemyBackend, sqlite_db_session):
 
-    my_backend.create_all_tables()
+    my_sqlite_backend.create_all_tables()
 
-    job = my_backend.create_stream_job(
+    job = my_sqlite_backend.create_stream_job(
+        name="job_test",
         source_name="dummy",
         stream_name="test",
+        sync_mode="full_refresh",
         job_status=JobStatus.STARTED,
-        session=db_session,
+        session=sqlite_db_session,
     )
 
     return FileDestination(
         sync_metadata=SyncMetadata(
             job_id=job.id,
+            name="job_test",
             source_name="dummy",
             stream_name="test",
             destination_name="logger",
@@ -68,7 +73,7 @@ def file_destination(my_backend: SQLAlchemyBackend, db_session):
             buffer_size=0,
             buffer_flush_timeout=0,
         ),
-        backend=my_backend,
+        backend=my_sqlite_backend,
     )
 
 
@@ -79,7 +84,7 @@ def my_runner(my_backend) -> ThreadRunner:
     return runner
 
 
-def test_e2e_dummy_to_file_recovery(file_destination, my_backend, db_session):
+def test_e2e_dummy_to_file_recovery(file_destination, my_sqlite_backend, sqlite_db_session):
 
     N_ITERATION = 2
     CURSOR = str(uuid4())
@@ -104,7 +109,7 @@ def test_e2e_dummy_to_file_recovery(file_destination, my_backend, db_session):
             ),
         ],
         iteration=N_ITERATION,
-        session=db_session,
+        session=sqlite_db_session,
         pagination={"cursor": CURSOR},  # Nth iteration to write to destination from dummy source
     )
     runner = RunnerFactory.create_from_config_dict(yaml.safe_load(BIZON_CONFIG_DUMMY_TO_FILE))
@@ -116,12 +121,13 @@ def test_e2e_dummy_to_file_recovery(file_destination, my_backend, db_session):
     queue = AbstractRunner.get_queue(bizon_config=bizon_config, **kwargs)
 
     producer = AbstractRunner.get_producer(
+        bizon_config=bizon_config,
         source=source,
         queue=queue,
-        backend=my_backend,
+        backend=my_sqlite_backend,
     )
 
-    cursor = producer.get_or_create_cursor(job_id=file_destination.sync_metadata.job_id, session=db_session)
+    cursor = producer.get_or_create_cursor(job_id=file_destination.sync_metadata.job_id, session=sqlite_db_session)
 
     assert cursor is not None
     assert cursor.source_name == "dummy"

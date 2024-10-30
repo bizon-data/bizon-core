@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Union
 
 from pydantic import BaseModel, BeforeValidator, Field, field_validator
@@ -19,3 +20,8 @@ class SourceRecord(BaseModel):
 class SourceIteration(BaseModel):
     next_pagination: dict = Field(..., description="Next pagination to be used in the next iteration")
     records: List[SourceRecord] = Field(..., description="List of records retrieved in the current iteration")
+
+
+class SourceIncrementalState(BaseModel):
+    last_run: datetime = Field(..., description="Timestamp of the last successful run")
+    state: dict = Field(..., description="Incremental state information from the latest sync")

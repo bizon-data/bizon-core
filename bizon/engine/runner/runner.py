@@ -72,8 +72,11 @@ class AbstractRunner(ABC):
         return BackendFactory.get_backend(config=bizon_config.engine.backend, **kwargs)
 
     @staticmethod
-    def get_producer(source: AbstractSource, queue: AbstractQueue, backend: AbstractBackend) -> Producer:
+    def get_producer(
+        bizon_config: BizonConfig, source: AbstractSource, queue: AbstractQueue, backend: AbstractBackend
+    ) -> Producer:
         return Producer(
+            bizon_config=bizon_config,
             source=source,
             queue=queue,
             backend=backend,
@@ -97,6 +100,7 @@ class AbstractRunner(ABC):
         """Get or create a job for the current stream, return its ID"""
         # Retrieve the last job for this stream
         job = backend.get_running_stream_job(
+            name=bizon_config.name,
             source_name=bizon_config.source.source_name,
             stream_name=bizon_config.source.stream_name,
             session=session,
@@ -119,8 +123,10 @@ class AbstractRunner(ABC):
 
         # Create a new job
         job = backend.create_stream_job(
+            name=bizon_config.name,
             source_name=bizon_config.source.source_name,
             stream_name=bizon_config.source.stream_name,
+            sync_mode=bizon_config.source.sync_mode,
             total_records_to_fetch=total_records,
             session=session,
             job_status=JobStatus.STARTED,
@@ -171,6 +177,7 @@ class AbstractRunner(ABC):
         backend = AbstractRunner.get_backend(bizon_config=bizon_config, **kwargs)
 
         producer = AbstractRunner.get_producer(
+            bizon_config=bizon_config,
             source=source,
             queue=queue,
             backend=backend,

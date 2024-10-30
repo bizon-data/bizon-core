@@ -124,7 +124,7 @@ def is_class_a_source(source_class: Type, path: str) -> bool:
 
 def is_source_class_implementing_incremental(source_class: Type[AbstractSource]) -> bool:
     """Check if a source class implements incremental"""
-    source_code = inspect.getsource(source_class.get_records_updated_after).strip()
+    source_code = inspect.getsource(source_class.get_records_after).strip()
     supports_incremental = not source_code.endswith("pass")
     return supports_incremental
 

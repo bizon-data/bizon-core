@@ -190,8 +190,10 @@ class SQLAlchemyBackend(AbstractBackend):
 
     def create_stream_job(
         self,
+        name: str,
         source_name: str,
         stream_name: str,
+        sync_mode: str,
         total_records_to_fetch: Optional[int] = None,
         job_status: JobStatus = JobStatus.STARTED,
         session: Optional[Session] = None,
@@ -199,8 +201,10 @@ class SQLAlchemyBackend(AbstractBackend):
         """Create new StreamJob record in dbt and return its ID"""
 
         new_stream_job = StreamJob(
+            name=name,
             source_name=source_name,
             stream_name=stream_name,
+            sync_mode=sync_mode,
             total_records_to_fetch=total_records_to_fetch,
             status=job_status,
         )
@@ -235,11 +239,12 @@ class SQLAlchemyBackend(AbstractBackend):
         return None
 
     def get_running_stream_job(
-        self, source_name: str, stream_name: str, session: Optional[Session] = None
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
     ) -> Optional[StreamJob]:
-        """Get the job id for the given source and stream name"""
+        """Get the StreamJob for the given source and stream name"""
 
         query = select(StreamJob).filter(
+            StreamJob.name == name,
             StreamJob.source_name == source_name,
             StreamJob.stream_name == stream_name,
             StreamJob.status == JobStatus.RUNNING,
@@ -253,11 +258,35 @@ class SQLAlchemyBackend(AbstractBackend):
         logger.info(f"No running job found for source={source_name} stream={stream_name}")
         return None
 
+    def get_last_successful_stream_job(self, name: str, source_name: str, stream_name: str, session=None):
+        """Get the job id for the given source and stream name"""
+
+        query = (
+            select(StreamJob)
+            .filter(
+                StreamJob.name == name,
+                StreamJob.source_name == source_name,
+                StreamJob.stream_name == stream_name,
+                StreamJob.status == JobStatus.SUCCEEDED,
+            )
+            .order_by(StreamJob.created_at.desc())
+            .limit(1)
+        )
+
+        job = self._execute(query, session=session).scalar_one_or_none()
+
+        if job:
+            return job
+
+        logger.info(f"No last successful job found for source={source_name} stream={stream_name}")
+        return None
+
     #### SOURCE CURSOR ####
 
     def create_source_cursor(
         self,
         job_id: str,
+        name: str,
         source_name: str,
         stream_name: str,
         iteration: int,
@@ -270,6 +299,7 @@ class SQLAlchemyBackend(AbstractBackend):
         """Create a new SourceCursor record in db and return its ID"""
         new_source_cursor = SourceCursor(
             job_id=job_id,
+            name=name,
             source_name=source_name,
             stream_name=stream_name,
             iteration=iteration,
@@ -331,13 +361,14 @@ class SQLAlchemyBackend(AbstractBackend):
         return None
 
     def get_last_source_cursor_by_stream_and_iteration(
-        self, source_name: str, stream_name: str, iteration: int, session: Optional[Session] = None
+        self, name: str, source_name: str, stream_name: str, iteration: int, session: Optional[Session] = None
     ) -> Optional[SourceCursor]:
         """Get the last cursor for the given stream and iteration"""
 
         smt = (
             select(SourceCursor)
             .filter(
+                SourceCursor.name == name,
                 SourceCursor.source_name == source_name,
                 SourceCursor.stream_name == stream_name,
                 SourceCursor.iteration == iteration,
@@ -355,6 +386,7 @@ class SQLAlchemyBackend(AbstractBackend):
     def create_destination_cursor(
         self,
         job_id: str,
+        name: str,
         source_name: str,
         stream_name: str,
         destination_name: str,
@@ -367,6 +399,7 @@ class SQLAlchemyBackend(AbstractBackend):
     ) -> DestinationCursor:
 
         destination_cursor = DestinationCursor(
+            name=name,
             source_name=source_name,
             stream_name=stream_name,
             destination_name=destination_name,

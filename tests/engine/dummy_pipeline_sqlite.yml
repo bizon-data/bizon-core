@@ -1,3 +1,5 @@
+name: test_job
+
 source:
   source_name: dummy
   stream_name: creatures
