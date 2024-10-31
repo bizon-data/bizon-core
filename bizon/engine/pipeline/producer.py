@@ -1,5 +1,5 @@
 import ast
-import os
+import traceback
 from datetime import datetime
 
 from loguru import logger
@@ -93,6 +93,7 @@ class Producer:
         try:
             cursor = self.get_or_create_cursor(job_id=job_id, session=self.backend.session)
         except Exception as e:
+            logger.error(traceback.format_exc())
             logger.error(
                 f"Error while getting or creating cursor: {e} for job_id {job_id}"
                 f"Check the backend error logs for more details."
@@ -123,6 +124,7 @@ class Producer:
                         cursor_status=CursorStatus.PULLING,
                     )
                 except Exception as e:
+                    logger.error(traceback.format_exc())
                     logger.error(
                         f"Error while creating cursor in the DB: {e} for iteration {cursor.iteration}"
                         f"Check the backend error logs for more details."
@@ -134,6 +136,7 @@ class Producer:
             try:
                 source_iteration = self.source.get(pagination=cursor.pagination)
             except Exception as e:
+                logger.error(traceback.format_exc())
                 logger.error(
                     f"Error while fetching data from source: {e} for iteration first iteration {cursor.iteration}"
                     f"Check the backend error logs for more details."
@@ -153,6 +156,7 @@ class Producer:
                     pagination=source_iteration.next_pagination,
                 )
             except Exception as e:
+                logger.error(traceback.format_exc())
                 logger.error(
                     f"Error while putting data in the queue: {e} for iteration {cursor.iteration}"
                     f"Check the queue error logs for more details."
@@ -166,6 +170,7 @@ class Producer:
                     pagination_dict=source_iteration.next_pagination, nb_records_fetched=len(source_iteration.records)
                 )
             except Exception as e:
+                logger.error(traceback.format_exc())
                 logger.error(
                     f"Error while updating cursor state: {e} for iteration {cursor.iteration}"
                     f"Check the source error logs for more details."
@@ -178,6 +183,7 @@ class Producer:
         try:
             self.queue.terminate(iteration=cursor.iteration)
         except Exception as e:
+            logger.error(traceback.format_exc())
             logger.error(
                 f"Error while terminating the queue: {e} for iteration {cursor.iteration}"
                 f"Check the queue error logs for more details."

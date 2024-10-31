@@ -28,9 +28,6 @@ class PythonQueueConsumer(AbstractQueueConsumer):
                 )
                 break
 
-            if not queue_message.source_records:
-                raise ValueError("Received empty message, with no records")
-
             self.destination.write_records_and_update_cursor(
                 source_records=queue_message.source_records,
                 iteration=queue_message.iteration,

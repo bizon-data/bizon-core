@@ -44,9 +44,6 @@ class KafkaConsumer_(AbstractQueueConsumer):
                     )
                     break
 
-                if not queue_message.source_records:
-                    raise ValueError("Received empty message, with no records")
-
                 self.destination.write_records_and_update_cursor(
                     source_records=queue_message.source_records,
                     extracted_at=queue_message.extracted_at,

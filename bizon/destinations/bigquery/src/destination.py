@@ -51,10 +51,15 @@ class BigQueryDestination(AbstractDestination):
 
     @property
     def temp_table_id(self) -> str:
+
         if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
             return f"{self.table_id}_temp"
-        if self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
+
+        elif self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
             return f"{self.table_id}_incremental"
+
+        elif self.sync_metadata.sync_mode == SourceSyncModes.STREAM:
+            return f"{self.table_id}"
 
     def get_bigquery_schema(self, destination_records: List[DestinationRecord]) -> List[bigquery.SchemaField]:
 
@@ -171,6 +176,11 @@ class BigQueryDestination(AbstractDestination):
             logger.info(f"Deleting temp table {self.temp_table_id} ...")
             self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
             return True
-        if self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
+
+        elif self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
             # TO DO: Implement incremental sync
+            return True
+
+        elif self.sync_metadata.sync_mode == SourceSyncModes.STREAM:
+            # Nothing to do as we write directly to the final table
             return True

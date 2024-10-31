@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from bizon.common.models import SyncMetadata
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus
+from bizon.source.config import SourceSyncModes
 from bizon.source.models import SourceRecord
 
 from .buffer import DestinationBuffer
@@ -122,9 +123,16 @@ class AbstractDestination(ABC):
 
             if destination_iteration.success:
                 # Update job status to success
+
+                # Set job status to SUCCEEDED
+                # /!\ If the sync mode is STREAM, the job status is kept to RUNNING
+                job_status = (
+                    JobStatus.SUCCEEDED if self.sync_metadata.sync_mode != SourceSyncModes.STREAM else JobStatus.RUNNING
+                )
+
                 self.backend.update_stream_job_status(
                     job_id=self.sync_metadata.job_id,
-                    job_status=JobStatus.SUCCEEDED,
+                    job_status=job_status,
                     session=session,
                 )
 

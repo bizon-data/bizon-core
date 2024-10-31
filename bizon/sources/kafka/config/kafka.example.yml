@@ -1,0 +1,38 @@
+source:
+  source_name: kafka
+  stream_name: topic
+
+  # Sync mode: keep job to running
+  # So bizon continues to use latest destination cursor
+  sync_mode: stream
+
+  topic: <topic>
+
+  # Consumer configuration
+  batch_size: 5
+  consumer_timeout: 5
+  bootstrap_server: <my-server>:9092
+
+  authentication:
+    type: basic
+    params:
+      username: <username>
+      password: <password>
+
+    # Apicurio schema registry authentication
+    schema_registry_url: <apicurio-url>
+    schema_registry_username: <username>
+    schema_registry_password: <password>
+
+destination:
+  name: file
+  config:
+    filepath: test_kafka.jsonl
+
+engine:
+  backend:
+    type: bigquery
+    config:
+      database: <database>
+      schema: bizon_test
+      syncCursorInDBEvery: 100
