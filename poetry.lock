@@ -41,6 +41,21 @@ astroid = ["astroid (>=1,<2)", "astroid (>=2,<4)"]
 test = ["astroid (>=1,<2)", "astroid (>=2,<4)", "pytest"]
 
 [[package]]
+name = "avro"
+version = "1.12.0"
+description = "Avro is a serialization and RPC framework."
+optional = true
+python-versions = ">=3.7"
+files = [
+    {file = "avro-1.12.0-py2.py3-none-any.whl", hash = "sha256:9a255c72e1837341dd4f6ff57b2b6f68c0f0cecdef62dd04962e10fd33bec05b"},
+    {file = "avro-1.12.0.tar.gz", hash = "sha256:cad9c53b23ceed699c7af6bddced42e2c572fd6b408c257a7d4fc4e8cf2e2d6b"},
+]
+
+[package.extras]
+snappy = ["python-snappy"]
+zstandard = ["zstandard"]
+
+[[package]]
 name = "backoff"
 version = "2.2.1"
 description = "Function decoration for backoff and retry"
@@ -2753,11 +2768,11 @@ type = ["pytest-mypy"]
 [extras]
 bigquery = ["google-cloud-bigquery", "google-cloud-bigquery-storage", "pandas", "sqlalchemy-bigquery"]
 gsheets = ["gspread"]
-kafka = ["confluent-kafka", "fastavro", "kafka-python"]
+kafka = ["avro", "confluent-kafka", "fastavro", "kafka-python"]
 postgres = ["psycopg2-binary"]
 rabbitmq = ["pika"]
 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<3.13"
-content-hash = "5ead459e6b547bac36d99345e1ae1883c1faf21d22e996025ac1432802b66fcd"
+content-hash = "4c47f0327c4a5de1e5d0e08e2531b23f7d3e1b33c14049821fa4e22a1439adf3"
