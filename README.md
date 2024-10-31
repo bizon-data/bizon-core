@@ -34,6 +34,8 @@ bizon stream list <source_name>
 Create a file named `config.yml` in your working directory with the following content:
 
 ```yaml
+name: demo-creatures-pipeline
+
 source:
   source_name: dummy
   stream_name: creatures
