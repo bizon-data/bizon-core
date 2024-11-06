@@ -1,6 +1,7 @@
 import io
 import json
 import struct
+from enum import Enum
 from typing import Any, List, Literal, Mapping, Tuple
 
 from avro.io import BinaryDecoder, DatumReader
@@ -15,8 +16,19 @@ from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.source import AbstractSource
 
 
+class SchemaRegistryType(str, Enum):
+    APICURIO = "apicurio"
+    CONFLUENT = "confluent"
+
+
 class KafkaAuthConfig(AuthConfig):
+
     type: Literal[AuthType.BASIC] = AuthType.BASIC  # username and password authentication
+
+    # Schema registry authentication
+    schema_registry_type: Literal[SchemaRegistryType.APICURIO, SchemaRegistryType.CONFLUENT] = (
+        SchemaRegistryType.APICURIO
+    )
     schema_registry_url: str = Field(default="", description="Schema registry URL with the format ")
     schema_registry_username: str = Field(default="", description="Schema registry username")
     schema_registry_password: str = Field(default="", description="Schema registry password")
@@ -129,14 +141,20 @@ class KafkaSource(AbstractSource):
 
     def get_apicurio_schema(self, global_id: int) -> dict:
         """Get the schema from the Apicurio schema registry"""
-        schema = self.session.get(
-            f"{self.config.authentication.schema_registry_url}/apis/registry/v2/ids/globalIds/{global_id}",
-            auth=(
-                self.config.authentication.schema_registry_username,
-                self.config.authentication.schema_registry_password,
-            ),
-        ).json()
-        return schema
+
+        if self.config.authentication.schema_registry_type == SchemaRegistryType.APICURIO:
+            schema = self.session.get(
+                f"{self.config.authentication.schema_registry_url}/apis/registry/v2/ids/globalIds/{global_id}",
+                auth=(
+                    self.config.authentication.schema_registry_username,
+                    self.config.authentication.schema_registry_password,
+                ),
+            ).json()
+            return schema
+
+        raise NotImplementedError(
+            f"Schema registry of type {self.config.authentication.schema_registry_type} not supported"
+        )
 
     def get_parsed_avro_schema(self, global_id: int) -> Schema:
         """Parse the schema from the Apicurio schema registry"""
@@ -159,27 +177,35 @@ class KafkaSource(AbstractSource):
         self.consumer.assign([TopicPartition(self.config.topic, 0, 0)])
         self.consumer.seek(TopicPartition(self.config.topic, 0, 0))
 
-        found_message = False
-        MAX_CONSUME_RETRY = 10
+        message_first = None
+        message_non_empty = None
+        MAX_CONSUME_RETRY = 50  # We will cover first 5 000 messages
 
         for i in range(MAX_CONSUME_RETRY):
-            message = self.consumer.consume(1, timeout=30)[0]
 
-            if message.value():
-                found_message = True
+            if message_non_empty:
                 break
+
+            messages = self.consumer.consume(100, timeout=10)
+
+            for message in messages:
+                if message.value():
+                    message_non_empty = message
+                    logger.info(f"Found message at offset {message.offset()}")
+                    found_message = True
+                    break
+
+            message_first = messages[0]
 
         if not found_message:
             logger.error(f"No message found in the topic: {self.config.topic}")
             raise KafkaException("No message found in the topic")
 
-        logger.info(f"Found message at offset {message.offset()}")
+        if "error" in str(message_first.value()):
+            logger.error(f"Error in message: {message_first.value()}")
+            raise KafkaException(f"Error in message: {message_first.value()}")
 
-        if "error" in str(message.value()):
-            logger.error(f"Error in message: {message.value()}")
-            raise KafkaException(f"Error in message: {message.value()}")
-
-        global_id = self.parse_global_id_from_serialized_message(message.value())
+        global_id = self.parse_global_id_from_serialized_message(message_non_empty.value())
         return self.get_parsed_avro_schema(global_id)
 
     def read_topic(self, pagination: dict = None) -> SourceIteration:
