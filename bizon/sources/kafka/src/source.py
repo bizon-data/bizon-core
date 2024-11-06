@@ -175,6 +175,10 @@ class KafkaSource(AbstractSource):
 
         logger.info(f"Found message at offset {message.offset()}")
 
+        if "error" in str(message.value()):
+            logger.error(f"Error in message: {message.value()}")
+            raise KafkaException(f"Error in message: {message.value()}")
+
         global_id = self.parse_global_id_from_serialized_message(message.value())
         return self.get_parsed_avro_schema(global_id)
 
