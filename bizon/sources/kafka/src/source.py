@@ -1,10 +1,12 @@
 import io
 import json
 import struct
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, List, Literal, Mapping, Tuple
+from typing import Any, List, Literal, Mapping, Optional, Tuple
 
-from avro.io import BinaryDecoder, DatumReader
+import fastavro
 from avro.schema import Schema, parse
 from confluent_kafka import Consumer, KafkaException, TopicPartition
 from loguru import logger
@@ -26,9 +28,10 @@ class KafkaAuthConfig(AuthConfig):
     type: Literal[AuthType.BASIC] = AuthType.BASIC  # username and password authentication
 
     # Schema registry authentication
-    schema_registry_type: Literal[SchemaRegistryType.APICURIO, SchemaRegistryType.CONFLUENT] = (
-        SchemaRegistryType.APICURIO
+    schema_registry_type: SchemaRegistryType = Field(
+        default=SchemaRegistryType.APICURIO, description="Schema registry type"
     )
+
     schema_registry_url: str = Field(default="", description="Schema registry URL with the format ")
     schema_registry_username: str = Field(default="", description="Schema registry username")
     schema_registry_password: str = Field(default="", description="Schema registry password")
@@ -40,6 +43,11 @@ class KafkaSourceConfig(SourceConfig):
     batch_size: int = Field(100, description="Kafka batch size")
     consumer_timeout: int = Field(10, description="Kafka consumer timeout in seconds")
     group_id: str = Field("bizon", description="Kafka group id")
+
+    nb_bytes_schema_id: Literal[4, 8] = Field(
+        4, description="Number of bytes for the schema id. 4 is the default for majority of the cases"
+    )
+    timestamp_ms_name: Optional[str] = Field(default="", description="Name of the timestamp field in the Avro schema")
 
     authentication: KafkaAuthConfig = Field(..., description="Authentication configuration")
 
@@ -71,6 +79,8 @@ class KafkaSource(AbstractSource):
         super().__init__(config)
 
         self.config: KafkaSourceConfig = config
+
+        self.parse_timestamp: bool = self.config.timestamp_ms_name != ""
 
         self.kafka_consumer_conf = {
             "bootstrap.servers": self.config.bootstrap_server,
@@ -137,7 +147,14 @@ class KafkaSource(AbstractSource):
 
     def parse_global_id_from_serialized_message(self, message: bytes) -> int:
         """Parse the global id from the serialized message"""
-        return struct.unpack(">bq", message[:9])[1]
+
+        if self.config.nb_bytes_schema_id == 8:
+            return struct.unpack(">bq", message[:9])[1]
+
+        if self.config.nb_bytes_schema_id == 4:
+            return struct.unpack(">I", message[1:5])[0]
+
+        raise ValueError(f"Number of bytes for schema id {self.config.nb_bytes_schema_id} not supported")
 
     def get_apicurio_schema(self, global_id: int) -> dict:
         """Get the schema from the Apicurio schema registry"""
@@ -163,11 +180,9 @@ class KafkaSource(AbstractSource):
         return parse(json.dumps(schema))
 
     def decode(self, msg_value, schema):
-        reader = DatumReader(schema)
         message_bytes = io.BytesIO(msg_value)
-        message_bytes.seek(9)
-        decoder = BinaryDecoder(message_bytes)
-        event_dict = reader.read(decoder)
+        message_bytes.seek(self.config.nb_bytes_schema_id + 1)
+        event_dict = fastavro.schemaless_reader(message_bytes, schema)
         return event_dict
 
     def get_topic_schema(self) -> dict:
@@ -208,58 +223,75 @@ class KafkaSource(AbstractSource):
         global_id = self.parse_global_id_from_serialized_message(message_non_empty.value())
         return self.get_parsed_avro_schema(global_id)
 
+    def read_partition(self, partition: int, topic_offsets: TopicOffsets, schema) -> List[SourceRecord]:
+        records = []
+        encoded_messages = []
+
+        # Set the source timestamp to now, otherwise it will be overwritten by the message timestamp
+        source_timestamp = datetime.now(tz=timezone.utc)
+
+        # Set consumer offset params
+        consumer = Consumer(self.kafka_consumer_conf)
+        consumer.assign([TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition))])
+        consumer.seek(TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition)))
+
+        # Read messages
+        encoded_messages.extend(consumer.consume(self.config.batch_size, timeout=self.config.consumer_timeout))
+
+        for message in encoded_messages:
+            if not message.value():
+                logger.debug(
+                    f"Message for partition {partition} and offset {message.offset()} and topic {self.config.topic} is empty, skipping."
+                )
+                continue
+
+            try:
+                data = self.decode(message.value(), schema)
+
+                # Get the source timestamp
+                if self.parse_timestamp:
+                    source_timestamp = datetime.fromtimestamp(
+                        data[self.config.timestamp_ms_name] / 1000, tz=timezone.utc
+                    )
+
+                records.append(
+                    SourceRecord(
+                        id=f"part_{partition}_offset_{message.offset()}",
+                        timestamp=source_timestamp,
+                        data=data,
+                    )
+                )
+            except Exception as e:
+                logger.error(
+                    f"Error while decoding message for partition {partition}: {e} at offset {message.offset()}"
+                )
+                continue
+
+        # Update the offset for the partition
+        if encoded_messages:
+            topic_offsets.set_partition_offset(partition, encoded_messages[-1].offset() + 1)
+        else:
+            logger.warning(f"No new messages found for partition {partition}")
+
+        consumer.close()
+
+        return records
+
     def read_topic(self, pagination: dict = None) -> SourceIteration:
-
-        schema = self.get_topic_schema()
-
+        schema = self.get_topic_schema().to_json()
         nb_partitions = self.get_number_of_partitions()
 
-        # Store records
-        records: List[SourceRecord] = []
-
         # Setup offset_pagination
-        topic_offsets: TopicOffsets = (
-            TopicOffsets.model_validate(pagination) if pagination else self.get_offset_partitions()
-        )
+        topic_offsets = TopicOffsets.model_validate(pagination) if pagination else self.get_offset_partitions()
 
-        for i in range(nb_partitions):
+        # Use ThreadPoolExecutor to parallelize reading partitions
+        records = []
+        with ThreadPoolExecutor(max_workers=nb_partitions) as executor:
+            futures = {executor.submit(self.read_partition, i, topic_offsets, schema): i for i in range(nb_partitions)}
+            for future in as_completed(futures):
+                partition_records = future.result()
+                records.extend(partition_records)
 
-            # Store encoded messages
-            encoded_messages: List[bytes] = []
-
-            # Set consumer offset params
-            # TopicPartition (topic, partition, offset)
-            self.consumer.assign([TopicPartition(self.config.topic, i, topic_offsets.get_partition_offset(i))])
-            self.consumer.seek(TopicPartition(self.config.topic, i, topic_offsets.get_partition_offset(i)))
-
-            # We read the maximum number of messages possible from the to_fetch offset -> to_fetch + batch_size
-            encoded_messages.extend(self.consumer.consume(self.config.batch_size, timeout=self.config.consumer_timeout))
-
-            for message in encoded_messages:
-                if not message.value():
-                    logger.warning(
-                        f"Message for partition {i} and offset {message.offset()} and topic {self.config.topic} is empty, skipping."
-                    )
-                    continue
-
-                try:
-                    records.append(
-                        SourceRecord(
-                            id=f"part_{i}_offset_{message.offset()}",
-                            data=self.decode(message.value(), schema),
-                        )
-                    )
-                except Exception as e:
-                    logger.error(f"Error while decoding message for partition {i}: {e} at offset {message.offset()}")
-                    continue
-
-            # Update the offset for the partition
-            if len(encoded_messages) > 0:
-                topic_offsets.set_partition_offset(i, encoded_messages[-1].offset() + 1)
-            else:
-                logger.warning(f"No new messages found for partition {i}")
-
-        # In case we did not find new records
         if not records:
             logger.info("No new records found, stopping iteration")
             return SourceIteration(

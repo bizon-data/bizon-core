@@ -67,9 +67,10 @@ class BigQueryDestination(AbstractDestination):
         if self.config.normalization.type == NormalizationType.NONE:
             return [
                 bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
-                # bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
             ]
 
@@ -78,7 +79,8 @@ class BigQueryDestination(AbstractDestination):
             first_record_keys = destination_records[0].source_data.keys()
             return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in first_record_keys] + [
                 bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
-                # bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
             ]
@@ -97,9 +99,19 @@ class BigQueryDestination(AbstractDestination):
             list_data_dict = [record.source_data for record in destination_records]
             df = pd.DataFrame(list_data_dict).astype(str)
             df["_bizon_id"] = [uuid4().hex for _ in range(len(destination_records))]
-            # df["_bizon_extracted_at"] = [pd.to_datetime(record.bizon_extracted_at) for record in destination_records]
+
+            df["_bizon_extracted_at"] = [
+                int(record.source_timestamp.timestamp() * 1_000_000) for record in destination_records
+            ]
+
             df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
+
             df["_source_record_id"] = [record.source_record_id for record in destination_records]
+
+            # We need to convert the source datetime to a int timestamp
+            df["_source_timestamp"] = [
+                int(record.source_timestamp.timestamp() * 1_000_000) for record in destination_records
+            ]
 
         else:
             raise NotImplementedError(f"Normalization type {self.config.normalization.type} is not supported")
@@ -166,7 +178,8 @@ class BigQueryDestination(AbstractDestination):
             self.cleanup(gs_file_name)
         except Exception as e:
             self.cleanup(gs_file_name)
-            raise e
+            logger.error(f"Error loading data to BigQuery: {e}")
+            return False, str(e)
         return True, ""
 
     def finalize(self):

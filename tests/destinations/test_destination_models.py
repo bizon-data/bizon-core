@@ -33,9 +33,10 @@ def test_destination_record_to_raw_json():
     raw_record = destination_record.to_dict_raw_json_data()
 
     expected_keys = [
-        "_source_record_id",
-        # "_bizon_extracted_at",
+        "_bizon_extracted_at",
         "_bizon_loaded_at",
+        "_source_record_id",
+        "_source_timestamp",
         "_source_data",
         "_bizon_id",
     ]

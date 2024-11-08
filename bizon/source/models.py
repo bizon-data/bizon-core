@@ -1,13 +1,21 @@
 from datetime import datetime
 from typing import List, Union
 
-from pydantic import BaseModel, BeforeValidator, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
+from pytz import UTC
 
 
 ### /!\ These models Source* will be used in all sources so we better never have to change them !!!
 class SourceRecord(BaseModel):
+
     id: str = Field(..., description="Unique identifier of the record in the source")
+
     data: dict = Field(..., description="JSON payload of the record")
+
+    timestamp: datetime = Field(
+        default=datetime.now(tz=UTC),
+        description="Timestamp of the record as defined by the source. Default is the time of extraction",
+    )
 
     @field_validator("id", mode="before")
     def coerce_int_to_str(value: Union[int, str]) -> str:

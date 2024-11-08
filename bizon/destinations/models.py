@@ -13,6 +13,7 @@ class DestinationRecord(BaseModel):
     bizon_extracted_at: datetime = Field(..., description="Datetime when the record was extracted")
     bizon_loaded_at: datetime = Field(..., description="Datetime when the record was loaded")
     source_record_id: str = Field(..., description="Source record id")
+    source_timestamp: datetime = Field(..., description="Timestamp of the source record")
     source_data: dict = Field(..., description="Source record JSON as dict")
 
     @classmethod
@@ -22,6 +23,7 @@ class DestinationRecord(BaseModel):
             bizon_extracted_at=extracted_at,
             bizon_loaded_at=datetime.now(tz=UTC),
             source_record_id=source_record.id,
+            source_timestamp=source_record.timestamp,
             source_data=source_record.data,
         )
 
@@ -31,16 +33,18 @@ class DestinationRecord(BaseModel):
         if parquet:
             return {
                 "_bizon_id": self.bizon_id,
-                # "_bizon_extracted_at": self.bizon_extracted_at.timestamp(),
+                "_bizon_extracted_at": int(self.bizon_extracted_at.timestamp() * 1_000_000),
                 "_bizon_loaded_at": self.bizon_loaded_at.timestamp(),
                 "_source_record_id": self.source_record_id,
+                "_source_timestamp": int(self.source_timestamp.timestamp() * 1_000_000),
                 "_source_data": json.dumps(self.source_data),
             }
 
         return {
             "_bizon_id": self.bizon_id,
-            # "_bizon_extracted_at": self.bizon_extracted_at,
+            "_bizon_extracted_at": self.bizon_extracted_at,
             "_bizon_loaded_at": self.bizon_loaded_at,
             "_source_record_id": self.source_record_id,
+            "_source_timestamp": self.source_timestamp,
             "_source_data": json.dumps(self.source_data),
         }

@@ -98,6 +98,7 @@ def test_e2e_dummy_to_file_recovery(file_destination, my_sqlite_backend, sqlite_
                 bizon_extracted_at="2021-07-01T00:00:00Z",
                 bizon_loaded_at="2021-07-01T00:00:00Z",
                 source_record_id="3",
+                source_timestamp="2021-07-01T00:00:00Z",
                 source_data={"name": "John", "age": 14},
             ),
             DestinationRecord(
@@ -105,6 +106,7 @@ def test_e2e_dummy_to_file_recovery(file_destination, my_sqlite_backend, sqlite_
                 bizon_extracted_at="2021-07-01T00:00:00Z",
                 bizon_loaded_at="2021-07-01T00:00:00Z",
                 source_record_id="6",
+                source_timestamp="2021-07-02T00:00:00Z",
                 source_data={"name": "David", "age": 10},
             ),
         ],

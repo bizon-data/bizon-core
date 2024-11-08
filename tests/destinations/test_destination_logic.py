@@ -61,6 +61,7 @@ def test_write_or_buffer_records(logger_destination: LoggerDestination):
             bizon_extracted_at="2021-07-01T00:00:00Z",
             bizon_loaded_at="2021-07-01T00:00:00Z",
             source_record_id="3",
+            source_timestamp="2021-07-01T00:00:00Z",
             source_data={"name": "Alice", "age": 35},
         )
         for i in range(1000)
@@ -95,6 +96,7 @@ def test_write_last_iteration(logger_destination: LoggerDestination, sqlite_db_s
                 bizon_extracted_at="2021-07-01T00:00:00Z",
                 bizon_loaded_at="2021-07-01T00:00:00Z",
                 source_record_id="3",
+                source_timestamp="2021-07-01T00:00:00Z",
                 source_data={"name": "John", "age": 14},
             ),
             DestinationRecord(
@@ -102,6 +104,7 @@ def test_write_last_iteration(logger_destination: LoggerDestination, sqlite_db_s
                 bizon_extracted_at="2021-07-01T00:00:00Z",
                 bizon_loaded_at="2021-07-01T00:00:00Z",
                 source_record_id="6",
+                source_timestamp="2021-07-02T00:00:00Z",
                 source_data={"name": "David", "age": 10},
             ),
         ],
