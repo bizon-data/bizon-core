@@ -4,6 +4,7 @@ import struct
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from enum import Enum
+from functools import lru_cache
 from typing import Any, List, Literal, Mapping, Optional, Tuple
 
 import fastavro
@@ -145,14 +146,14 @@ class KafkaSource(AbstractSource):
         # Init the consumer
         return self.get_offset_partitions().total_offset
 
-    def parse_global_id_from_serialized_message(self, message: bytes) -> int:
+    def parse_global_id_from_serialized_message(self, header_message: bytes) -> int:
         """Parse the global id from the serialized message"""
 
         if self.config.nb_bytes_schema_id == 8:
-            return struct.unpack(">bq", message[:9])[1]
+            return struct.unpack(">bq", header_message)[1]
 
         if self.config.nb_bytes_schema_id == 4:
-            return struct.unpack(">I", message[1:5])[0]
+            return struct.unpack(">I", header_message)[0]
 
         raise ValueError(f"Number of bytes for schema id {self.config.nb_bytes_schema_id} not supported")
 
@@ -185,45 +186,13 @@ class KafkaSource(AbstractSource):
         event_dict = fastavro.schemaless_reader(message_bytes, schema)
         return event_dict
 
-    def get_topic_schema(self) -> dict:
+    @lru_cache(maxsize=None)
+    def get_message_schema(self, header_message: bytes) -> dict:
         """Get the global id of the schema for the topic"""
+        global_id = self.parse_global_id_from_serialized_message(header_message)
+        return self.get_parsed_avro_schema(global_id).to_json()
 
-        # Read the first message of the topic to know the schema global id
-        self.consumer.assign([TopicPartition(self.config.topic, 0, 0)])
-        self.consumer.seek(TopicPartition(self.config.topic, 0, 0))
-
-        message_first = None
-        message_non_empty = None
-        MAX_CONSUME_RETRY = 50  # We will cover first 5 000 messages
-
-        for i in range(MAX_CONSUME_RETRY):
-
-            if message_non_empty:
-                break
-
-            messages = self.consumer.consume(100, timeout=10)
-
-            for message in messages:
-                if message.value():
-                    message_non_empty = message
-                    logger.info(f"Found message at offset {message.offset()}")
-                    found_message = True
-                    break
-
-            message_first = messages[0]
-
-        if not found_message:
-            logger.error(f"No message found in the topic: {self.config.topic}")
-            raise KafkaException("No message found in the topic")
-
-        if "error" in str(message_first.value()):
-            logger.error(f"Error in message: {message_first.value()}")
-            raise KafkaException(f"Error in message: {message_first.value()}")
-
-        global_id = self.parse_global_id_from_serialized_message(message_non_empty.value())
-        return self.get_parsed_avro_schema(global_id)
-
-    def read_partition(self, partition: int, topic_offsets: TopicOffsets, schema) -> List[SourceRecord]:
+    def read_partition(self, partition: int, topic_offsets: TopicOffsets) -> List[SourceRecord]:
         records = []
         encoded_messages = []
 
@@ -246,6 +215,13 @@ class KafkaSource(AbstractSource):
                 continue
 
             try:
+                if self.config.nb_bytes_schema_id == 8:
+                    schema = self.get_message_schema(message.value()[:9])
+                elif self.config.nb_bytes_schema_id == 4:
+                    schema = self.get_message_schema(message.value()[1:5])
+                else:
+                    raise ValueError(f"Number of bytes for schema id {self.config.nb_bytes_schema_id} not supported")
+
                 data = self.decode(message.value(), schema)
 
                 # Get the source timestamp
@@ -278,7 +254,6 @@ class KafkaSource(AbstractSource):
         return records
 
     def read_topic(self, pagination: dict = None) -> SourceIteration:
-        schema = self.get_topic_schema().to_json()
         nb_partitions = self.get_number_of_partitions()
 
         # Setup offset_pagination
@@ -287,7 +262,7 @@ class KafkaSource(AbstractSource):
         # Use ThreadPoolExecutor to parallelize reading partitions
         records = []
         with ThreadPoolExecutor(max_workers=nb_partitions) as executor:
-            futures = {executor.submit(self.read_partition, i, topic_offsets, schema): i for i in range(nb_partitions)}
+            futures = {executor.submit(self.read_partition, i, topic_offsets): i for i in range(nb_partitions)}
             for future in as_completed(futures):
                 partition_records = future.result()
                 records.extend(partition_records)
