@@ -104,6 +104,8 @@ class Producer:
 
         while not cursor.is_finished:
 
+            timestamp_start_iteration = datetime.now(tz=UTC)
+
             # Handle the case where last cursor already reach max_iterations
             terminate = self.handle_max_iterations(cursor)
             if terminate:
@@ -177,6 +179,15 @@ class Producer:
                 )
                 return_value = PipelineReturnStatus.SOURCE_ERROR
                 break
+
+            # Items in queue
+            items_in_queue = f"{self.queue.get_size()} items in queue." if self.queue.get_size() else ""
+
+            logger.info(
+                (
+                    f"Iteration {cursor.iteration} finished in {datetime.now(tz=UTC) - timestamp_start_iteration}. {items_in_queue}"
+                )
+            )
 
         logger.info("Terminating destination ...")
 

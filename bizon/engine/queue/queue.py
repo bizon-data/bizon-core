@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel
 from pytz import UTC
@@ -43,6 +43,11 @@ class AbstractQueue(ABC):
     @abstractmethod
     def get(self) -> QueueMessage:
         """Get a QueueMessage object from the queue system"""
+        pass
+
+    @abstractmethod
+    def get_size(self) -> Union[int, None]:
+        """If queue is compatible, return size of the queue"""
         pass
 
     @abstractmethod

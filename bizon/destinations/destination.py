@@ -85,11 +85,16 @@ class AbstractDestination(ABC):
             pagination=self.buffer.pagination,
         )
 
+        logger.info(
+            f"Writing in destination from source iteration {self.buffer.from_iteration} to {self.buffer.to_iteration}"
+        )
+
         success, error_msg = self.write_records(destination_records=self.buffer.records)
 
         if success:
             # We wrote records to destination so we keep it
             destination_iteration.records_written = len(self.buffer.records)
+            logger.info(f"Successfully wrote {destination_iteration.records_written} records to destination")
 
         else:
             # We failed to write records to destination so we keep the error message
@@ -160,7 +165,7 @@ class AbstractDestination(ABC):
         logger.debug(f"Buffer free space {self.buffer.buffer_free_space_pct}%")
         logger.debug(f"Buffer current size {self.buffer.current_size} bytes")
         logger.info(
-            f"Buffer ripeness {self.buffer.ripeness / 60} min. Max ripeness {self.buffer.buffer_flush_timeout / 60} min."  # noqa
+            f"Buffer ripeness {round(self.buffer.ripeness / 60, 2)} min. Max ripeness {round(self.buffer.buffer_flush_timeout / 60, 2)} min."  # noqa
         )
 
         # Write buffer to destination if buffer is ripe and create a new buffer for the new iteration

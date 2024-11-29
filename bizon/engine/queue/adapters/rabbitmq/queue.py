@@ -1,3 +1,5 @@
+from typing import Union
+
 import pika
 from loguru import logger
 
@@ -30,6 +32,9 @@ class RabbitMQ(AbstractQueue):
             routing_key=self.config.queue.queue_name,
             body=queue_message.model_dump_json(),
         )
+
+    def get_size(self) -> Union[int, None]:
+        return None
 
     def get(self) -> QueueMessage:
         raise NotImplementedError(

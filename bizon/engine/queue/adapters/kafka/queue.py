@@ -1,4 +1,5 @@
 import json
+from typing import Union
 
 from kafka import KafkaProducer
 from loguru import logger
@@ -35,6 +36,9 @@ class KafkaQueue(AbstractQueue):
     @staticmethod
     def on_error(e):
         logger.error(f"Error sending message: {e}")
+
+    def get_size(self) -> Union[int, None]:
+        return None
 
     def put_queue_message(self, queue_message: QueueMessage):
         future = self.producer.send(

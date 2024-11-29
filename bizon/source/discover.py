@@ -143,7 +143,7 @@ def parse_streams_from_filepath(source_name: str, filepath: str, skip_unavailabl
 
         # Transform the relative path to a python import path and import the module
         python_import_path = get_python_import_path(relative_path)
-        logger.info(f"Importing {python_import_path}")
+        logger.debug(f"Importing {python_import_path}")
 
         try:
             source_module = importlib.import_module(python_import_path, package="sources")

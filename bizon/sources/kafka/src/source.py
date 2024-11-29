@@ -98,7 +98,7 @@ class KafkaSource(AbstractSource):
         }
 
         # Consumer instance
-        self.consumer = Consumer(self.kafka_consumer_conf)
+        self.consumer = Consumer(self.kafka_consumer_conf, logger=logger)
 
     @staticmethod
     def streams() -> List[str]:
@@ -202,7 +202,7 @@ class KafkaSource(AbstractSource):
         source_timestamp = datetime.now(tz=timezone.utc)
 
         # Set consumer offset params
-        consumer = Consumer(self.kafka_consumer_conf)
+        consumer = Consumer(self.kafka_consumer_conf, logger=logger)
         consumer.assign([TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition))])
         consumer.seek(TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition)))
 

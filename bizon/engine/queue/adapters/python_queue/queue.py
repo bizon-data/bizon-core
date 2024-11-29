@@ -1,6 +1,7 @@
 import random
 import time
 from multiprocessing import Queue
+from typing import Union
 
 from loguru import logger
 
@@ -51,6 +52,11 @@ class PythonQueue(AbstractQueue):
             logger.debug("Queue is empty, waiting for producer to produce data")
             time.sleep(random.random())
             return self.get()
+
+    def get_size(self) -> Union[int, None]:
+        if hasattr(self.queue, "qsize"):
+            return self.queue.qsize()
+        return None
 
     def terminate(self, iteration: int) -> bool:
         self.put(source_records=[], iteration=iteration, signal=QUEUE_TERMINATION)
