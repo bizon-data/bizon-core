@@ -15,6 +15,13 @@ class GCSBufferFormat(str, Enum):
     CSV = "csv"
 
 
+class TimePartitioning(str, Enum):
+    DAY = "DAY"
+    HOUR = "HOUR"
+    MONTH = "MONTH"
+    YEAR = "YEAR"
+
+
 class BigQueryAuthentication(BaseModel):
     service_account_key: str = Field(
         description="Service Account Key JSON string. If empty it will be infered",
@@ -31,6 +38,10 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     )
     gcs_buffer_bucket: str
     gcs_buffer_format: Optional[GCSBufferFormat] = GCSBufferFormat.PARQUET
+
+    time_partitioning: Optional[TimePartitioning] = Field(
+        default=TimePartitioning.DAY, description="BigQuery Time partitioning type"
+    )
     authentication: Optional[BigQueryAuthentication] = None
 
 

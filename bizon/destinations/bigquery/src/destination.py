@@ -1,4 +1,5 @@
 import io
+import json
 import os
 import tempfile
 from typing import List, Tuple
@@ -9,7 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
-from google.cloud.bigquery import DatasetReference
+from google.cloud.bigquery import DatasetReference, TimePartitioning
 from loguru import logger
 from pytz import UTC
 
@@ -70,7 +71,25 @@ class BigQueryDestination(AbstractDestination):
                 bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
                 bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField(
+                    "_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED", default_value_expression="CURRENT_TIMESTAMP()"
+                ),
+                bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
+            ]
+
+        elif self.config.normalization.type == NormalizationType.DEBEZIUM:
+            assert (
+                "_bizon_message_key" in destination_records[0].source_data
+            ), "Debezium records must have a '_bizon_message_key' key"
+            message_keys = json.loads(destination_records[0].source_data["_bizon_message_key"])
+            return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in message_keys] + [
+                bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField(
+                    "_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED", default_value_expression="CURRENT_TIMESTAMP()"
+                ),
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
             ]
 
@@ -81,7 +100,9 @@ class BigQueryDestination(AbstractDestination):
                 bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField(
+                    "_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED", default_value_expression="CURRENT_TIMESTAMP()"
+                ),
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
             ]
 
@@ -112,6 +133,10 @@ class BigQueryDestination(AbstractDestination):
             df["_source_timestamp"] = [
                 int(record.source_timestamp.timestamp() * 1_000_000) for record in destination_records
             ]
+
+        elif self.config.normalization.type == NormalizationType.DEBEZIUM:
+            df = pd.DataFrame([record.to_dict_debezium(parquet=True) for record in destination_records])
+            df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
 
         else:
             raise NotImplementedError(f"Normalization type {self.config.normalization.type} is not supported")
@@ -155,15 +180,26 @@ class BigQueryDestination(AbstractDestination):
     # https://cloud.google.com/python/docs/reference/bigquery/latest/google.cloud.bigquery.dbapi.DataError
 
     def load_to_bigquery(self, gcs_file: str, destination_records: List[DestinationRecord]):
+
+        # We always partition by the loaded_at field
+        time_partitioning = TimePartitioning(field="_bizon_loaded_at", type_=self.config.time_partitioning)
+
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             schema=self.get_bigquery_schema(destination_records=destination_records),
+            time_partitioning=time_partitioning,
         )
+
+        if self.config.normalization.type == NormalizationType.DEBEZIUM:
+            job_config.clustering_fields = list(
+                json.loads(destination_records[0].source_data["_bizon_message_key"]).keys()
+            )
 
         load_job = self.bq_client.load_table_from_uri(
             f"gs://{self.buffer_bucket_name}/{gcs_file}", self.temp_table_id, job_config=job_config
         )
+
         load_job.result()
 
     def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, str]:

@@ -13,6 +13,7 @@ class DestinationTypes(str, Enum):
 class NormalizationType(str, Enum):
     TABULAR = "tabular"  # Parse key / value pairs to columns
     NONE = "none"  # No normalization, raw data is stored
+    DEBEZIUM = "debezium"  # Debezium normalization
 
 
 class NormalizationConfig(BaseModel):

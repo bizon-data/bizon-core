@@ -223,6 +223,7 @@ class KafkaSource(AbstractSource):
                     raise ValueError(f"Number of bytes for schema id {self.config.nb_bytes_schema_id} not supported")
 
                 data = self.decode(message.value(), schema)
+                data["_bizon_message_key"] = message.key().decode("utf-8")
 
                 # Get the source timestamp
                 if self.parse_timestamp:
