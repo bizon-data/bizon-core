@@ -45,6 +45,8 @@ class KafkaSourceConfig(SourceConfig):
     consumer_timeout: int = Field(10, description="Kafka consumer timeout in seconds")
     group_id: str = Field("bizon", description="Kafka group id")
 
+    max_consumer_threads: int = Field(16, description="Maximum number of threads for the consumer")
+
     nb_bytes_schema_id: Literal[4, 8] = Field(
         4, description="Number of bytes for the schema id. 4 is the default for majority of the cases"
     )
@@ -262,7 +264,7 @@ class KafkaSource(AbstractSource):
 
         # Use ThreadPoolExecutor to parallelize reading partitions
         records = []
-        with ThreadPoolExecutor(max_workers=nb_partitions) as executor:
+        with ThreadPoolExecutor(max_workers=min(nb_partitions, self.config.max_consumer_threads)) as executor:
             futures = {executor.submit(self.read_partition, i, topic_offsets): i for i in range(nb_partitions)}
             for future in as_completed(futures):
                 partition_records = future.result()
