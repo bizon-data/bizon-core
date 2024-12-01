@@ -1,6 +1,8 @@
 import io
 import json
+import logging
 import struct
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from enum import Enum
@@ -17,6 +19,9 @@ from bizon.source.auth.config import AuthConfig, AuthType
 from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.source import AbstractSource
+
+silent_logger = logging.getLogger()
+silent_logger.addHandler(logging.StreamHandler())
 
 
 class SchemaRegistryType(str, Enum):
@@ -98,7 +103,10 @@ class KafkaSource(AbstractSource):
         }
 
         # Consumer instance
-        self.consumer = Consumer(self.kafka_consumer_conf, logger=logger)
+        self.consumer = Consumer(self.kafka_consumer_conf, logger=silent_logger)
+
+        # Consumers for each worker thread
+        self.consumers_cached: Mapping[int, Consumer] = {}
 
     @staticmethod
     def streams() -> List[str]:
@@ -196,18 +204,27 @@ class KafkaSource(AbstractSource):
 
     def read_partition(self, partition: int, topic_offsets: TopicOffsets) -> List[SourceRecord]:
         records = []
-        encoded_messages = []
 
         # Set the source timestamp to now, otherwise it will be overwritten by the message timestamp
         source_timestamp = datetime.now(tz=timezone.utc)
 
         # Set consumer offset params
-        consumer = Consumer(self.kafka_consumer_conf, logger=logger)
-        consumer.assign([TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition))])
-        consumer.seek(TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition)))
+        worker_id = threading.get_ident()
+
+        if worker_id not in self.consumers_cached:
+            self.consumers_cached[worker_id] = Consumer(self.kafka_consumer_conf, logger=silent_logger)
+
+        self.consumers_cached[worker_id].assign(
+            [TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition))]
+        )
+        self.consumers_cached[worker_id].seek(
+            TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition))
+        )
 
         # Read messages
-        encoded_messages.extend(consumer.consume(self.config.batch_size, timeout=self.config.consumer_timeout))
+        encoded_messages = self.consumers_cached[worker_id].consume(
+            self.config.batch_size, timeout=self.config.consumer_timeout
+        )
 
         for message in encoded_messages:
             if not message.value():
@@ -251,8 +268,6 @@ class KafkaSource(AbstractSource):
             topic_offsets.set_partition_offset(partition, encoded_messages[-1].offset() + 1)
         else:
             logger.warning(f"No new messages found for partition {partition}")
-
-        consumer.close()
 
         return records
 
