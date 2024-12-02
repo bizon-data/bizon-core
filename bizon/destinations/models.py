@@ -55,10 +55,10 @@ class DestinationRecord(BaseModel):
         return {
             **{k: str(v) for k, v in parsed_debezium_keys.items()},
             "_bizon_id": self.bizon_id,
-            "_bizon_extracted_at": self.bizon_extracted_at,
-            "_bizon_loaded_at": self.bizon_loaded_at,
+            "_bizon_extracted_at": self.bizon_extracted_at.strftime("%Y-%m-%d %H:%M:%S.%f"),
+            "_bizon_loaded_at": self.bizon_loaded_at.strftime("%Y-%m-%d %H:%M:%S.%f"),
             "_source_record_id": self.source_record_id,
-            "_source_timestamp": self.source_timestamp,
+            "_source_timestamp": self.source_timestamp.strftime("%Y-%m-%d %H:%M:%S.%f"),
             "_source_data": json.dumps(parsed_source_data),
         }
 
@@ -88,10 +88,10 @@ class DestinationRecord(BaseModel):
 
         record = TableRowClass()
         record._bizon_id = self.bizon_id
-        record._bizon_extracted_at = str(int(self.bizon_extracted_at.timestamp()))
-        record._bizon_loaded_at = str(int(self.bizon_loaded_at.timestamp()))
+        record._bizon_extracted_at = self.bizon_extracted_at.strftime("%Y-%m-%d %H:%M:%S.%f")
+        record._bizon_loaded_at = self.bizon_loaded_at.strftime("%Y-%m-%d %H:%M:%S.%f")
         record._source_record_id = self.source_record_id
-        record._source_timestamp = str(int(self.source_timestamp.timestamp()))
+        record._source_timestamp = self.source_timestamp.strftime("%Y-%m-%d %H:%M:%S.%f")
 
         if debezium:
             parsed_debezium_keys = json.loads(self.source_data["_bizon_message_key"])
