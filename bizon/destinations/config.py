@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class DestinationTypes(str, Enum):
     BIGQUERY = "bigquery"
+    BIGQUERY_STREAMING = "bigquery_streaming"
     LOGGER = "logger"
     FILE = "file"
 

@@ -1,7 +1,9 @@
 import json
 from datetime import datetime
+from typing import Type
 from uuid import uuid4
 
+from google.protobuf.message import Message
 from pydantic import BaseModel, Field
 from pytz import UTC
 
@@ -81,3 +83,28 @@ class DestinationRecord(BaseModel):
             "_source_timestamp": self.source_timestamp,
             "_source_data": json.dumps(self.source_data),
         }
+
+    def to_protobuf_serialization(self, TableRowClass: Type[Message], debezium=False):
+
+        record = TableRowClass()
+        record._bizon_id = self.bizon_id
+        record._bizon_extracted_at = str(int(self.bizon_extracted_at.timestamp()))
+        record._bizon_loaded_at = str(int(self.bizon_loaded_at.timestamp()))
+        record._source_record_id = self.source_record_id
+        record._source_timestamp = str(int(self.source_timestamp.timestamp()))
+
+        if debezium:
+            parsed_debezium_keys = json.loads(self.source_data["_bizon_message_key"])
+            if parsed_debezium_keys:
+                for _key in parsed_debezium_keys:
+                    setattr(record, _key, str(parsed_debezium_keys[_key]))
+            if self.source_data.get("op") == "d":
+                source_data = {"__deleted": True, **self.source_data["before"]}
+            else:
+                source_data = {"__deleted": False, **self.source_data["after"]}
+
+            record._source_data = json.dumps(source_data)
+        else:
+            record._source_data = json.dumps(self.source_data)
+
+        return record.SerializeToString()

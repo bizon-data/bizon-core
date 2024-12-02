@@ -1,5 +1,6 @@
 import concurrent.futures
 import time
+import traceback
 
 from loguru import logger
 
@@ -75,5 +76,6 @@ class ThreadRunner(AbstractRunner):
                     future_consumer.result()
                 except Exception as e:
                     logger.error(f"Consumer thread stopped running with error {e}")
+                    logger.error(traceback.format_exc())
 
         return True

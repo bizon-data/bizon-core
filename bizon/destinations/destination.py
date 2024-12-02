@@ -122,6 +122,11 @@ class AbstractDestination(ABC):
 
         # Last iteration, write all records to destination
         if last_iteration:
+
+            if len(self.buffer.records) == 0 and self.config.buffer_size == 0:
+                logger.warning("No records to write to destination, already written, buffer is empty.")
+                return DestinationBufferStatus.RECORDS_WRITTEN
+
             logger.debug("Writing last iteration records to destination")
             assert len(destination_records) == 0, "Last iteration should not have any records"
             destination_iteration = self.buffer_flush_handler(session=session)
@@ -152,9 +157,9 @@ class AbstractDestination(ABC):
             logger.warning("No records to write to destination. Check source and queue provider.")
             return DestinationBufferStatus.NO_RECORDS
 
-        # Write records to destination if buffer size is 0
+        # Write records to destination if buffer size is 0 or streaming
         if self.buffer.buffer_size == 0:
-            logger.info("Writing last iteration records to destination")
+            logger.info("Writing records to destination.")
             self.buffer.add_source_iteration_records_to_buffer(
                 iteration=iteration, records=destination_records, pagination=pagination
             )
@@ -262,6 +267,11 @@ class DestinationFactory:
             from .bigquery.src.destination import BigQueryDestination
 
             return BigQueryDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
+
+        elif config.name == DestinationTypes.BIGQUERY_STREAMING:
+            from .bigquery_streaming.src.destination import BigQueryStreamingDestination
+
+            return BigQueryStreamingDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
 
         elif config.name == DestinationTypes.FILE:
             from .file.src.destination import FileDestination

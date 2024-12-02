@@ -3,6 +3,7 @@ from typing import Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from bizon.destinations.bigquery.src.config import BigQueryConfig
+from bizon.destinations.bigquery_streaming.src.config import BigQueryStreamingConfig
 from bizon.destinations.file.src.config import FileDestinationConfig
 from bizon.destinations.logger.src.config import LoggerConfig
 from bizon.engine.config import EngineConfig
@@ -24,6 +25,7 @@ class BizonConfig(BaseModel):
 
     destination: Union[
         BigQueryConfig,
+        BigQueryStreamingConfig,
         LoggerConfig,
         FileDestinationConfig,
     ] = Field(

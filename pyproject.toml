@@ -44,6 +44,7 @@ python-dotenv = "^1.0.1"
 gspread = { version = "^6.1.2", optional = true }
 click = "^8.1.7"
 pytz = "^2024.2"
+protobuf = "4.24.0"
 
 [tool.poetry.extras]
 postgres = ["psycopg2-binary"]
