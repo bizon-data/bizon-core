@@ -2,8 +2,6 @@ import io
 import json
 import logging
 import struct
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from enum import Enum
 from functools import lru_cache
@@ -202,34 +200,17 @@ class KafkaSource(AbstractSource):
         global_id = self.parse_global_id_from_serialized_message(header_message)
         return self.get_parsed_avro_schema(global_id).to_json()
 
-    def read_partition(self, partition: int, topic_offsets: TopicOffsets) -> List[SourceRecord]:
+    def parse_encoded_messages(self, encoded_messages: list) -> List[SourceRecord]:
+
         records = []
 
         # Set the source timestamp to now, otherwise it will be overwritten by the message timestamp
         source_timestamp = datetime.now(tz=timezone.utc)
 
-        # Set consumer offset params
-        worker_id = threading.get_ident()
-
-        if worker_id not in self.consumers_cached:
-            self.consumers_cached[worker_id] = Consumer(self.kafka_consumer_conf, logger=silent_logger)
-
-        self.consumers_cached[worker_id].assign(
-            [TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition))]
-        )
-        self.consumers_cached[worker_id].seek(
-            TopicPartition(self.config.topic, partition, topic_offsets.get_partition_offset(partition))
-        )
-
-        # Read messages
-        encoded_messages = self.consumers_cached[worker_id].consume(
-            self.config.batch_size, timeout=self.config.consumer_timeout
-        )
-
         for message in encoded_messages:
             if not message.value():
                 logger.debug(
-                    f"Message for partition {partition} and offset {message.offset()} and topic {self.config.topic} is empty, skipping."
+                    f"Message for partition {message.partition()} and offset {message.offset()} and topic {self.config.topic} is empty, skipping."
                 )
                 continue
 
@@ -250,24 +231,21 @@ class KafkaSource(AbstractSource):
                         data[self.config.timestamp_ms_name] / 1000, tz=timezone.utc
                     )
 
+                self.topic_offsets.set_partition_offset(message.partition(), message.offset() + 1)
+
                 records.append(
                     SourceRecord(
-                        id=f"part_{partition}_offset_{message.offset()}",
+                        id=f"part_{message.partition()}_offset_{message.offset()}",
                         timestamp=source_timestamp,
                         data=data,
                     )
                 )
+
             except Exception as e:
                 logger.error(
-                    f"Error while decoding message for partition {partition}: {e} at offset {message.offset()}"
+                    f"Error while decoding message for partition {message.partition()}: {e} at offset {message.offset()}"
                 )
                 continue
-
-        # Update the offset for the partition
-        if encoded_messages:
-            topic_offsets.set_partition_offset(partition, encoded_messages[-1].offset() + 1)
-        else:
-            logger.warning(f"No new messages found for partition {partition}")
 
         return records
 
@@ -275,16 +253,22 @@ class KafkaSource(AbstractSource):
         nb_partitions = self.get_number_of_partitions()
 
         # Setup offset_pagination
-        topic_offsets = TopicOffsets.model_validate(pagination) if pagination else self.get_offset_partitions()
+        self.topic_offsets = TopicOffsets.model_validate(pagination) if pagination else self.get_offset_partitions()
 
-        # Use ThreadPoolExecutor to parallelize reading partitions
-        records = []
-        with ThreadPoolExecutor(max_workers=min(nb_partitions, self.config.max_consumer_threads)) as executor:
-            futures = {executor.submit(self.read_partition, i, topic_offsets): i for i in range(nb_partitions)}
-            for future in as_completed(futures):
-                partition_records = future.result()
-                records.extend(partition_records)
+        self.consumer.assign(
+            [
+                TopicPartition(self.config.topic, partition, self.topic_offsets.get_partition_offset(partition))
+                for partition in range(nb_partitions)
+            ]
+        )
 
+        t1 = datetime.now()
+        encoded_messages = self.consumer.consume(self.config.batch_size, timeout=self.config.consumer_timeout)
+        logger.info(f"Read Kafka: {len(encoded_messages)} messages in {datetime.now() - t1}")
+
+        records = self.parse_encoded_messages(encoded_messages)
+
+        # Update the offset for the partition
         if not records:
             logger.info("No new records found, stopping iteration")
             return SourceIteration(
@@ -293,7 +277,7 @@ class KafkaSource(AbstractSource):
             )
 
         return SourceIteration(
-            next_pagination=topic_offsets.model_dump(),
+            next_pagination=self.topic_offsets.model_dump(),
             records=records,
         )
 
