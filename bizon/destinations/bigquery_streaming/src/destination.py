@@ -1,13 +1,21 @@
 import json
 import os
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from typing import List, Tuple
 
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, bigquery_storage_v1, storage
 from google.cloud.bigquery import DatasetReference, TimePartitioning
-from google.cloud.bigquery_storage_v1.types import AppendRowsRequest, ProtoRows
-from loguru import logger
+from google.cloud.bigquery_storage_v1.types import (
+    AppendRowsRequest,
+    BatchCommitWriteStreamsRequest,
+    CreateWriteStreamRequest,
+    FinalizeWriteStreamRequest,
+    ProtoRows,
+    ProtoSchema,
+    WriteStream,
+)
 
 from bizon.common.models import SyncMetadata
 from bizon.destinations.config import NormalizationType
@@ -17,6 +25,9 @@ from bizon.engine.backend.backend import AbstractBackend
 
 from .config import BigQueryConfigDetails
 from .proto_utils import get_proto_schema_and_class
+
+# Number of rows to send to BigQuery PENDING type stream in a single batch
+BQ_ROW_BATCH_SIZE = 50000
 
 
 class BigQueryStreamingDestination(AbstractDestination):
@@ -100,6 +111,23 @@ class BigQueryStreamingDestination(AbstractDestination):
             dataset = self.bq_client.create_dataset(dataset)
         return True
 
+    def append_rows_to_stream(
+        self,
+        write_client: bigquery_storage_v1.BigQueryWriteClient(),
+        stream_name: str,
+        proto_schema: ProtoSchema,
+        serialized_rows: List[bytes],
+    ):
+        request = AppendRowsRequest(
+            write_stream=stream_name,
+            proto_rows=AppendRowsRequest.ProtoData(
+                rows=ProtoRows(serialized_rows=serialized_rows),
+                writer_schema=proto_schema,
+            ),
+        )
+        response = write_client.append_rows(iter([request]))
+        return response.code().name == "OK"
+
     def load_to_bigquery_via_streaming(self, destination_records: List[DestinationRecord]) -> str:
         clustering_keys = []
 
@@ -121,7 +149,14 @@ class BigQueryStreamingDestination(AbstractDestination):
         write_client = self.bq_storage_client
         tabled_id = self.config.table_id or f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
         parent = write_client.table_path(self.project_id, self.dataset_id, tabled_id)
-        stream_name = f"{parent}/_default"
+        # stream_name = f"{parent}/_default"
+
+        write_stream = write_client.create_write_stream(
+            CreateWriteStreamRequest(
+                parent=parent,
+                write_stream=WriteStream(type_=WriteStream.Type.PENDING),
+            )
+        )
 
         # Generating the protocol buffer representation of the message descriptor.
         proto_schema, TableRow = get_proto_schema_and_class(clustering_keys)
@@ -132,17 +167,32 @@ class BigQueryStreamingDestination(AbstractDestination):
             )
             for record in destination_records
         ]
+        results = []
+        with ThreadPoolExecutor() as executor:
+            futures = [
+                executor.submit(self.append_rows_to_stream, write_client, write_stream.name, proto_schema, batch_rows)
+                for batch_rows in batch(serialized_rows)
+            ]
+            for future in futures:
+                results.append(future.result())
 
-        request = AppendRowsRequest(
-            write_stream=stream_name,
-            proto_rows=AppendRowsRequest.ProtoData(
-                rows=ProtoRows(serialized_rows=serialized_rows),
-                writer_schema=proto_schema,
-            ),
+        write_client.finalize_write_stream(FinalizeWriteStreamRequest(name=write_stream.name))
+
+        write_client.batch_commit_write_streams(
+            BatchCommitWriteStreamsRequest(
+                parent=parent,
+                write_streams=[write_stream.name],
+            )
         )
-        response = write_client.append_rows(iter([request]))
-        assert response.code().name == "OK"
 
     def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, str]:
         self.load_to_bigquery_via_streaming(destination_records=destination_records)
         return True, ""
+
+
+def batch(iterable, batch_size: int = BQ_ROW_BATCH_SIZE):
+    """
+    Yield successive batches of size `batch_size` from `iterable`.
+    """
+    for i in range(0, len(iterable), batch_size):
+        yield iterable[i : i + batch_size]  # noqa

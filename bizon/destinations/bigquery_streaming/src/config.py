@@ -41,14 +41,6 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     )
     authentication: Optional[BigQueryAuthentication] = None
 
-    buffer_size: int = Field(default=0, description="Buffer size in MB")
-
-    @field_validator("buffer_size", mode="after")
-    def validate_buffer_size(cls, value: int) -> int:
-        if value != 0:
-            raise ValueError("Buffer size must be 0, we directly stream to BigQuery")
-        return value
-
 
 class BigQueryStreamingConfig(AbstractDestinationConfig):
     name: Literal[DestinationTypes.BIGQUERY_STREAMING]

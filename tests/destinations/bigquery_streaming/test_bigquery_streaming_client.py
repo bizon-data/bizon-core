@@ -10,9 +10,6 @@ from bizon.destinations.bigquery_streaming.src.config import (
     BigQueryConfigDetails,
     BigQueryStreamingConfig,
 )
-from bizon.destinations.bigquery_streaming.src.destination import (
-    BigQueryStreamingDestination,
-)
 from bizon.destinations.config import DestinationTypes
 from bizon.destinations.destination import DestinationFactory
 from bizon.destinations.models import DestinationRecord
@@ -46,6 +43,11 @@ def test_streaming_records_to_bigquery(my_backend_config, sync_metadata_stream):
 
     bq_destination = DestinationFactory().get_destination(
         sync_metadata=sync_metadata_stream, config=bigquery_config, backend=my_backend_config
+    )
+
+    # Import here to not throw auth errors when running tests
+    from bizon.destinations.bigquery_streaming.src.destination import (
+        BigQueryStreamingDestination,
     )
 
     assert isinstance(bq_destination, BigQueryStreamingDestination)
