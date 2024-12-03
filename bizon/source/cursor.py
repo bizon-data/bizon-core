@@ -68,6 +68,13 @@ class Cursor:
         return self.rows_fetched / self.total_records
 
     @property
+    def avg_records_per_iteration(self) -> Optional[float]:
+        """Return the average number of records fetched per iteration"""
+        if self.iteration == 0:
+            return None
+        return int(self.rows_fetched / self.iteration)
+
+    @property
     def source_full_name(self) -> str:
         return f"{self.source_name}.{self.stream_name}"
 

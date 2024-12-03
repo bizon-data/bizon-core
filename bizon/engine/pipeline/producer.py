@@ -1,6 +1,8 @@
 import ast
 import traceback
 from datetime import datetime
+from time import sleep
+from typing import Tuple
 
 from loguru import logger
 from pytz import UTC
@@ -75,6 +77,26 @@ class Producer:
             return True
         return False
 
+    def is_queue_full(self, cursor: Cursor) -> Tuple[bool, int, int]:
+        """Handle the case where the queue is full
+        If the queue is full return True, 0, 0
+        Else return False, int[queue_size], int[approximate_nb_records_in_queue]
+        """
+        queue_size = self.queue.get_size()
+
+        if not isinstance(queue_size, int):
+            return False, 0, 0
+
+        if not isinstance(cursor.avg_records_per_iteration, int):
+            return False, 0, 0
+
+        approximate_nb_records_in_queue = queue_size * cursor.avg_records_per_iteration
+
+        if approximate_nb_records_in_queue >= self.queue.config.max_nb_messages:
+            return True, queue_size, approximate_nb_records_in_queue
+
+        return False, queue_size, approximate_nb_records_in_queue
+
     def run(self, job_id: int):
 
         return_value: PipelineReturnStatus = PipelineReturnStatus.SUCCESS
@@ -134,6 +156,19 @@ class Producer:
                     return_value = PipelineReturnStatus.BACKEND_ERROR
                     break
 
+            # Get current time, we consider this as the time the data was extracted
+            extracted_at = datetime.now(tz=UTC)
+
+            # Check if queue is full, we wait a random time and retry
+            is_queue_full, queue_size, approximate_nb_records_in_queue = self.is_queue_full(cursor)
+            if is_queue_full:
+                QUEUE_FULL_WAITING_TIME = 2
+                logger.warning(
+                    f"Queue is full contains {queue_size} iterations with {approximate_nb_records_in_queue} records, waiting {QUEUE_FULL_WAITING_TIME} seconds before retrying..."
+                )
+                sleep(QUEUE_FULL_WAITING_TIME)
+                continue
+
             # Get the next data
             try:
                 source_iteration = self.source.get(pagination=cursor.pagination)
@@ -145,9 +180,6 @@ class Producer:
                 )
                 return_value = PipelineReturnStatus.SOURCE_ERROR
                 break
-
-            # Get current time, we consider this as the time the data was extracted
-            extracted_at = datetime.now(tz=UTC)
 
             # Put the data in the queue
             try:

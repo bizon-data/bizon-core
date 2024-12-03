@@ -15,6 +15,8 @@ class AbastractQueueConfigDetails(BaseModel, ABC):
     # Forbid extra keys in the model
     model_config = ConfigDict(extra="forbid")
 
+    max_nb_messages: int = Field(1_000_000, description="Maximum number of messages in the queue")
+
     queue: BaseModel = Field(..., description="Configuration of the queue")
     consumer: BaseModel = Field(..., description="Configuration of the consumer")
 
