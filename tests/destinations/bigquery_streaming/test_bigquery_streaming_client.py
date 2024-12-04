@@ -7,8 +7,8 @@ import pytest
 from faker import Faker
 
 from bizon.destinations.bigquery_streaming.src.config import (
-    BigQueryConfigDetails,
-    BigQueryStreamingConfig,
+    BigQueryStreamingConfigDetails,
+    BigQueryStreamingConfigDetailsDetails,
 )
 from bizon.destinations.config import DestinationTypes
 from bizon.destinations.destination import DestinationFactory
@@ -28,9 +28,9 @@ TEST_BUFFER_BUCKET = "bizon-buffer"
     reason="Skipping tests that require a BigQuery database",
 )
 def test_streaming_records_to_bigquery(my_backend_config, sync_metadata_stream):
-    bigquery_config = BigQueryStreamingConfig(
+    bigquery_config = BigQueryStreamingConfigDetails(
         name=DestinationTypes.BIGQUERY,
-        config=BigQueryConfigDetails(
+        config=BigQueryStreamingConfigDetailsDetails(
             project_id=TEST_PROJECT_ID,
             dataset_id=TEST_DATASET_ID,
             table_id=TEST_TABLE_ID,

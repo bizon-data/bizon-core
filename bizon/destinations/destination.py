@@ -167,8 +167,8 @@ class AbstractDestination(ABC):
             self.buffer.flush()
             return DestinationBufferStatus.RECORDS_WRITTEN
 
-        logger.debug(f"Buffer free space {self.buffer.buffer_free_space_pct}%")
-        logger.debug(f"Buffer current size {self.buffer.current_size} bytes")
+        logger.info(f"Buffer free space {self.buffer.buffer_free_space_pct}%")
+        logger.info(f"Buffer current size {round(self.buffer.current_size / 1024 / 1024, 2)}  Mb")
         logger.info(
             f"Buffer ripeness {round(self.buffer.ripeness / 60, 2)} min. Max ripeness {round(self.buffer.buffer_flush_timeout / 60, 2)} min."  # noqa
         )

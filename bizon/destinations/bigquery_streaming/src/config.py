@@ -29,7 +29,7 @@ class BigQueryAuthentication(BaseModel):
     )
 
 
-class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
+class BigQueryStreamingConfigDetails(AbstractDestinationDetailsConfig):
     project_id: str
     dataset_id: str
     dataset_location: Optional[str] = "US"
@@ -40,8 +40,9 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
         default=TimePartitioning.DAY, description="BigQuery Time partitioning type"
     )
     authentication: Optional[BigQueryAuthentication] = None
+    bq_max_rows_per_request: Optional[int] = Field(30000, description="Max rows per buffer streaming request.")
 
 
 class BigQueryStreamingConfig(AbstractDestinationConfig):
     name: Literal[DestinationTypes.BIGQUERY_STREAMING]
-    config: BigQueryConfigDetails
+    config: BigQueryStreamingConfigDetails
