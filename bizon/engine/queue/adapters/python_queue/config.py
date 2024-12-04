@@ -18,8 +18,12 @@ class PythonQueueConsumerConfig(BaseModel):
 
 
 class PythonQueueConfigDetails(AbastractQueueConfigDetails):
-    queue: PythonQueueQueueConfig = Field(..., description="Configuration of the queue")
-    consumer: PythonQueueConsumerConfig = Field(..., description="Kafka consumer configuration")
+    queue: PythonQueueQueueConfig = Field(
+        default=PythonQueueQueueConfig(max_size=0), description="Configuration of the queue"
+    )
+    consumer: PythonQueueConsumerConfig = Field(
+        default=PythonQueueConsumerConfig(poll_interval=1), description="Kafka consumer configuration"
+    )
 
 
 class PythonQueueConfig(AbstractQueueConfig):
