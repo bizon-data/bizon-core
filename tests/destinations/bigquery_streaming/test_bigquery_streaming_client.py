@@ -6,9 +6,10 @@ from random import randint, randrange
 import pytest
 from faker import Faker
 
+from bizon.common.models import SyncMetadata
 from bizon.destinations.bigquery_streaming.src.config import (
+    BigQueryStreamingConfig,
     BigQueryStreamingConfigDetails,
-    BigQueryStreamingConfigDetailsDetails,
 )
 from bizon.destinations.config import DestinationTypes
 from bizon.destinations.destination import DestinationFactory
@@ -23,14 +24,26 @@ TEST_DATASET_ID = "bizon_test"
 TEST_BUFFER_BUCKET = "bizon-buffer"
 
 
+@pytest.fixture(scope="function")
+def sync_metadata_stream() -> SyncMetadata:
+    return SyncMetadata(
+        name="streaming_api",
+        job_id="rfou98C9DJH",
+        source_name="cookie_test",
+        stream_name="test_stream",
+        destination_name="bigquery",
+        sync_mode="stream",
+    )
+
+
 @pytest.mark.skipif(
     os.getenv("POETRY_ENV_TEST") == "CI",
     reason="Skipping tests that require a BigQuery database",
 )
 def test_streaming_records_to_bigquery(my_backend_config, sync_metadata_stream):
-    bigquery_config = BigQueryStreamingConfigDetails(
-        name=DestinationTypes.BIGQUERY,
-        config=BigQueryStreamingConfigDetailsDetails(
+    bigquery_config = BigQueryStreamingConfig(
+        name=DestinationTypes.BIGQUERY_STREAMING,
+        config=BigQueryStreamingConfigDetails(
             project_id=TEST_PROJECT_ID,
             dataset_id=TEST_DATASET_ID,
             table_id=TEST_TABLE_ID,

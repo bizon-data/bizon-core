@@ -43,18 +43,6 @@ def sync_metadata() -> SyncMetadata:
 
 
 @pytest.fixture(scope="function")
-def sync_metadata_stream() -> SyncMetadata:
-    return SyncMetadata(
-        name="streaming_api",
-        job_id="rfou98C9DJH",
-        source_name="cookie_test",
-        stream_name="test_stream",
-        destination_name="bigquery",
-        sync_mode="stream",
-    )
-
-
-@pytest.fixture(scope="function")
 def test_table():
     table_id = f"{TEST_PROJECT_ID}.{TEST_DATASET_ID}.{TEST_TABLE_ID}"
     client = bigquery.Client()
