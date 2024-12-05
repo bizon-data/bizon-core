@@ -1,22 +1,25 @@
+import json
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional, Union
+from typing import Optional, Union
 
-from pydantic import BaseModel
+import polars as pl
 from pytz import UTC
 
 from bizon.destinations.destination import AbstractDestination
 from bizon.engine.pipeline.consumer import AbstractQueueConsumer
-from bizon.source.models import SourceRecord
+from bizon.source.models import SourceIteration, source_record_schema
 
 from .config import AbastractQueueConfigDetails, AbstractQueueConfig, QueueTypes
 
 QUEUE_TERMINATION = "TERMINATION"
 
 
-class QueueMessage(BaseModel):
+@dataclass
+class QueueMessage:
     iteration: int
-    source_records: List[SourceRecord]
+    df_source_records: pl.DataFrame
     extracted_at: datetime = datetime.now(tz=UTC)
     pagination: Optional[dict] = None
     signal: Optional[str] = None
@@ -57,19 +60,29 @@ class AbstractQueue(ABC):
 
     def put(
         self,
-        source_records: List[SourceRecord],
+        source_iteration: SourceIteration,
         iteration: int,
         signal: str = None,
         extracted_at: datetime = None,
-        pagination: dict = None,
     ):
+        # Create a DataFrame from the SourceIteration records
+        df_source_records = pl.DataFrame(
+            {
+                "id": [record.id for record in source_iteration.records],
+                "data": [json.dumps(record.data, ensure_ascii=False) for record in source_iteration.records],
+                "timestamp": [record.timestamp for record in source_iteration.records],
+            },
+            schema=source_record_schema,
+        )
+
         queue_message = QueueMessage(
             iteration=iteration,
-            source_records=source_records,
+            df_source_records=df_source_records,
             extracted_at=extracted_at if extracted_at else datetime.now(tz=UTC),
-            pagination=pagination,
+            pagination=source_iteration.next_pagination,
             signal=signal,
         )
+
         self.put_queue_message(queue_message)
 
 

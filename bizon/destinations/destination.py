@@ -1,9 +1,9 @@
-import sys
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
+import polars as pl
 from loguru import logger
 from pydantic import BaseModel, Field
 
@@ -11,7 +11,6 @@ from bizon.common.models import SyncMetadata
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus
 from bizon.source.config import SourceSyncModes
-from bizon.source.models import SourceRecord
 
 from .buffer import DestinationBuffer
 from .config import (
@@ -19,7 +18,7 @@ from .config import (
     AbstractDestinationDetailsConfig,
     DestinationTypes,
 )
-from .models import DestinationRecord
+from .models import transform_to_df_destination_records
 
 
 class DestinationBufferStatus(str, Enum):
@@ -57,19 +56,9 @@ class AbstractDestination(ABC):
         pass
 
     @abstractmethod
-    def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, Union[str, None]]:
+    def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, Union[str, None]]:
         """Write records to destination for the given iteration and return success status and error message"""
         pass
-
-    @staticmethod
-    def convert_source_records_to_destination_records(
-        source_records: List[SourceRecord], extracted_at: datetime
-    ) -> List[DestinationRecord]:
-        """Convert source records to destination records"""
-        return [
-            DestinationRecord.from_source_record(source_record=source_record, extracted_at=extracted_at)
-            for source_record in source_records
-        ]
 
     def finalize(self) -> bool:
         """Finalize destination after writing records, usually used to copy data from temp table to main table"""
@@ -89,11 +78,11 @@ class AbstractDestination(ABC):
             f"Writing in destination from source iteration {self.buffer.from_iteration} to {self.buffer.to_iteration}"
         )
 
-        success, error_msg = self.write_records(destination_records=self.buffer.records)
+        success, error_msg = self.write_records(df_destination_records=self.buffer.df_destination_records)
 
         if success:
             # We wrote records to destination so we keep it
-            destination_iteration.records_written = len(self.buffer.records)
+            destination_iteration.records_written = self.buffer.df_destination_records.height
             logger.info(f"Successfully wrote {destination_iteration.records_written} records to destination")
 
         else:
@@ -112,7 +101,7 @@ class AbstractDestination(ABC):
 
     def write_or_buffer_records(
         self,
-        destination_records: List[DestinationRecord],
+        df_destination_records: pl.DataFrame,
         iteration: int,
         last_iteration: bool = False,
         session=None,
@@ -123,12 +112,12 @@ class AbstractDestination(ABC):
         # Last iteration, write all records to destination
         if last_iteration:
 
-            if len(self.buffer.records) == 0 and self.config.buffer_size == 0:
+            if self.buffer.df_destination_records.height == 0 and self.config.buffer_size == 0:
                 logger.warning("No records to write to destination, already written, buffer is empty.")
                 return DestinationBufferStatus.RECORDS_WRITTEN
 
             logger.debug("Writing last iteration records to destination")
-            assert len(destination_records) == 0, "Last iteration should not have any records"
+            assert df_destination_records.height == 0, "Last iteration should not have any records"
             destination_iteration = self.buffer_flush_handler(session=session)
 
             if destination_iteration.success:
@@ -153,7 +142,7 @@ class AbstractDestination(ABC):
             return DestinationBufferStatus.RECORDS_WRITTEN
 
         # Don't write empty records to destination
-        if len(destination_records) == 0 and not last_iteration:
+        if df_destination_records.height == 0 and not last_iteration:
             logger.warning("No records to write to destination. Check source and queue provider.")
             return DestinationBufferStatus.NO_RECORDS
 
@@ -161,7 +150,7 @@ class AbstractDestination(ABC):
         if self.buffer.buffer_size == 0:
             logger.info("Writing records to destination.")
             self.buffer.add_source_iteration_records_to_buffer(
-                iteration=iteration, records=destination_records, pagination=pagination
+                iteration=iteration, df_destination_records=df_destination_records, pagination=pagination
             )
             self.buffer_flush_handler(session=session)
             self.buffer.flush()
@@ -181,14 +170,14 @@ class AbstractDestination(ABC):
             self.buffer_flush_handler(session=session)
             self.buffer.flush()
             self.buffer.add_source_iteration_records_to_buffer(
-                iteration=iteration, records=destination_records, pagination=pagination
+                iteration=iteration, df_destination_records=df_destination_records, pagination=pagination
             )
             return DestinationBufferStatus.RECORDS_WRITTEN_THEN_BUFFERED
 
         # Buffer can hold all records from this iteration
-        elif self.buffer.buffer_free_space >= sys.getsizeof(destination_records):
+        elif self.buffer.buffer_free_space >= df_destination_records.estimated_size(unit="b"):
             self.buffer.add_source_iteration_records_to_buffer(
-                iteration=iteration, records=destination_records, pagination=pagination
+                iteration=iteration, df_destination_records=df_destination_records, pagination=pagination
             )
             return DestinationBufferStatus.RECORDS_BUFFERED
 
@@ -198,7 +187,7 @@ class AbstractDestination(ABC):
             self.buffer_flush_handler(session=session)
             self.buffer.flush()
             self.buffer.add_source_iteration_records_to_buffer(
-                iteration=iteration, records=destination_records, pagination=pagination
+                iteration=iteration, df_destination_records=df_destination_records, pagination=pagination
             )
             return DestinationBufferStatus.RECORDS_WRITTEN_THEN_BUFFERED
 
@@ -218,9 +207,9 @@ class AbstractDestination(ABC):
 
     def write_records_and_update_cursor(
         self,
-        source_records: List[SourceRecord],
-        iteration: int,
+        df_source_records: pl.DataFrame,
         extracted_at: datetime,
+        iteration: int,
         last_iteration: bool = False,
         pagination: dict = None,
     ) -> bool:
@@ -230,18 +219,18 @@ class AbstractDestination(ABC):
         """
 
         # Case when producer failed to fetch data from first iteration
-        if iteration == 0 and len(source_records) == 0:
+        if iteration == 0 and df_source_records.height == 0:
             logger.warning("Source failed to fetch data from the first iteration, no records will be written.")
             return False
 
-        destination_records = self.convert_source_records_to_destination_records(
-            source_records=source_records,
-            extracted_at=extracted_at,
+        # Convert to df_destinaton_records
+        df_source_records = transform_to_df_destination_records(
+            df_source_records=df_source_records, extracted_at=extracted_at
         )
 
         # Buffer records otherwise write to destination
         self.write_or_buffer_records(
-            destination_records=destination_records,
+            df_destination_records=df_source_records,
             iteration=iteration,
             last_iteration=last_iteration,
             pagination=pagination,

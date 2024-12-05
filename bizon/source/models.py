@@ -1,8 +1,19 @@
+from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Union
 
+import polars as pl
 from pydantic import BaseModel, Field, field_validator
 from pytz import UTC
+
+# Define the SourceRecord model
+source_record_schema = pl.Schema(
+    [
+        ("id", str),
+        ("data", str),  # JSON payload dumped as string
+        ("timestamp", pl.Datetime(time_unit="us", time_zone="UTC")),
+    ]
+)
 
 
 ### /!\ These models Source* will be used in all sources so we better never have to change them !!!

@@ -1,15 +1,15 @@
-import sys
+from datetime import datetime
 
+import polars as pl
 import pytest
 
 from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import DestinationBufferStatus
 from bizon.destinations.logger.src.config import LoggerDestinationConfig
 from bizon.destinations.logger.src.destination import LoggerDestination
-from bizon.destinations.models import DestinationRecord
+from bizon.destinations.models import destination_record_schema
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.models import JobStatus, StreamJob
-from bizon.source.models import SourceRecord
 
 
 @pytest.fixture(scope="function")
@@ -40,48 +40,53 @@ def logger_destination(my_sqlite_backend: SQLAlchemyBackend, sqlite_db_session):
     )
 
 
+df_destination_records = pl.DataFrame(
+    {
+        "bizon_id": ["id_1", "id_2"],
+        "bizon_extracted_at": [datetime(2024, 12, 5, 12, 0), datetime(2024, 12, 5, 13, 0)],
+        "bizon_loaded_at": [datetime(2024, 12, 5, 12, 30), datetime(2024, 12, 5, 13, 30)],
+        "source_record_id": ["record_1", "record_2"],
+        "source_timestamp": [datetime(2024, 12, 5, 11, 30), datetime(2024, 12, 5, 12, 30)],
+        "source_data": ["cookies", "cream"],
+    },
+    schema=destination_record_schema,
+)
+
+
 def test_logger_destination(logger_destination: LoggerDestination):
-    assert logger_destination.buffer.records == []
+    assert logger_destination.buffer.df_destination_records.height == 0
 
 
 def test_buffer_records(logger_destination: LoggerDestination):
-    sources_records = [
-        SourceRecord(id=1, data={"name": "John", "age": 30}),
-        SourceRecord(id=2, data={"name": "Tom", "age": 25}),
-    ]
-    logger_destination.buffer.add_source_iteration_records_to_buffer(iteration=0, records=sources_records)
-    assert logger_destination.buffer.records == sources_records
+    logger_destination.buffer.add_source_iteration_records_to_buffer(
+        iteration=0, df_destination_records=df_destination_records
+    )
+    assert logger_destination.buffer.df_destination_records.equals(df_destination_records)
 
 
 def test_write_or_buffer_records(logger_destination: LoggerDestination):
 
-    TEST_RECORDS = [
-        DestinationRecord(
-            bizon_id=str(i),
-            bizon_extracted_at="2021-07-01T00:00:00Z",
-            bizon_loaded_at="2021-07-01T00:00:00Z",
-            source_record_id="3",
-            source_timestamp="2021-07-01T00:00:00Z",
-            source_data={"name": "Alice", "age": 35},
-        )
-        for i in range(1000)
-    ]
+    df_big_size = pl.DataFrame(schema=destination_record_schema)
+
+    for _ in range(100):
+        df_big_size = df_big_size.vstack(df_destination_records, in_place=True)
 
     # Overriding buffer size to bytes instead of mbs
-    logger_destination.buffer.buffer_size = sys.getsizeof(TEST_RECORDS)
+    logger_destination.buffer.buffer_size = df_big_size.estimated_size(unit="b")
 
     buffer_status = logger_destination.write_or_buffer_records(
-        destination_records=[TEST_RECORDS[0]],
+        df_destination_records=df_destination_records,
         iteration=0,
     )
+
     assert buffer_status == DestinationBufferStatus.RECORDS_BUFFERED
 
     # Reset buffer
-    logger_destination.buffer.buffer_size = sys.getsizeof(TEST_RECORDS)
+    logger_destination.buffer.buffer_size = df_big_size.estimated_size(unit="b")
 
     # Write twice
     buffer_status = logger_destination.write_or_buffer_records(
-        destination_records=TEST_RECORDS + TEST_RECORDS, iteration=1
+        df_destination_records=df_big_size.vstack(df_destination_records), iteration=1
     )
 
     assert buffer_status == DestinationBufferStatus.RECORDS_WRITTEN_THEN_BUFFERED
@@ -90,24 +95,7 @@ def test_write_or_buffer_records(logger_destination: LoggerDestination):
 def test_write_last_iteration(logger_destination: LoggerDestination, sqlite_db_session):
 
     buffer_status = logger_destination.write_or_buffer_records(
-        destination_records=[
-            DestinationRecord(
-                bizon_id="fjdjfkdfj",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="3",
-                source_timestamp="2021-07-01T00:00:00Z",
-                source_data={"name": "John", "age": 14},
-            ),
-            DestinationRecord(
-                bizon_id="fjdj9787j",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="6",
-                source_timestamp="2021-07-02T00:00:00Z",
-                source_data={"name": "David", "age": 10},
-            ),
-        ],
+        df_destination_records=df_destination_records,
         iteration=0,
         session=sqlite_db_session,
     )
@@ -121,7 +109,7 @@ def test_write_last_iteration(logger_destination: LoggerDestination, sqlite_db_s
 
     # Write the last iteration
     buffer_status = logger_destination.write_or_buffer_records(
-        destination_records=[],
+        df_destination_records=pl.DataFrame(schema=destination_record_schema),
         iteration=1,
         last_iteration=True,
         session=sqlite_db_session,
@@ -138,7 +126,7 @@ def test_write_last_iteration(logger_destination: LoggerDestination, sqlite_db_s
 def test_no_records_written(logger_destination: LoggerDestination, sqlite_db_session):
 
     buffer_status = logger_destination.write_or_buffer_records(
-        destination_records=[],
+        df_destination_records=pl.DataFrame(schema=destination_record_schema),
         iteration=0,
         session=sqlite_db_session,
     )

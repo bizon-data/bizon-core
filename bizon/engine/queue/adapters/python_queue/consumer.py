@@ -14,13 +14,12 @@ class PythonQueueConsumer(AbstractQueueConsumer):
 
     def run(self) -> None:
         while True:
-            message: dict = self.queue.get()
-            queue_message = QueueMessage.model_validate(message)
+            queue_message: QueueMessage = self.queue.get()
 
             if queue_message.signal == QUEUE_TERMINATION:
                 logger.info("Received termination signal, waiting for destination to close gracefully ...")
                 self.destination.write_records_and_update_cursor(
-                    source_records=queue_message.source_records,
+                    df_source_records=queue_message.df_source_records,
                     iteration=queue_message.iteration,
                     extracted_at=queue_message.extracted_at,
                     pagination=queue_message.pagination,
@@ -29,7 +28,7 @@ class PythonQueueConsumer(AbstractQueueConsumer):
                 break
 
             self.destination.write_records_and_update_cursor(
-                source_records=queue_message.source_records,
+                df_source_records=queue_message.df_source_records,
                 iteration=queue_message.iteration,
                 extracted_at=queue_message.extracted_at,
                 pagination=queue_message.pagination,

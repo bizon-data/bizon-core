@@ -41,7 +41,9 @@ class Producer:
             # Retrieve the job
             job = self.backend.get_stream_job_by_id(job_id=job_id)
 
-            logger.info(f"Recovering cursor from DB: {cursor_from_db}")
+            logger.info(
+                f"Recovered cursor from DB for iteration {cursor_from_db.from_source_iteration} -> {cursor_from_db.to_source_iteration}"
+            )
 
             # Initialize the recovery from the DestinationCursor
             cursor = Cursor.from_db(
@@ -184,10 +186,9 @@ class Producer:
             # Put the data in the queue
             try:
                 self.queue.put(
-                    source_records=source_iteration.records,
+                    source_iteration=source_iteration,
                     iteration=cursor.iteration,
                     extracted_at=extracted_at,
-                    pagination=source_iteration.next_pagination,
                 )
             except Exception as e:
                 logger.error(traceback.format_exc())

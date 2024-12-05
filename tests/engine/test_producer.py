@@ -85,10 +85,9 @@ def test_queue_is_full(my_producer: Producer, sqlite_db_session, my_job: StreamJ
     )
 
     my_producer.queue.put(
-        source_records=source_iteration.records,
+        source_iteration=source_iteration,
         iteration=cursor.iteration,
         extracted_at=datetime.now(),
-        pagination=source_iteration.next_pagination,
     )
 
     cursor.update_state(
@@ -102,10 +101,9 @@ def test_queue_is_full(my_producer: Producer, sqlite_db_session, my_job: StreamJ
 
     for i in range(1000):
         my_producer.queue.put(
-            source_records=source_iteration.records,
+            source_iteration=source_iteration,
             iteration=cursor.iteration,
             extracted_at=datetime.now(),
-            pagination=source_iteration.next_pagination,
         )
         cursor.update_state(
             pagination_dict=source_iteration.next_pagination, nb_records_fetched=len(source_iteration.records)

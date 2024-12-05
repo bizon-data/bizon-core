@@ -2,22 +2,19 @@ import io
 import json
 import os
 import tempfile
+import traceback
 from typing import List, Tuple
 from uuid import uuid4
 
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
+import polars as pl
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference, TimePartitioning
 from loguru import logger
-from pytz import UTC
 
 from bizon.common.models import SyncMetadata
 from bizon.destinations.config import NormalizationType
 from bizon.destinations.destination import AbstractDestination
-from bizon.destinations.models import DestinationRecord
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.source.config import SourceSyncModes
 
@@ -62,7 +59,7 @@ class BigQueryDestination(AbstractDestination):
         elif self.sync_metadata.sync_mode == SourceSyncModes.STREAM:
             return f"{self.table_id}"
 
-    def get_bigquery_schema(self, destination_records: List[DestinationRecord]) -> List[bigquery.SchemaField]:
+    def get_bigquery_schema(self, df_destination_records: pl.DataFrame) -> List[bigquery.SchemaField]:
 
         # we keep raw data in the column source_data
         if self.config.normalization.type == NormalizationType.NONE:
@@ -77,26 +74,13 @@ class BigQueryDestination(AbstractDestination):
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
             ]
 
-        elif self.config.normalization.type == NormalizationType.DEBEZIUM:
-            assert (
-                "_bizon_message_key" in destination_records[0].source_data
-            ), "Debezium records must have a '_bizon_message_key' key"
-            message_keys = json.loads(destination_records[0].source_data["_bizon_message_key"])
-            return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in message_keys] + [
-                bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
-                bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField(
-                    "_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED", default_value_expression="CURRENT_TIMESTAMP()"
-                ),
-                bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
-            ]
-
         # If normalization is tabular, we parse key / value pairs to columns
         elif self.config.normalization.type == NormalizationType.TABULAR:
-            first_record_keys = destination_records[0].source_data.keys()
-            return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in first_record_keys] + [
+
+            # We use the first record to infer the schema of tabular data (key / value pairs)
+            source_data_keys = list(json.loads(df_destination_records["source_data"][0]).keys())
+
+            return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in source_data_keys] + [
                 bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
@@ -107,58 +91,6 @@ class BigQueryDestination(AbstractDestination):
             ]
 
         raise NotImplementedError(f"Normalization type {self.config.normalization.type} is not supported")
-
-    def get_batch_records_as_df(self, destination_records: List[DestinationRecord]) -> pd.DataFrame:
-
-        # We keep raw data in a column -> convert the SourceRecord to a DestinationRecord
-        if self.config.normalization.type == NormalizationType.NONE:
-            df = pd.DataFrame([record.to_dict_raw_json_data(parquet=True) for record in destination_records])
-            df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
-
-        # If normalization is tabular, we can just convert the data to a DataFrame parsing first-level keys
-        elif self.config.normalization.type == NormalizationType.TABULAR:
-            list_data_dict = [record.source_data for record in destination_records]
-            df = pd.DataFrame(list_data_dict).astype(str)
-            df["_bizon_id"] = [uuid4().hex for _ in range(len(destination_records))]
-
-            df["_bizon_extracted_at"] = [
-                int(record.source_timestamp.timestamp() * 1_000_000) for record in destination_records
-            ]
-
-            df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
-
-            df["_source_record_id"] = [record.source_record_id for record in destination_records]
-
-            # We need to convert the source datetime to a int timestamp
-            df["_source_timestamp"] = [
-                int(record.source_timestamp.timestamp() * 1_000_000) for record in destination_records
-            ]
-
-        elif self.config.normalization.type == NormalizationType.DEBEZIUM:
-            df = pd.DataFrame([record.to_dict_debezium(parquet=True) for record in destination_records])
-            df["_bizon_loaded_at"] = pd.Timestamp.now(tz=UTC)
-
-        else:
-            raise NotImplementedError(f"Normalization type {self.config.normalization.type} is not supported")
-
-        return df
-
-    def convert_and_upload_to_buffer(self, destination_records: List[DestinationRecord]):
-
-        df = self.get_batch_records_as_df(destination_records)
-
-        # Convert DataFrame to Parquet in-memory
-        if self.buffer_format == "parquet":
-            table = pa.Table.from_pandas(df)
-            buffer = io.BytesIO()
-            pq.write_table(table, buffer)
-            buffer.seek(0)
-
-            # Upload the Parquet file to GCS
-            file_name = f"{self.sync_metadata.source_name}/{self.sync_metadata.stream_name}/{str(uuid4())}.parquet"
-            blob = self.buffer_bucket.blob(file_name)
-            blob.upload_from_file(buffer, content_type="application/octet-stream")
-            return file_name
 
     def check_connection(self) -> bool:
         dataset_ref = DatasetReference(self.project_id, self.dataset_id)
@@ -179,7 +111,25 @@ class BigQueryDestination(AbstractDestination):
     # https://cloud.google.com/python/docs/reference/storage/latest/retry_timeout
     # https://cloud.google.com/python/docs/reference/bigquery/latest/google.cloud.bigquery.dbapi.DataError
 
-    def load_to_bigquery(self, gcs_file: str, destination_records: List[DestinationRecord]):
+    def convert_and_upload_to_buffer(self, df_destination_records: pl.DataFrame) -> str:
+
+        if self.buffer_format == "parquet":
+
+            # Upload the Parquet file to GCS
+            file_name = f"{self.sync_metadata.source_name}/{self.sync_metadata.stream_name}/{str(uuid4())}.parquet"
+
+            with io.BytesIO() as stream:
+                df_destination_records.write_parquet(stream)
+                stream.seek(0)
+
+                blob = self.buffer_bucket.blob(file_name)
+                blob.upload_from_file(stream, content_type="application/octet-stream")
+
+            return file_name
+
+        raise NotImplementedError(f"Buffer format {self.buffer_format} is not supported")
+
+    def load_to_bigquery(self, gcs_file: str, df_destination_records: pl.DataFrame):
 
         # We always partition by the loaded_at field
         time_partitioning = TimePartitioning(field="_bizon_loaded_at", type_=self.config.time_partitioning)
@@ -187,34 +137,41 @@ class BigQueryDestination(AbstractDestination):
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-            schema=self.get_bigquery_schema(destination_records=destination_records),
+            schema=self.get_bigquery_schema(df_destination_records=df_destination_records),
             time_partitioning=time_partitioning,
         )
-
-        if self.config.normalization.type == NormalizationType.DEBEZIUM:
-            job_config.clustering_fields = list(
-                json.loads(destination_records[0].source_data["_bizon_message_key"]).keys()
-            )
 
         load_job = self.bq_client.load_table_from_uri(
             f"gs://{self.buffer_bucket_name}/{gcs_file}", self.temp_table_id, job_config=job_config
         )
+        result = load_job.result()  # Waits for the job to complete
+        assert result.state == "DONE", f"Job failed with state {result.state} with error {result.error_result}"
 
-        load_job.result()
+    def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, str]:
 
-    def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, str]:
+        # Rename fields to match BigQuery schema
+        df_destination_records = df_destination_records.rename(
+            {
+                # Bizon fields
+                "bizon_extracted_at": "_bizon_extracted_at",
+                "bizon_id": "_bizon_id",
+                "bizon_loaded_at": "_bizon_loaded_at",
+                # Source fields
+                "source_record_id": "_source_record_id",
+                "source_timestamp": "_source_timestamp",
+                "source_data": "_source_data",
+            },
+        )
 
-        # Here we can check if these IDs are already present in BigQuery
-        # Using SourceRecord.id values
-
-        gs_file_name = self.convert_and_upload_to_buffer(destination_records=destination_records)
+        gs_file_name = self.convert_and_upload_to_buffer(df_destination_records=df_destination_records)
 
         try:
-            self.load_to_bigquery(gs_file_name, destination_records=destination_records)
+            self.load_to_bigquery(gcs_file=gs_file_name, df_destination_records=df_destination_records)
             self.cleanup(gs_file_name)
         except Exception as e:
             self.cleanup(gs_file_name)
             logger.error(f"Error loading data to BigQuery: {e}")
+            logger.error(traceback.format_exc())
             return False, str(e)
         return True, ""
 

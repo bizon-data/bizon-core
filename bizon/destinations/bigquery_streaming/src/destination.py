@@ -1,22 +1,22 @@
-import json
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Tuple
+from typing import List, Tuple, Type
 
+import polars as pl
 from google.api_core.exceptions import NotFound
-from google.cloud import bigquery, bigquery_storage_v1, storage
+from google.cloud import bigquery, bigquery_storage_v1
 from google.cloud.bigquery import DatasetReference, TimePartitioning
 from google.cloud.bigquery_storage_v1.types import (
     AppendRowsRequest,
     ProtoRows,
     ProtoSchema,
 )
+from google.protobuf.message import Message
 
 from bizon.common.models import SyncMetadata
 from bizon.destinations.config import NormalizationType
 from bizon.destinations.destination import AbstractDestination
-from bizon.destinations.models import DestinationRecord
 from bizon.engine.backend.backend import AbstractBackend
 
 from .config import BigQueryStreamingConfigDetails
@@ -38,7 +38,6 @@ class BigQueryStreamingDestination(AbstractDestination):
         self.project_id = config.project_id
         self.bq_client = bigquery.Client(project=self.project_id)
         self.bq_storage_client = bigquery_storage_v1.BigQueryWriteClient()
-        self.gcs_client = storage.Client(project=self.project_id)
         self.dataset_id = config.dataset_id
         self.dataset_location = config.dataset_location
         self.bq_max_rows_per_request = config.bq_max_rows_per_request
@@ -48,7 +47,7 @@ class BigQueryStreamingDestination(AbstractDestination):
         tabled_id = self.config.table_id or f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
         return f"{self.project_id}.{self.dataset_id}.{tabled_id}"
 
-    def get_bigquery_schema(self, destination_records: List[DestinationRecord]) -> List[bigquery.SchemaField]:
+    def get_bigquery_schema(self) -> List[bigquery.SchemaField]:
 
         # we keep raw data in the column source_data
         if self.config.normalization.type == NormalizationType.NONE:
@@ -56,35 +55,6 @@ class BigQueryStreamingDestination(AbstractDestination):
                 bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
-                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField(
-                    "_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED", default_value_expression="CURRENT_TIMESTAMP()"
-                ),
-                bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
-            ]
-
-        elif self.config.normalization.type == NormalizationType.DEBEZIUM:
-            assert (
-                "_bizon_message_key" in destination_records[0].source_data
-            ), "Debezium records must have a '_bizon_message_key' key"
-            message_keys = json.loads(destination_records[0].source_data["_bizon_message_key"])
-            return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in message_keys] + [
-                bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
-                bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
-                bigquery.SchemaField(
-                    "_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED", default_value_expression="CURRENT_TIMESTAMP()"
-                ),
-                bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
-            ]
-
-        # If normalization is tabular, we parse key / value pairs to columns
-        elif self.config.normalization.type == NormalizationType.TABULAR:
-            first_record_keys = destination_records[0].source_data.keys()
-            return [bigquery.SchemaField(key, "STRING", mode="NULLABLE") for key in first_record_keys] + [
-                bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
                 bigquery.SchemaField(
                     "_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED", default_value_expression="CURRENT_TIMESTAMP()"
@@ -107,7 +77,7 @@ class BigQueryStreamingDestination(AbstractDestination):
 
     def append_rows_to_stream(
         self,
-        write_client: bigquery_storage_v1.BigQueryWriteClient(),
+        write_client: bigquery_storage_v1.BigQueryWriteClient,
         stream_name: str,
         proto_schema: ProtoSchema,
         serialized_rows: List[bytes],
@@ -122,20 +92,27 @@ class BigQueryStreamingDestination(AbstractDestination):
         response = write_client.append_rows(iter([request]))
         return response.code().name
 
-    def load_to_bigquery_via_streaming(self, destination_records: List[DestinationRecord]) -> str:
+    @staticmethod
+    def to_protobuf_serialization(TableRowClass: Type[Message], row: dict) -> bytes:
+        """Convert a row to a protobuf serialization"""
+        record = TableRowClass()
+        record._bizon_id = row["bizon_id"]
+        record._bizon_extracted_at = row["bizon_extracted_at"].strftime("%Y-%m-%d %H:%M:%S.%f")
+        record._bizon_loaded_at = row["bizon_loaded_at"].strftime("%Y-%m-%d %H:%M:%S.%f")
+        record._source_record_id = row["source_record_id"]
+        record._source_timestamp = row["source_timestamp"].strftime("%Y-%m-%d %H:%M:%S.%f")
+        record._source_data = row["source_data"]
+        return record.SerializeToString()
+
+    def load_to_bigquery_via_streaming(self, df_destination_records: pl.DataFrame) -> str:
+        # TODO: for now no clustering keys
         clustering_keys = []
 
-        if self.config.normalization.type == NormalizationType.DEBEZIUM:
-            clustering_keys = list(json.loads(destination_records[0].source_data["_bizon_message_key"]).keys())
-
         # Create table if it doesnt exist
-        schema = self.get_bigquery_schema(destination_records=destination_records)
+        schema = self.get_bigquery_schema()
         table = bigquery.Table(self.table_id, schema=schema)
         time_partitioning = TimePartitioning(field="_bizon_loaded_at", type_=self.config.time_partitioning)
         table.time_partitioning = time_partitioning
-
-        if clustering_keys:
-            table.clustering_fields = clustering_keys
 
         table = self.bq_client.create_table(table, exists_ok=True)
 
@@ -149,11 +126,10 @@ class BigQueryStreamingDestination(AbstractDestination):
         proto_schema, TableRow = get_proto_schema_and_class(clustering_keys)
 
         serialized_rows = [
-            record.to_protobuf_serialization(
-                TableRow, debezium=self.config.normalization.type == NormalizationType.DEBEZIUM
-            )
-            for record in destination_records
+            self.to_protobuf_serialization(TableRowClass=TableRow, row=row)
+            for row in df_destination_records.iter_rows(named=True)
         ]
+
         results = []
         with ThreadPoolExecutor() as executor:
             futures = [
@@ -165,8 +141,8 @@ class BigQueryStreamingDestination(AbstractDestination):
 
         assert all([r == "OK" for r in results]) is True, "Failed to append rows to stream"
 
-    def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, str]:
-        self.load_to_bigquery_via_streaming(destination_records=destination_records)
+    def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, str]:
+        self.load_to_bigquery_via_streaming(df_destination_records=df_destination_records)
         return True, ""
 
     def batch(self, iterable):

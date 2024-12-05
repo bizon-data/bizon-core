@@ -12,6 +12,7 @@ from bizon.engine.queue.queue import (
     AbstractQueueConsumer,
     QueueMessage,
 )
+from bizon.source.models import SourceIteration
 
 from .config import PythonQueueConfigDetails
 from .consumer import PythonQueueConsumer
@@ -35,7 +36,7 @@ class PythonQueue(AbstractQueue):
 
     def put_queue_message(self, queue_message: QueueMessage):
         if not self.queue.full():
-            self.queue.put(queue_message.model_dump())
+            self.queue.put(queue_message)
             logger.debug(f"Putting data from iteration {queue_message.iteration} items in queue)")
         else:
             logger.warning("Queue is full, waiting for consumer to consume data")
@@ -44,9 +45,8 @@ class PythonQueue(AbstractQueue):
 
     def get(self) -> QueueMessage:
         if not self.queue.empty():
-            data = self.queue.get()
-            queue_message = QueueMessage.model_validate(data)
-            logger.debug(f"Got {len(queue_message.source_records)} records from queue")
+            queue_message: QueueMessage = self.queue.get()
+            logger.debug(f"Got {len(queue_message.df_source_records.height)} records from queue")
             return queue_message
         else:
             logger.debug("Queue is empty, waiting for producer to produce data")
@@ -59,6 +59,10 @@ class PythonQueue(AbstractQueue):
         return None
 
     def terminate(self, iteration: int) -> bool:
-        self.put(source_records=[], iteration=iteration, signal=QUEUE_TERMINATION)
+        self.put(
+            source_iteration=SourceIteration(next_pagination={}, records=[]),
+            iteration=iteration,
+            signal=QUEUE_TERMINATION,
+        )
         logger.info("Sent termination signal to destination.")
         return True

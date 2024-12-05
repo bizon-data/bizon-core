@@ -102,7 +102,7 @@ class AbstractBackend(ABC):
         pass
 
     @abstractmethod
-    def get_last_cursor_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[SourceCursor]:
+    def get_last_cursor_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[DestinationCursor]:
         """Get the last cursor we should start source from for the given job id"""
         pass
 

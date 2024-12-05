@@ -1,10 +1,10 @@
 import logging
 import os
 import random
-import uuid
 from datetime import datetime
 from random import randint
 
+import polars as pl
 import pytest
 from faker import Faker
 from google.cloud import bigquery
@@ -18,7 +18,7 @@ from bizon.destinations.bigquery.src.config import (
 from bizon.destinations.bigquery.src.destination import BigQueryDestination
 from bizon.destinations.config import DestinationTypes
 from bizon.destinations.destination import DestinationFactory
-from bizon.destinations.models import DestinationRecord
+from bizon.destinations.models import destination_record_schema
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +28,19 @@ TEST_PROJECT_ID = "my_project"
 TEST_TABLE_ID = "test_fake_records"
 TEST_DATASET_ID = "bizon_test"
 TEST_BUFFER_BUCKET = "bizon-buffer"
+
+
+df_destination_records = pl.DataFrame(
+    {
+        "bizon_id": ["id_1", "id_2"],
+        "bizon_extracted_at": [datetime(2024, 12, 5, 12, 0), datetime(2024, 12, 5, 13, 0)],
+        "bizon_loaded_at": [datetime(2024, 12, 5, 12, 30), datetime(2024, 12, 5, 13, 30)],
+        "source_record_id": ["record_1", "record_2"],
+        "source_timestamp": [datetime(2024, 12, 5, 11, 30), datetime(2024, 12, 5, 12, 30)],
+        "source_data": ["cookies", "cream"],
+    },
+    schema=destination_record_schema,
+)
 
 
 @pytest.fixture(scope="function")
@@ -79,19 +92,7 @@ def test_load_records_to_bigquery(my_backend_config, test_table, sync_metadata):
 
     assert isinstance(bq_destination, BigQueryDestination)
 
-    destination_records = [
-        DestinationRecord(
-            source_data=record,
-            bizon_id=str(uuid.uuid4()),
-            bizon_extracted_at=datetime.utcnow(),
-            bizon_loaded_at=datetime.utcnow(),
-            source_record_id=str(uuid.uuid4()),
-            source_timestamp=datetime.utcnow(),
-        )
-        for record in fake_records
-    ]
-
-    success, error_msg = bq_destination.write_records(destination_records)
+    success, error_msg = bq_destination.write_records(df_destination_records=df_destination_records)
 
     assert success is True
     assert error_msg == ""

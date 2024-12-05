@@ -1,13 +1,15 @@
+from datetime import datetime
 from tempfile import NamedTemporaryFile
 from uuid import uuid4
 
+import polars as pl
 import pytest
 import yaml
 
 from bizon.common.models import SyncMetadata
 from bizon.destinations.file.src.config import FileDestinationDetailsConfig
 from bizon.destinations.file.src.destination import FileDestination
-from bizon.destinations.models import DestinationRecord
+from bizon.destinations.models import destination_record_schema
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.models import JobStatus
 from bizon.engine.engine import RunnerFactory
@@ -84,6 +86,20 @@ def my_runner(my_backend) -> ThreadRunner:
     return runner
 
 
+# Create DataFrame with schema
+df_destination_records = pl.DataFrame(
+    {
+        "bizon_id": ["id_1", "id_2"],
+        "bizon_extracted_at": [datetime(2024, 12, 5, 12, 0), datetime(2024, 12, 5, 13, 0)],
+        "bizon_loaded_at": [datetime(2024, 12, 5, 12, 30), datetime(2024, 12, 5, 13, 30)],
+        "source_record_id": ["record_1", "record_2"],
+        "source_timestamp": [datetime(2024, 12, 5, 11, 30), datetime(2024, 12, 5, 12, 30)],
+        "source_data": ["cookies", "cream"],
+    },
+    schema=destination_record_schema,
+)
+
+
 def test_e2e_dummy_to_file_recovery(file_destination, my_sqlite_backend, sqlite_db_session):
 
     N_ITERATION = 2
@@ -92,24 +108,7 @@ def test_e2e_dummy_to_file_recovery(file_destination, my_sqlite_backend, sqlite_
     # Simulate source records sent to logger
     file_destination.buffer.buffer_size = 0  # Deactivate buffer to write to destination
     file_destination.write_or_buffer_records(
-        destination_records=[
-            DestinationRecord(
-                bizon_id="fjdjfkdfj",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="3",
-                source_timestamp="2021-07-01T00:00:00Z",
-                source_data={"name": "John", "age": 14},
-            ),
-            DestinationRecord(
-                bizon_id="fjdj9787j",
-                bizon_extracted_at="2021-07-01T00:00:00Z",
-                bizon_loaded_at="2021-07-01T00:00:00Z",
-                source_record_id="6",
-                source_timestamp="2021-07-02T00:00:00Z",
-                source_data={"name": "David", "age": 10},
-            ),
-        ],
+        df_destination_records=df_destination_records,
         iteration=N_ITERATION,
         session=sqlite_db_session,
         pagination={"cursor": CURSOR},  # Nth iteration to write to destination from dummy source

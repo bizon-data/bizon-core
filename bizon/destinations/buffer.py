@@ -1,8 +1,11 @@
-import sys
 from datetime import datetime
 from typing import List
 
-from bizon.destinations.models import DestinationRecord
+from loguru import logger
+from polars import DataFrame
+from pytz import UTC
+
+from .models import destination_record_schema
 
 
 class DestinationBuffer:
@@ -10,15 +13,15 @@ class DestinationBuffer:
     def __init__(self, buffer_size: int, buffer_flush_timeout: int) -> None:
         self.buffer_size = buffer_size * 1024 * 1024  # Convert to bytes
         self.buffer_flush_timeout = buffer_flush_timeout
-        self.records: List[DestinationRecord] = []
+        self.df_destination_records: DataFrame = DataFrame(schema=destination_record_schema)
         self._iterations: List[int] = []
         self.pagination = {}
-        self.modified_at: List[datetime] = [datetime.utcnow()]
+        self.modified_at: List[datetime] = [datetime.now(tz=UTC)]
 
     @property
     def current_size(self) -> int:
         """Return buffer size"""
-        return sys.getsizeof(self.records)
+        return self.df_destination_records.estimated_size(unit="b")
 
     @property
     def buffer_free_space_pct(self) -> float:
@@ -61,16 +64,20 @@ class DestinationBuffer:
 
     def flush(self):
         """Flush buffer"""
-        self.records = []
+        self.df_destination_records = DataFrame(schema=destination_record_schema)
         self._iterations = []
         self.pagination = {}
         self.modified_at = []
 
     def add_source_iteration_records_to_buffer(
-        self, iteration: int, records: List[DestinationRecord], pagination: dict = None
+        self, iteration: int, df_destination_records: DataFrame, pagination: dict = None
     ):
         """Add records for the given iteration to buffer"""
-        self.records.extend(records)
+        self.df_destination_records.vstack(df_destination_records, in_place=True)
         self._iterations.append(iteration)
         self.pagination = pagination
-        self.modified_at.append(datetime.utcnow())
+        self.modified_at.append(datetime.now(tz=UTC))
+
+        logger.info(
+            f"Added {df_destination_records.height} records to buffer for iteration {iteration} - {self.df_destination_records.estimated_size(unit='mb')} MB"
+        )

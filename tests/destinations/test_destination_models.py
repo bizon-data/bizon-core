@@ -1,44 +1,26 @@
-from bizon.destinations.models import DestinationRecord
-from bizon.source.models import SourceRecord
+from datetime import datetime
+
+import polars as pl
+from pytz import UTC
+
+from bizon.destinations.models import transform_to_df_destination_records
+from bizon.source.models import source_record_schema
+
+df_source_records = pl.DataFrame(
+    {
+        "id": ["record_1", "record_2"],
+        "data": ['{"key": "value1"}', '{"key": "value2"}'],
+        "timestamp": [datetime(2024, 12, 5, 11, 30, tzinfo=UTC), datetime(2024, 12, 5, 12, 30, tzinfo=UTC)],
+    },
+    schema=source_record_schema,
+)
 
 
 def test_destination_record_from_source_record():
-    source_record = SourceRecord(
-        id="id",
-        data={"key": "value"},
+
+    destination_source_records = transform_to_df_destination_records(
+        df_source_records=df_source_records,
+        extracted_at=datetime(2024, 12, 5, 12, 0),
     )
-
-    destination_record = DestinationRecord.from_source_record(
-        source_record,
-        extracted_at="2021-07-01T00:00:00Z",
-    )
-
-    assert destination_record.bizon_id
-    assert destination_record.bizon_loaded_at
-    assert destination_record.source_data == {"key": "value"}
-    assert destination_record.source_record_id == source_record.id
-
-
-def test_destination_record_to_raw_json():
-    source_record = SourceRecord(
-        id="id",
-        data={"key": "value"},
-    )
-
-    destination_record = DestinationRecord.from_source_record(
-        source_record,
-        extracted_at="2021-07-01T00:00:00Z",
-    )
-
-    raw_record = destination_record.to_dict_raw_json_data()
-
-    expected_keys = [
-        "_bizon_extracted_at",
-        "_bizon_loaded_at",
-        "_source_record_id",
-        "_source_timestamp",
-        "_source_data",
-        "_bizon_id",
-    ]
-
-    assert set(raw_record.keys()) == set(expected_keys)
+    assert destination_source_records["source_record_id"].to_list() == ["record_1", "record_2"]
+    assert destination_source_records["source_data"].to_list() == ['{"key": "value1"}', '{"key": "value2"}']

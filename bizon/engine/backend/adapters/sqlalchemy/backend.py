@@ -341,7 +341,7 @@ class SQLAlchemyBackend(AbstractBackend):
         logger.warning(f"No cursor found for id={cursor_id}")
         return None
 
-    def get_last_cursor_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[SourceCursor]:
+    def get_last_cursor_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[DestinationCursor]:
         """Get the last cursor we should start source from for the given job id"""
 
         smt = (

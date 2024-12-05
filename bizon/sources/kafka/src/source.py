@@ -2,6 +2,7 @@ import io
 import json
 import logging
 import struct
+import traceback
 from datetime import datetime, timezone
 from enum import Enum
 from functools import lru_cache
@@ -9,9 +10,10 @@ from typing import Any, List, Literal, Mapping, Optional, Tuple
 
 import fastavro
 from avro.schema import Schema, parse
-from confluent_kafka import Consumer, KafkaException, TopicPartition
+from confluent_kafka import Consumer, KafkaError, KafkaException, TopicPartition
 from loguru import logger
 from pydantic import BaseModel, Field
+from requests.exceptions import HTTPError
 
 from bizon.source.auth.config import AuthConfig, AuthType
 from bizon.source.config import SourceConfig
@@ -20,6 +22,10 @@ from bizon.source.source import AbstractSource
 
 silent_logger = logging.getLogger()
 silent_logger.addHandler(logging.StreamHandler())
+
+
+class ApicurioSchemaNotFound(Exception):
+    pass
 
 
 class SchemaRegistryType(str, Enum):
@@ -44,11 +50,14 @@ class KafkaAuthConfig(AuthConfig):
 class KafkaSourceConfig(SourceConfig):
     topic: str = Field(..., description="Kafka topic")
     bootstrap_server: str = Field(..., description="Kafka bootstrap servers")
+
+    # Kafka consumer configuration
     batch_size: int = Field(100, description="Kafka batch size")
     consumer_timeout: int = Field(10, description="Kafka consumer timeout in seconds")
-    group_id: str = Field("bizon", description="Kafka group id")
+    fetch_max_size: int = Field(500000000, description="Kafka fetch max size in bytes")
+    receive_message_max_size: int = Field(1000000000, description="Kafka receive message max size in bytes")
 
-    max_consumer_threads: int = Field(16, description="Maximum number of threads for the consumer")
+    group_id: str = Field("bizon", description="Kafka group id")
 
     nb_bytes_schema_id: Literal[4, 8] = Field(
         4, description="Number of bytes for the schema id. 4 is the default for majority of the cases"
@@ -98,6 +107,9 @@ class KafkaSource(AbstractSource):
             "session.timeout.ms": 45000,
             "auto.offset.reset": "earliest",
             "enable.auto.commit": False,  # Turn off auto-commit for manual offset handling
+            # Increase the max fetch / receive message size
+            "fetch.max.bytes": self.config.fetch_max_size,
+            "receive.message.max.bytes": self.config.receive_message_max_size,
         }
 
         # Consumer instance
@@ -169,18 +181,26 @@ class KafkaSource(AbstractSource):
         """Get the schema from the Apicurio schema registry"""
 
         if self.config.authentication.schema_registry_type == SchemaRegistryType.APICURIO:
-            schema = self.session.get(
-                f"{self.config.authentication.schema_registry_url}/apis/registry/v2/ids/globalIds/{global_id}",
-                auth=(
-                    self.config.authentication.schema_registry_username,
-                    self.config.authentication.schema_registry_password,
-                ),
-            ).json()
-            return schema
 
-        raise NotImplementedError(
-            f"Schema registry of type {self.config.authentication.schema_registry_type} not supported"
-        )
+            try:
+                response = self.session.get(
+                    f"{self.config.authentication.schema_registry_url}/apis/registry/v2/ids/globalIds/{global_id}",
+                    auth=(
+                        self.config.authentication.schema_registry_username,
+                        self.config.authentication.schema_registry_password,
+                    ),
+                )
+
+            except HTTPError as e:
+                if e.response.status_code == 404:
+                    raise ApicurioSchemaNotFound(f"Schema with global id {global_id} not found")
+
+            return response.json()
+
+        else:
+            raise NotImplementedError(
+                f"Schema registry of type {self.config.authentication.schema_registry_type} not supported"
+            )
 
     def get_parsed_avro_schema(self, global_id: int) -> Schema:
         """Parse the schema from the Apicurio schema registry"""
@@ -200,6 +220,16 @@ class KafkaSource(AbstractSource):
         global_id = self.parse_global_id_from_serialized_message(header_message)
         return self.get_parsed_avro_schema(global_id).to_json()
 
+    def get_header_bytes(self, message: bytes) -> bytes:
+        if self.config.nb_bytes_schema_id == 8:
+            return message[:9]
+
+        elif self.config.nb_bytes_schema_id == 4:
+            return message[1:5]
+
+        else:
+            raise ValueError(f"Number of bytes for schema id {self.config.nb_bytes_schema_id} not supported")
+
     def parse_encoded_messages(self, encoded_messages: list) -> List[SourceRecord]:
 
         records = []
@@ -208,21 +238,53 @@ class KafkaSource(AbstractSource):
         source_timestamp = datetime.now(tz=timezone.utc)
 
         for message in encoded_messages:
+
+            if message.error():
+                logger.error(
+                    f"Error while consuming message for partition {message.partition()} and offset {message.offset()}: {message.error()}"
+                )
+
+                # Skip the message if it's too large
+                if message.error() == KafkaError.MSG_SIZE_TOO_LARGE:
+                    logger.error(
+                        f"Message for partition {message.partition()} and offset {message.offset()} and topic {self.config.topic} is too large."
+                    )
+                    # Define what we want to do (?)
+                    # self.topic_offsets.set_partition_offset(message.partition(), message.offset() + 1)
+
+                raise KafkaException(message.error())
+
             if not message.value():
                 logger.debug(
                     f"Message for partition {message.partition()} and offset {message.offset()} and topic {self.config.topic} is empty, skipping."
                 )
                 continue
 
+            # Get the schema for the message
             try:
-                if self.config.nb_bytes_schema_id == 8:
-                    schema = self.get_message_schema(message.value()[:9])
-                elif self.config.nb_bytes_schema_id == 4:
-                    schema = self.get_message_schema(message.value()[1:5])
-                else:
-                    raise ValueError(f"Number of bytes for schema id {self.config.nb_bytes_schema_id} not supported")
+                header_message_bytes = self.get_header_bytes(message.value())
+                schema = self.get_message_schema(header_message_bytes)
 
+            except ApicurioSchemaNotFound as e:
+                message_schema_id = self.parse_global_id_from_serialized_message(header_message_bytes)
+                logger.error(
+                    (
+                        f"Message on partition {message.partition()} at offset {message.offset()} has a  SchemaID of {message_schema_id} which is not found in Registry."
+                        f"message value: {message.value()}."
+                    )
+                )
+                logger.error(traceback.format_exc())
+                raise e
+
+            except Exception as e:
+                logger.error(traceback.format_exc())
+                raise e
+
+            # Decode the message
+            try:
                 data = self.decode(message.value(), schema)
+
+                # Add the message key to the data
                 data["_bizon_message_key"] = message.key().decode("utf-8")
 
                 # Get the source timestamp
@@ -243,9 +305,20 @@ class KafkaSource(AbstractSource):
 
             except Exception as e:
                 logger.error(
-                    f"Error while decoding message for partition {message.partition()}: {e} at offset {message.offset()}"
+                    (
+                        f"Error while decoding message for partition {message.partition()}: {e} at offset {message.offset()} "
+                        f"with value: {message.value()} and key: {message.key()}"
+                    )
                 )
-                continue
+                # Try to parse error message from the message
+                try:
+                    message_raw_text = message.value().decode("utf-8")
+                    logger.error(f"Parsed Kafka value: {message_raw_text}")
+                except UnicodeDecodeError:
+                    logger.error("Message is not a valid UTF-8 string")
+
+                logger.error(traceback.format_exc())
+                raise e
 
         return records
 

@@ -1,10 +1,10 @@
-from typing import List, Tuple
+from typing import Tuple
 
+import polars as pl
 from loguru import logger
 
 from bizon.common.models import SyncMetadata
 from bizon.destinations.destination import AbstractDestination
-from bizon.destinations.models import DestinationRecord
 from bizon.engine.backend.backend import AbstractBackend
 
 from .config import FileDestinationDetailsConfig
@@ -22,8 +22,6 @@ class FileDestination(AbstractDestination):
     def delete_table(self) -> bool:
         return True
 
-    def write_records(self, destination_records: List[DestinationRecord]) -> Tuple[bool, str]:
-        with open(self.config.filepath, "a") as f:
-            for record in destination_records:
-                f.write(record.model_dump_json() + "\n")
+    def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, str]:
+        df_destination_records.write_ndjson(self.config.filepath)
         return True, ""

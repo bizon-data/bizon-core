@@ -10,11 +10,6 @@ from bizon.destinations.config import (
 )
 
 
-class GCSBufferFormat(str, Enum):
-    PARQUET = "parquet"
-    CSV = "csv"
-
-
 class TimePartitioning(str, Enum):
     DAY = "DAY"
     HOUR = "HOUR"
