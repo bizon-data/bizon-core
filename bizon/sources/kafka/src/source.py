@@ -3,16 +3,17 @@ import json
 import logging
 import struct
 import traceback
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from functools import lru_cache
-from typing import Any, List, Literal, Mapping, Optional, Tuple
+from typing import Any, List, Literal, Mapping, Tuple
 
 import fastavro
 from avro.schema import Schema, parse
-from confluent_kafka import Consumer, KafkaError, KafkaException, TopicPartition
+from confluent_kafka import Consumer, KafkaException, TopicPartition
 from loguru import logger
 from pydantic import BaseModel, Field
+from pytz import UTC
 from requests.exceptions import HTTPError
 
 from bizon.source.auth.config import AuthConfig, AuthType
@@ -30,7 +31,6 @@ class ApicurioSchemaNotFound(Exception):
 
 class SchemaRegistryType(str, Enum):
     APICURIO = "apicurio"
-    CONFLUENT = "confluent"
 
 
 class KafkaAuthConfig(AuthConfig):
@@ -47,22 +47,40 @@ class KafkaAuthConfig(AuthConfig):
     schema_registry_password: str = Field(default="", description="Schema registry password")
 
 
+def default_kafka_consumer_config():
+    return {
+        "auto.offset.reset": "earliest",
+        "enable.auto.commit": False,  # Turn off auto-commit for manual offset handling
+        "session.timeout.ms": 45000,
+        "security.protocol": "SASL_SSL",
+    }
+
+
 class KafkaSourceConfig(SourceConfig):
+
+    # Mandatory Kafka configuration
     topic: str = Field(..., description="Kafka topic")
-    bootstrap_server: str = Field(..., description="Kafka bootstrap servers")
+    bootstrap_servers: str = Field(..., description="Kafka bootstrap servers")
+    group_id: str = Field(default="bizon", description="Kafka group id")
+
+    skip_message_empty_value: bool = Field(
+        default=True, description="Skip messages with empty value (tombstone messages)"
+    )
 
     # Kafka consumer configuration
-    batch_size: int = Field(100, description="Kafka batch size")
-    consumer_timeout: int = Field(10, description="Kafka consumer timeout in seconds")
-    fetch_max_size: int = Field(500000000, description="Kafka fetch max size in bytes")
-    receive_message_max_size: int = Field(1000000000, description="Kafka receive message max size in bytes")
+    batch_size: int = Field(100, description="Kafka batch size, number of messages to fetch at once.")
+    consumer_timeout: int = Field(10, description="Kafka consumer timeout in seconds, before returning batch.")
 
-    group_id: str = Field("bizon", description="Kafka group id")
-
-    nb_bytes_schema_id: Literal[4, 8] = Field(
-        4, description="Number of bytes for the schema id. 4 is the default for majority of the cases"
+    consumer_config: Mapping[str, Any] = Field(
+        default_factory=default_kafka_consumer_config,
+        description="Kafka consumer configuration, as described in the confluent-kafka-python documentation",
     )
-    timestamp_ms_name: Optional[str] = Field(default="", description="Name of the timestamp field in the Avro schema")
+
+    # Schema ID header configuration
+    nb_bytes_schema_id: Literal[4, 8] = Field(
+        description="Number of bytes encode SchemaID in Kafka message. Standard is 4.",
+        default=4,
+    )
 
     authentication: KafkaAuthConfig = Field(..., description="Authentication configuration")
 
@@ -95,28 +113,18 @@ class KafkaSource(AbstractSource):
 
         self.config: KafkaSourceConfig = config
 
-        self.parse_timestamp: bool = self.config.timestamp_ms_name != ""
+        # Kafka consumer configuration
+        if self.config.authentication.type == AuthType.BASIC:
+            self.config.consumer_config["sasl.mechanisms"] = "PLAIN"
+            self.config.consumer_config["sasl.username"] = self.config.authentication.params.username
+            self.config.consumer_config["sasl.password"] = self.config.authentication.params.password
 
-        self.kafka_consumer_conf = {
-            "bootstrap.servers": self.config.bootstrap_server,
-            "group.id": self.config.group_id,
-            "sasl.username": self.config.authentication.params.username,
-            "sasl.password": self.config.authentication.params.password,
-            "security.protocol": "SASL_SSL",
-            "sasl.mechanisms": "PLAIN",
-            "session.timeout.ms": 45000,
-            "auto.offset.reset": "earliest",
-            "enable.auto.commit": False,  # Turn off auto-commit for manual offset handling
-            # Increase the max fetch / receive message size
-            "fetch.max.bytes": self.config.fetch_max_size,
-            "receive.message.max.bytes": self.config.receive_message_max_size,
-        }
+        # Set the bootstrap servers and group id
+        self.config.consumer_config["group.id"] = self.config.group_id
+        self.config.consumer_config["bootstrap.servers"] = self.config.bootstrap_servers
 
         # Consumer instance
-        self.consumer = Consumer(self.kafka_consumer_conf, logger=silent_logger)
-
-        # Consumers for each worker thread
-        self.consumers_cached: Mapping[int, Consumer] = {}
+        self.consumer = Consumer(self.config.consumer_config, logger=silent_logger)
 
     @staticmethod
     def streams() -> List[str]:
@@ -234,29 +242,21 @@ class KafkaSource(AbstractSource):
 
         records = []
 
-        # Set the source timestamp to now, otherwise it will be overwritten by the message timestamp
-        source_timestamp = datetime.now(tz=timezone.utc)
-
         for message in encoded_messages:
 
             if message.error():
                 logger.error(
-                    f"Error while consuming message for partition {message.partition()} and offset {message.offset()}: {message.error()}"
-                )
-
-                # Skip the message if it's too large
-                if message.error() == KafkaError.MSG_SIZE_TOO_LARGE:
-                    logger.error(
-                        f"Message for partition {message.partition()} and offset {message.offset()} and topic {self.config.topic} is too large."
+                    (
+                        f"Error while consuming message for partition {message.partition()} and offset {message.offset()}: "
+                        f"{message.error()}"
                     )
-                    # Define what we want to do (?)
-                    # self.topic_offsets.set_partition_offset(message.partition(), message.offset() + 1)
-
+                )
                 raise KafkaException(message.error())
 
-            if not message.value():
+            # We skip tombstone messages
+            if self.config.skip_message_empty_value and not message.value():
                 logger.debug(
-                    f"Message for partition {message.partition()} and offset {message.offset()} and topic {self.config.topic} is empty, skipping."
+                    f"Message for partition {message.partition()} and offset {message.offset()} is empty, skipping."
                 )
                 continue
 
@@ -282,26 +282,25 @@ class KafkaSource(AbstractSource):
 
             # Decode the message
             try:
-                data = self.decode(message.value(), schema)
 
-                # Add the message key to the data
-                data["_bizon_message_key"] = message.key().decode("utf-8")
-
-                # Get the source timestamp
-                if self.parse_timestamp:
-                    source_timestamp = datetime.fromtimestamp(
-                        data[self.config.timestamp_ms_name] / 1000, tz=timezone.utc
-                    )
-
-                self.topic_offsets.set_partition_offset(message.partition(), message.offset() + 1)
+                data = {
+                    "offset": message.offset(),
+                    "partition": message.partition(),
+                    "timestamp": message.timestamp()[1],
+                    "value": self.decode(message.value(), schema),
+                    "key": message.key().decode("utf-8"),
+                }
 
                 records.append(
                     SourceRecord(
-                        id=f"part_{message.partition()}_offset_{message.offset()}",
-                        timestamp=source_timestamp,
+                        id=f"partition_{message.partition()}_offset_{message.offset()}",
+                        timestamp=datetime.fromtimestamp(message.timestamp()[1] / 1000, tz=UTC),
                         data=data,
                     )
                 )
+
+                # Update the offset for the partition
+                self.topic_offsets.set_partition_offset(message.partition(), message.offset() + 1)
 
             except Exception as e:
                 logger.error(
@@ -337,7 +336,7 @@ class KafkaSource(AbstractSource):
 
         t1 = datetime.now()
         encoded_messages = self.consumer.consume(self.config.batch_size, timeout=self.config.consumer_timeout)
-        logger.info(f"Read Kafka: {len(encoded_messages)} messages in {datetime.now() - t1}")
+        logger.info(f"Kafka consumer read : {len(encoded_messages)} messages in {datetime.now() - t1}")
 
         records = self.parse_encoded_messages(encoded_messages)
 

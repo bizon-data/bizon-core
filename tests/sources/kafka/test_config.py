@@ -10,7 +10,7 @@ def test_kafka_source_config():
         source_name="kafka",
         stream_name="topic",
         topic="cookie",
-        bootstrap_server="fdjvfv",
+        bootstrap_servers="fdjvfv",
         batch_size=87,
         consumer_timeout=56,
         authentication=KafkaAuthConfig(
@@ -20,7 +20,6 @@ def test_kafka_source_config():
     )
 
     assert conf.nb_bytes_schema_id == 4
-    assert conf.timestamp_ms_name == ""
 
 
 def test_kafka_source_config_timestamp_to_parse():
@@ -28,8 +27,7 @@ def test_kafka_source_config_timestamp_to_parse():
         source_name="kafka",
         stream_name="topic",
         topic="cookie",
-        bootstrap_server="fdjvfv",
-        timestamp_ms_name="timestamp",
+        bootstrap_servers="fdjvfv",
         batch_size=87,
         consumer_timeout=56,
         authentication=KafkaAuthConfig(
@@ -37,7 +35,7 @@ def test_kafka_source_config_timestamp_to_parse():
             params={"username": "user", "password": "password"},
         ),
     )
-    assert conf.timestamp_ms_name == "timestamp"
+    assert conf
 
 
 def test_kafka_source():
@@ -45,7 +43,7 @@ def test_kafka_source():
         source_name="kafka",
         stream_name="topic",
         topic="cookie",
-        bootstrap_server="fdjvfv",
+        bootstrap_servers="fdjvfv",
         batch_size=87,
         consumer_timeout=56,
         authentication=KafkaAuthConfig(
@@ -55,25 +53,4 @@ def test_kafka_source():
     )
 
     source = KafkaSource(conf)
-    assert source.parse_timestamp is False
-    del source
-
-
-def test_kafka_source_parse_timestamp():
-    conf = KafkaSourceConfig(
-        source_name="kafka",
-        stream_name="topic",
-        topic="cookie",
-        bootstrap_server="fdjvfv",
-        timestamp_ms_name="timestamp",
-        batch_size=87,
-        consumer_timeout=56,
-        authentication=KafkaAuthConfig(
-            type="basic",
-            params={"username": "user", "password": "password"},
-        ),
-    )
-
-    source = KafkaSource(conf)
-    assert source.parse_timestamp is True
     del source
