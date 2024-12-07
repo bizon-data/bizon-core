@@ -14,6 +14,7 @@ Extract and load your largest data streams with a framework you can trust for bi
     - `requests` for HTTP requests
     - `pyyaml` for configuration
     - `sqlalchemy` for database / warehouse connections
+    - `polars` for DataFrame manipulation
     - `pyarrow` for Parquet file format
 
 ## Installation
@@ -93,7 +94,8 @@ engine:
   queue:
     type: kafka
     config:
-      queue: bootstrap_server: localhost:9092 # Kafka:9092 & Redpanda: 19092
+      queue:
+        bootstrap_server: localhost:9092 # Kafka:9092 & Redpanda: 19092
 ```
 
 **RabbitMQ**

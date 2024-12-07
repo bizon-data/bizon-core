@@ -1,0 +1,22 @@
+name: dummy to bigquery
+
+source:
+  source_name: dummy
+  stream_name: creatures
+  authentication:
+    type: api_key
+    params:
+      token: dummy_key
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
+
+engine:
+  backend:
+    type: bigquery
+    config:
+      database: <project-id>
+      schema: <dataset-id>
+      syncCursorInDBEvery: 100

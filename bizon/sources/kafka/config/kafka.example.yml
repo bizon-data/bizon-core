@@ -1,38 +1,50 @@
+name: demo kafka to bigquery
+
 source:
   source_name: kafka
   stream_name: topic
 
-  # Sync mode: keep job to running
-  # So bizon continues to use latest destination cursor
-  sync_mode: stream
+  sync_mode: full_refresh
 
-  topic: <topic>
+  topic: my-topic
 
-  # Consumer configuration
-  batch_size: 5
-  consumer_timeout: 5
-  bootstrap_server: <my-server>:9092
+  nb_bytes_schema_id: 8
+
+  batch_size: 1000
+  consumer_timeout: 10
+  bootstrap_servers: <bootstrap-severs>:9092
+  group_id: <group-id>
 
   authentication:
     type: basic
-    params:
-      username: <username>
-      password: <password>
 
-    # Apicurio schema registry authentication
     schema_registry_url: <apicurio-url>
     schema_registry_username: <username>
     schema_registry_password: <password>
 
-destination:
-  name: file
-  config:
-    filepath: test_kafka.jsonl
+    params:
+      username: <kafka-username>
+      password: <kafka-password>
 
-engine:
-  backend:
-    type: bigquery
-    config:
-      database: <database>
-      schema: bizon_test
-      syncCursorInDBEvery: 100
+destination:
+  name: bigquery_streaming
+  config:
+    # buffer_size: 400
+    # buffer_flush_timeout: 50
+    table_id: <table-id>
+    dataset_id: <dataset-id>
+    dataset_location: US
+    project_id: <project-id>
+    # gcs_buffer_bucket: bizon-buffer
+    # gcs_buffer_format: parquet
+
+# engine:
+#   backend:
+#     type: bigquery
+#     config:
+#       database: <project-id>
+#       schema: <dataset-id>
+#       syncCursorInDBEvery: 100
+
+#   runner:
+#     log_level: INFO
