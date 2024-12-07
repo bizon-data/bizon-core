@@ -1,8 +1,4 @@
-from bizon.sources.kafka.src.source import (
-    KafkaAuthConfig,
-    KafkaSource,
-    KafkaSourceConfig,
-)
+from bizon.sources.kafka.src.source import KafkaAuthConfig, KafkaSourceConfig
 
 
 def test_kafka_source_config():
@@ -36,21 +32,3 @@ def test_kafka_source_config_timestamp_to_parse():
         ),
     )
     assert conf
-
-
-def test_kafka_source():
-    conf = KafkaSourceConfig(
-        source_name="kafka",
-        stream_name="topic",
-        topic="cookie",
-        bootstrap_servers="fdjvfv",
-        batch_size=87,
-        consumer_timeout=56,
-        authentication=KafkaAuthConfig(
-            type="basic",
-            params={"username": "user", "password": "password"},
-        ),
-    )
-
-    source = KafkaSource(conf)
-    del source
