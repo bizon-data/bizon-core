@@ -1,50 +1,63 @@
 import json
 import os
+import threading
+import time
 from tempfile import NamedTemporaryFile
 
 import yaml
 
 from bizon.engine.engine import RunnerFactory
 
-temporary_file = NamedTemporaryFile()
 
-BIZON_CONFIG_DUMMY_TO_FILE = f"""
-name: test_job_3
+def test_e2e_dummy_to_file(pg_db_session, capsys):
 
-source:
-  source_name: dummy
-  stream_name: creatures
-  authentication:
-    type: api_key
-    params:
-      token: dummy_key
+    temporary_file = NamedTemporaryFile()
 
-destination:
-  name: file
-  config:
-    filepath: {temporary_file.name}
+    BIZON_CONFIG_DUMMY_TO_FILE = f"""
+  name: test_job_3
 
-engine:
-  backend:
-    type: postgres
+  source:
+    source_name: dummy
+    stream_name: creatures
+    authentication:
+      type: api_key
+      params:
+        token: dummy_key
+
+  destination:
+    name: file
     config:
-      database: bizon_test
-      schema: public
-      syncCursorInDBEvery: 2
-      host: {os.environ.get("POSTGRES_HOST", "localhost")}
-      port: 5432
-      username: postgres
-      password: bizon
+      filepath: {temporary_file.name}
 
-  runner:
-    type: thread
-"""
+  engine:
+    backend:
+      type: postgres
+      config:
+        database: bizon_test
+        schema: public
+        syncCursorInDBEvery: 2
+        host: {os.environ.get("POSTGRES_HOST", "localhost")}
+        port: 5432
+        username: postgres
+        password: bizon
 
-
-def test_e2e_dummy_to_file(pg_db_session):
+    runner:
+      type: thread
+  """
 
     runner = RunnerFactory.create_from_config_dict(yaml.safe_load(BIZON_CONFIG_DUMMY_TO_FILE))
-    runner.run()
+
+    def run_pipeline():
+        runner.run()
+
+    pipeline_thread = threading.Thread(target=run_pipeline)
+    pipeline_thread.start()
+
+    time.sleep(5)
+
+    with capsys.disabled():
+        print("pipeline finished")
+
     records_extracted = {}
     with open(temporary_file.name, "r") as file:
         for line in file.readlines():
