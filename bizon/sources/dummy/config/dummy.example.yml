@@ -1,4 +1,4 @@
-name: dummy to bigquery
+name: dummy to logger
 
 source:
   source_name: dummy
@@ -13,10 +13,10 @@ destination:
   config:
     dummy: dummy
 
-engine:
-  backend:
-    type: bigquery
-    config:
-      database: <project-id>
-      schema: <dataset-id>
-      syncCursorInDBEvery: 100
+# engine:
+#   backend:
+#     type: sqlite
+#     config:
+#       schema: dummy
+#       database: dummy.db
+#       syncCursorInDBEvery: 100

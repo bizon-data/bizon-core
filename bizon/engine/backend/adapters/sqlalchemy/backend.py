@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from typing import Generator, Optional, Union
+from typing import Optional, Union
 
 from loguru import logger
 from pytz import UTC
@@ -39,9 +39,9 @@ class SQLAlchemyBackend(AbstractBackend):
         ] = config
 
         self.kwargs = kwargs
+        self.session = self.get_session()
 
-    @property
-    def session(self) -> Generator[Session, None, None]:
+    def get_session(self) -> Session:
         """yields a SQLAlchemy connection"""
         engine = self.get_engine()
         session_ = scoped_session(
@@ -51,20 +51,17 @@ class SQLAlchemyBackend(AbstractBackend):
             )
         )
 
-        yield session_
-
-        session_.close()
-
-        # For SQLite, we need to dispose the engine after each operation to prevent database lock
-        self.handle_dispose_sqlite(engine)
+        return session_
 
     def _get_engine_bigquery(self) -> Engine:
+        # If service account key is provided, use it
         if hasattr(self.config, "service_account_key") and self.config.service_account_key:
             return create_engine(
                 f"bigquery://{self.config.database}/{self.config.schema_name}",
                 echo=self.config.echoEngine,
                 credentials_info=self.config.service_account_key,
             )
+        # Otherwise we will rely on the default Google Authentication mechanism (e.g. GOOGLE_APPLICATION_CREDENTIALS)
         return create_engine(
             f"bigquery://{self.config.database}/{self.config.schema_name}", echo=self.config.echoEngine
         )
@@ -78,7 +75,9 @@ class SQLAlchemyBackend(AbstractBackend):
     def _get_engine_sqlite(self) -> Engine:
         return create_engine(
             f"sqlite:///{self.config.database}.sqlite3",
-            connect_args={"check_same_thread": False},
+            connect_args={"check_same_thread": False, "timeout": 30},
+            pool_size=5,  # Adjust based on expected concurrency
+            pool_pre_ping=True,  # Ensures connections are alive
         )
 
     def _get_engine(self) -> Engine:
@@ -120,12 +119,6 @@ class SQLAlchemyBackend(AbstractBackend):
                     f"Schema or dataset {self.config.schema_name} does not exist in the database, you need to create it first."
                 )
 
-        self.handle_dispose_sqlite(engine)
-
-    def handle_dispose_sqlite(self, engine: Engine):
-        if self.type == BackendTypes.SQLITE:
-            engine.dispose()
-
     def get_engine(self) -> Engine:
         """Return the SQLAlchemy engine"""
         if not self._engine:
@@ -138,12 +131,10 @@ class SQLAlchemyBackend(AbstractBackend):
     def create_all_tables(self):
         engine = self.get_engine()
         Base.metadata.create_all(engine)
-        self.handle_dispose_sqlite(engine)
 
     def drop_all_tables(self):
         engine = self.get_engine()
         Base.metadata.drop_all(engine)
-        self.handle_dispose_sqlite(engine)
 
     def check_prerequisites(self) -> bool:
         """Check if the database contains the necessary tables, return True if entities are present
@@ -171,19 +162,17 @@ class SQLAlchemyBackend(AbstractBackend):
             all_entities_exist = False
             logger.info(f"Table {TABLE_DESTINATION_CURSOR} does not exist in the database, we will create it")
 
-        self.handle_dispose_sqlite(engine)
-
         return all_entities_exist
 
     def _add_and_commit(self, obj, session: Optional[Session] = None):
         """Add the object to the session and commit it, return its ID"""
-        session = session or next(self.session)
+        session = session or self.session
         session.add(obj)
         session.commit()
         return obj
 
     def _execute(self, select: Select, session: Optional[Session] = None) -> Result:
-        session = session or next(self.session)
+        session = session or self.session
         return session.execute(select)
 
     #### STREAM JOB ####

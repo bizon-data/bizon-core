@@ -14,7 +14,7 @@ Extract and load your largest data streams with a framework you can trust for bi
     - `requests` for HTTP requests
     - `pyyaml` for configuration
     - `sqlalchemy` for database / warehouse connections
-    - `polars` for memory efficient data buffering and vectorized data processing
+    - `polars` for memory efficient data buffering and vectorized processing
     - `pyarrow` for Parquet file format
 
 ## Installation
