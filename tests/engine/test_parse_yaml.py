@@ -3,7 +3,7 @@ import os
 from yaml import safe_load
 
 from bizon.cli.utils import parse_from_yaml
-from bizon.destinations.logger.src.destination import LoggerDestination
+from bizon.connectors.destinations.logger.src.destination import LoggerDestination
 from bizon.engine.backend.config import BackendTypes
 from bizon.engine.engine import RunnerFactory
 from bizon.engine.queue.adapters.kafka.queue import KafkaQueue

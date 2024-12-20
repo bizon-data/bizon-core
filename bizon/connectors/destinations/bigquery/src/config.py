@@ -4,7 +4,7 @@ from typing import Literal, Optional
 import polars as pl
 from pydantic import BaseModel, Field
 
-from bizon.destinations.config import (
+from bizon.destination.config import (
     AbstractDestinationConfig,
     AbstractDestinationDetailsConfig,
     DestinationColumn,

@@ -9,7 +9,7 @@ from loguru import logger
 
 from bizon.cli.utils import parse_from_yaml
 from bizon.common.models import BizonConfig, SyncMetadata
-from bizon.destinations.destination import AbstractDestination, DestinationFactory
+from bizon.destination.destination import AbstractDestination, DestinationFactory
 from bizon.engine.backend.backend import AbstractBackend, BackendFactory
 from bizon.engine.backend.models import JobStatus, StreamJob
 from bizon.engine.pipeline.producer import Producer
@@ -158,9 +158,7 @@ class AbstractRunner(ABC):
         source = AbstractRunner.get_source(bizon_config=bizon_config, config=config)
 
         check_connection, connection_error = source.check_connection()
-        logger.info(
-            f"Connection to source {bizon_config.source.name} - {bizon_config.source.stream} successful"
-        )
+        logger.info(f"Connection to source {bizon_config.source.name} - {bizon_config.source.stream} successful")
 
         if not check_connection:
             logger.error(f"Error while connecting to source: {connection_error}")

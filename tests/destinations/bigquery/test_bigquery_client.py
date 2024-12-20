@@ -10,15 +10,15 @@ from faker import Faker
 from google.cloud import bigquery
 
 from bizon.common.models import SyncMetadata
-from bizon.destinations.bigquery.src.config import (
+from bizon.connectors.destinations.bigquery.src.config import (
     BigQueryConfig,
     BigQueryConfigDetails,
     GCSBufferFormat,
 )
-from bizon.destinations.bigquery.src.destination import BigQueryDestination
-from bizon.destinations.config import DestinationTypes
-from bizon.destinations.destination import DestinationFactory
-from bizon.destinations.models import destination_record_schema
+from bizon.connectors.destinations.bigquery.src.destination import BigQueryDestination
+from bizon.destination.config import DestinationTypes
+from bizon.destination.destination import DestinationFactory
+from bizon.destination.models import destination_record_schema
 
 logger = logging.getLogger(__name__)
 

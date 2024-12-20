@@ -3,7 +3,7 @@ from datetime import datetime
 import polars as pl
 from pytz import UTC
 
-from bizon.destinations.models import transform_to_df_destination_records
+from bizon.destination.models import transform_to_df_destination_records
 from bizon.source.models import source_record_schema
 
 df_source_records = pl.DataFrame(

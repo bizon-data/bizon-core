@@ -57,8 +57,9 @@ def find_inherited_classes(file_path):
 def get_python_import_path(relative_path: str) -> str:
     """Transform a relative path to a python import path"""
     python_path = relative_path.replace("/", ".").replace(".py", "")
+
     # Find the index where the desired substring starts
-    start_index = python_path.find("bizon.sources.")
+    start_index = python_path.find("bizon.connectors.sources")
 
     # Extract the substring from that point onwards
     if start_index != -1:
@@ -69,13 +70,13 @@ def get_python_import_path(relative_path: str) -> str:
 def find_all_source_paths(source_dir_name: str = "src") -> Mapping[str, str]:
     """Find all source code paths in the sources directory
     Return a dict mapping source_name to source_code_path
-    Like {'gsheets': '/path/to/bizon/sources/gsheets/src'}
+    Like {'gsheets': '/path/to/bizon/connectors/sources/gsheets/src'}
     """
 
     discovered_sources_paths = {}
 
     # Leading to the bizon internal sources directory
-    base_dir = os.path.join(BIZON_ABSOLUTE_PATH, "sources")
+    base_dir = os.path.join(BIZON_ABSOLUTE_PATH, "connectors", "sources")
 
     for source_name in os.listdir(base_dir):
 

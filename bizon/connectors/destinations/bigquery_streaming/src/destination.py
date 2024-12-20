@@ -16,7 +16,7 @@ from google.protobuf.json_format import ParseDict
 from google.protobuf.message import Message
 
 from bizon.common.models import SyncMetadata
-from bizon.destinations.destination import AbstractDestination
+from bizon.destination.destination import AbstractDestination
 from bizon.engine.backend.backend import AbstractBackend
 
 from .config import BigQueryStreamingConfigDetails

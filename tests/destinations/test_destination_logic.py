@@ -4,10 +4,10 @@ import polars as pl
 import pytest
 
 from bizon.common.models import SyncMetadata
-from bizon.destinations.destination import DestinationBufferStatus
-from bizon.destinations.logger.src.config import LoggerDestinationConfig
-from bizon.destinations.logger.src.destination import LoggerDestination
-from bizon.destinations.models import destination_record_schema
+from bizon.connectors.destinations.logger.src.config import LoggerDestinationConfig
+from bizon.connectors.destinations.logger.src.destination import LoggerDestination
+from bizon.destination.destination import DestinationBufferStatus
+from bizon.destination.models import destination_record_schema
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.models import JobStatus, StreamJob
 

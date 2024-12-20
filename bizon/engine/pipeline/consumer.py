@@ -4,7 +4,7 @@ import threading
 from abc import ABC, abstractmethod
 from typing import Union
 
-from bizon.destinations.destination import AbstractDestination
+from bizon.destination.destination import AbstractDestination
 from bizon.engine.pipeline.models import PipelineReturnStatus
 from bizon.engine.queue.config import AbstractQueueConfig
 from bizon.transform.transform import Transform

@@ -3,8 +3,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from bizon.destinations.bigquery.src.config import BigQueryColumn
-from bizon.destinations.config import (
+from bizon.connectors.destinations.bigquery.src.config import BigQueryColumn
+from bizon.destination.config import (
     AbstractDestinationConfig,
     AbstractDestinationDetailsConfig,
     DestinationTypes,

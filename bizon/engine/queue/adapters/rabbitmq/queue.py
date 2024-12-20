@@ -3,7 +3,7 @@ from typing import Union
 import pika
 from loguru import logger
 
-from bizon.destinations.destination import AbstractDestination
+from bizon.destination.destination import AbstractDestination
 from bizon.engine.pipeline.consumer import AbstractQueueConsumer
 from bizon.engine.queue.queue import QUEUE_TERMINATION, AbstractQueue, QueueMessage
 

@@ -5,7 +5,7 @@ from typing import Union
 
 from loguru import logger
 
-from bizon.destinations.destination import AbstractDestination
+from bizon.destination.destination import AbstractDestination
 from bizon.engine.queue.queue import (
     QUEUE_TERMINATION,
     AbstractQueue,

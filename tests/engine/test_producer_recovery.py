@@ -7,9 +7,9 @@ import pytest
 import yaml
 
 from bizon.common.models import SyncMetadata
-from bizon.destinations.file.src.config import FileDestinationDetailsConfig
-from bizon.destinations.file.src.destination import FileDestination
-from bizon.destinations.models import destination_record_schema
+from bizon.connectors.destinations.file.src.config import FileDestinationDetailsConfig
+from bizon.connectors.destinations.file.src.destination import FileDestination
+from bizon.destination.models import destination_record_schema
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.models import JobStatus
 from bizon.engine.engine import RunnerFactory

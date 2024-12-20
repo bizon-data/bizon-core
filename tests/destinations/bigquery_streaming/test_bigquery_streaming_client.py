@@ -10,13 +10,13 @@ from google.protobuf.json_format import ParseError
 from google.protobuf.message import EncodeError
 
 from bizon.common.models import SyncMetadata
-from bizon.destinations.bigquery_streaming.src.config import (
+from bizon.connectors.destinations.bigquery_streaming.src.config import (
     BigQueryStreamingConfig,
     BigQueryStreamingConfigDetails,
 )
-from bizon.destinations.config import DestinationTypes
-from bizon.destinations.destination import DestinationFactory
-from bizon.destinations.models import destination_record_schema
+from bizon.destination.config import DestinationTypes
+from bizon.destination.destination import DestinationFactory
+from bizon.destination.models import destination_record_schema
 
 load_dotenv()
 
@@ -74,7 +74,7 @@ def test_streaming_records_to_bigquery(my_backend_config, sync_metadata_stream):
     )
 
     # Import here to not throw auth errors when running tests
-    from bizon.destinations.bigquery_streaming.src.destination import (
+    from bizon.connectors.destinations.bigquery_streaming.src.destination import (
         BigQueryStreamingDestination,
     )
 
@@ -124,7 +124,7 @@ def test_streaming_unnested_records(my_backend_config, sync_metadata_stream):
     )
 
     # Import here to not throw auth errors when running tests
-    from bizon.destinations.bigquery_streaming.src.destination import (
+    from bizon.connectors.destinations.bigquery_streaming.src.destination import (
         BigQueryStreamingDestination,
     )
 

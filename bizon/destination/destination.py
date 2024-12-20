@@ -248,22 +248,22 @@ class DestinationFactory:
     ) -> AbstractDestination:
 
         if config.name == DestinationTypes.LOGGER:
-            from .logger.src.destination import LoggerDestination
+            from bizon.connectors.destinations.logger.src.destination import LoggerDestination
 
             return LoggerDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
 
         elif config.name == DestinationTypes.BIGQUERY:
-            from .bigquery.src.destination import BigQueryDestination
+            from bizon.connectors.destinations.bigquery.src.destination import BigQueryDestination
 
             return BigQueryDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
 
         elif config.name == DestinationTypes.BIGQUERY_STREAMING:
-            from .bigquery_streaming.src.destination import BigQueryStreamingDestination
+            from bizon.connectors.destinations.bigquery_streaming.src.destination import BigQueryStreamingDestination
 
             return BigQueryStreamingDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
 
         elif config.name == DestinationTypes.FILE:
-            from .file.src.destination import FileDestination
+            from bizon.connectors.destinations.file.src.destination import FileDestination
 
             return FileDestination(sync_metadata=sync_metadata, config=config.config, backend=backend)
 

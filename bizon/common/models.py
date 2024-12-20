@@ -2,10 +2,12 @@ from typing import Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from bizon.destinations.bigquery.src.config import BigQueryConfig
-from bizon.destinations.bigquery_streaming.src.config import BigQueryStreamingConfig
-from bizon.destinations.file.src.config import FileDestinationConfig
-from bizon.destinations.logger.src.config import LoggerConfig
+from bizon.connectors.destinations.bigquery.src.config import BigQueryConfig
+from bizon.connectors.destinations.bigquery_streaming.src.config import (
+    BigQueryStreamingConfig,
+)
+from bizon.connectors.destinations.file.src.config import FileDestinationConfig
+from bizon.connectors.destinations.logger.src.config import LoggerConfig
 from bizon.engine.config import EngineConfig
 from bizon.source.config import SourceConfig, SourceSyncModes
 from bizon.transform.config import TransformModel

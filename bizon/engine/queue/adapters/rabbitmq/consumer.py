@@ -2,7 +2,7 @@ import pika
 import pika.connection
 from loguru import logger
 
-from bizon.destinations.destination import AbstractDestination
+from bizon.destination.destination import AbstractDestination
 from bizon.engine.queue.queue import (
     QUEUE_TERMINATION,
     AbstractQueueConsumer,

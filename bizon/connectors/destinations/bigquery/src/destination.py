@@ -12,7 +12,7 @@ from google.cloud.bigquery import DatasetReference, TimePartitioning
 from loguru import logger
 
 from bizon.common.models import SyncMetadata
-from bizon.destinations.destination import AbstractDestination
+from bizon.destination.destination import AbstractDestination
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.source.config import SourceSyncModes
 

@@ -33,7 +33,7 @@ def test_find_all_source_paths():
 
 def test_parse_streams_from_filepath():
     streams = parse_streams_from_filepath(
-        source_name="dummy", filepath="bizon/sources/dummy/src/source.py", skip_unavailable_sources=True
+        source_name="dummy", filepath="bizon/connectors/sources/dummy/src/source.py", skip_unavailable_sources=True
     )
     assert len(streams) > 0
     set(stream.name for stream in streams) == set(["creatures", "plants"])

@@ -7,7 +7,7 @@ from typing import Optional, Union
 import polars as pl
 from pytz import UTC
 
-from bizon.destinations.destination import AbstractDestination
+from bizon.destination.destination import AbstractDestination
 from bizon.engine.pipeline.consumer import AbstractQueueConsumer
 from bizon.source.models import SourceIteration, source_record_schema
 from bizon.transform.transform import Transform
