@@ -10,15 +10,15 @@ from bizon.source.discover import (
 )
 
 DUMMY_SOURCE_CONFIG_DICT = {
-    "source_name": "dummy",
-    "stream_name": "creatures",
+    "name": "dummy",
+    "stream": "creatures",
     "config": {"dummy": "dummy"},
     "authentication": {"type": "api_key", "params": {"token": "my_dummy_token"}},
 }
 
 DUMMY_EXTERNAL_SOURCE_CONFIG_DICT = {
-    "source_name": "dummy",
-    "stream_name": "flowers",
+    "name": "dummy",
+    "stream": "flowers",
     "config": {"dummy": "dummy"},
     "authentication": {"type": "api_key", "params": {"token": "my_dummy"}},
     "source_file_path": "./tests/source/custom_source.py",

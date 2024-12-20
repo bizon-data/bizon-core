@@ -12,8 +12,8 @@ from bizon.sources.dummy.src.source import (
 @pytest.fixture
 def dummy_source_config():
     return DummySourceConfig(
-        source_name="dummy",
-        stream_name="creatures",
+        name="dummy",
+        stream="creatures",
         authentication=DummyAuthConfig(type=AuthType.API_KEY, params=TokenAuthParams(token="dummy_key")),
     )
 

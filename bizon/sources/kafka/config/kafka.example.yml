@@ -1,8 +1,8 @@
 name: demo kafka to bigquery
 
 source:
-  source_name: kafka
-  stream_name: topic
+  name: kafka
+  stream: topic
 
   sync_mode: full_refresh
 

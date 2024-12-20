@@ -7,8 +7,8 @@ def test_source_config():
 
     config = """
     source:
-        source_name: dummy
-        stream_name: creatures
+        name: dummy
+        stream: creatures
         authentication:
             type: api_key
             params:
@@ -16,5 +16,5 @@ def test_source_config():
     """
     config_dict = safe_load(config)
     source_config = SourceConfig.model_validate_strings(config_dict["source"])
-    assert source_config.source_name == "dummy"
-    assert source_config.stream_name == "creatures"
+    assert source_config.name == "dummy"
+    assert source_config.stream == "creatures"

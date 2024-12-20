@@ -26,8 +26,8 @@ def my_producer(my_sqlite_backend: AbstractBackend):
 def my_job(my_producer: Producer, sqlite_db_session):
     job = my_producer.backend.create_stream_job(
         name=my_producer.bizon_config.name,
-        source_name=my_producer.source.config.source_name,
-        stream_name=my_producer.source.config.stream_name,
+        source_name=my_producer.source.config.name,
+        stream_name=my_producer.source.config.stream,
         sync_mode="full_refresh",
         job_status=JobStatus.STARTED,
         session=sqlite_db_session,
@@ -58,7 +58,7 @@ def test_cursor_recovery_not_running(my_producer: Producer, sqlite_db_session, m
 
 
 def test_source_thread(my_producer: Producer):
-    assert my_producer.source.config.source_name == "dummy"
+    assert my_producer.source.config.name == "dummy"
 
 
 def test_queue_is_full(my_producer: Producer, sqlite_db_session, my_job: StreamJob):

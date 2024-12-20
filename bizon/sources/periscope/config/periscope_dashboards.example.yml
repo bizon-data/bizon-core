@@ -1,6 +1,8 @@
+name: periscope dashboards to logger
+
 source:
-  source_name: periscope
-  stream_name: dashboards
+  name: periscope
+  stream: dashboards
   max_iterations: 20
   workspace_name: MY_WORKSPACE_NAME
   client_site_id: 99999
@@ -12,15 +14,7 @@ source:
         periscope_session: ooooooooo
         cf_bm: kkkkkkkk
 
-backend:
-  type: sqlite_in_memory
-  database: NOT_USED_WITH_SQLITE
-  schema: NOT_USED_WITH_SQLITE
-  syncCursorInDBEvery: 2
-
-consumer:
-  enabled: true
-  name: bigquery
-
-pipeline:
-  log_level: DEBUG
+destination:
+  name: logger
+  config:
+    dummy: dummy

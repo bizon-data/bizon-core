@@ -9,8 +9,8 @@ from bizon.sources.hubspot.src.hubspot_objects import (
 def test_source_config_valid():
     raw_config = {
         "source": {
-            "source_name": "hubspot",
-            "stream_name": "contacts",
+            "name": "hubspot",
+            "stream": "contacts",
             "authentication": {
                 "type": "oauth",
                 "params": {
@@ -33,8 +33,8 @@ def test_source_config_valid():
 def test_source_instanciation_contacts():
     raw_config = {
         "source": {
-            "source_name": "hubspot",
-            "stream_name": "contacts",
+            "name": "hubspot",
+            "stream": "contacts",
             "init_pipeline": False,
             "authentication": {
                 "type": "oauth",
@@ -54,8 +54,8 @@ def test_source_instanciation_contacts():
 def test_source_instanciation_companies():
     raw_config = {
         "source": {
-            "source_name": "hubspot",
-            "stream_name": "companies",
+            "name": "hubspot",
+            "stream": "companies",
             "init_pipeline": False,
             "authentication": {
                 "type": "oauth",

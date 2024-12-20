@@ -3,8 +3,8 @@ from bizon.sources.kafka.src.source import KafkaAuthConfig, KafkaSourceConfig
 
 def test_kafka_source_config():
     conf = KafkaSourceConfig(
-        source_name="kafka",
-        stream_name="topic",
+        name="kafka",
+        stream="topic",
         topic="cookie",
         bootstrap_servers="fdjvfv",
         batch_size=87,
@@ -20,8 +20,8 @@ def test_kafka_source_config():
 
 def test_kafka_source_config_timestamp_to_parse():
     conf = KafkaSourceConfig(
-        source_name="kafka",
-        stream_name="topic",
+        name="kafka",
+        stream="topic",
         topic="cookie",
         bootstrap_servers="fdjvfv",
         batch_size=87,

@@ -32,8 +32,8 @@ class APIConfig(BaseModel):
 class SourceConfig(BaseModel, ABC):
 
     # Connector identifier to use, match a unique connector code
-    source_name: str = Field(..., description="Name of the source to sync")
-    stream_name: str = Field(..., description="Name of the stream to sync")
+    name: str = Field(..., description="Name of the source to sync")
+    stream: str = Field(..., description="Name of the stream to sync")
 
     source_file_path: Optional[str] = Field(
         default=None, description="Path to the source file, if not provided will look into bizon internal sources"

@@ -14,13 +14,16 @@ def test_e2e_pipeline_should_stop():
         name: test_job_3
 
         source:
-          source_name: dummy
-          stream_name: creatures
+          name: dummy
+          stream: creatures
+
+          sleep: 2 # Add sleep to make sure the pipeline is stopped before it finishes
+
           authentication:
             type: api_key
             params:
               token: dummy_key
-          sleep: 2
+
         destination:
           name: file
           config:

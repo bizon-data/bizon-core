@@ -40,7 +40,7 @@ class HubSpotObjectsSource(HubSpotBaseSource):
     def __init__(self, config: HubSpotSourceConfig):
         super().__init__(config)
         self.config: HubSpotSourceConfig = config
-        self.object = self.config.stream_name
+        self.object = self.config.stream
         self.selected_properties = []  # Initialize properties to empty list
 
         # If we are initializing the pipeline, we retrieve the selected properties from HubSpot

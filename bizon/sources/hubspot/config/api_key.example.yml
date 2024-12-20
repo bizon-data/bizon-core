@@ -1,6 +1,8 @@
+name: hubspot contacts to logger
+
 source:
-  source_name: hubspot
-  stream_name: contacts
+  name: hubspot
+  stream: contacts
   properties:
     strategy: all
   authentication:

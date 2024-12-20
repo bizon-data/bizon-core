@@ -6,8 +6,8 @@ config_yaml = """
 name: dummy to logger
 
 source:
-  source_name: dummy
-  stream_name: creatures
+  name: dummy
+  stream: creatures
   authentication:
     type: api_key
     params:

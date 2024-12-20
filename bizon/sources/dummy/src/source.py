@@ -42,7 +42,7 @@ class DummySource(AbstractSource):
 
     @property
     def url_entity(self) -> str:
-        return f"https://api.dummy.com/v1/{self.config.stream_name}"
+        return f"https://api.dummy.com/v1/{self.config.stream}"
 
     def get_authenticator(self) -> AuthBase:
 

@@ -63,8 +63,8 @@ class SyncMetadata(BaseModel):
         return cls(
             name=config.name,
             job_id=job_id,
-            source_name=config.source.source_name,
-            stream_name=config.source.stream_name,
+            source_name=config.source.name,
+            stream_name=config.source.stream,
             sync_mode=config.source.sync_mode,
             destination_name=config.destination.name,
         )

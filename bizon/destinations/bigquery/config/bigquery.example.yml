@@ -1,6 +1,8 @@
+name: hubspot contacts to bigquery
+
 source:
   name: hubspot
-  stream_name: contacts
+  stream: contacts
   properties:
     strategy: all
   authentication:
@@ -34,6 +36,3 @@ destination:
         "client_x509_cert_url": "",
         "universe_domain": "googleapis.com"
       }
-
-pipeline:
-  log_level: DEBUG

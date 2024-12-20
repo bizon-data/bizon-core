@@ -21,8 +21,8 @@ def test_parse_task_runner_python_queue():
         name: test_job
 
         source:
-            source_name: dummy
-            stream_name: creatures
+            name: dummy
+            stream: creatures
             authentication:
                 type: api_key
                 params:
@@ -65,8 +65,8 @@ def test_parse_task_runner_kafka_queue():
         name: test_job
 
         source:
-            source_name: dummy
-            stream_name: creatures
+            name: dummy
+            stream: creatures
             authentication:
                 type: api_key
                 params:
@@ -115,8 +115,8 @@ def test_parse_task_runner_rabbitmq_queue():
         name: test_job
 
         source:
-            source_name: dummy
-            stream_name: creatures
+            name: dummy
+            stream: creatures
             authentication:
                 type: api_key
                 params:

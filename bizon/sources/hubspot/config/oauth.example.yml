@@ -1,6 +1,8 @@
+name: hubspot contacts to bigquery
+
 source:
-  source_name: hubspot
-  stream_name: contacts
+  name: hubspot
+  stream: contacts
   properties:
     strategy: all
   authentication:
