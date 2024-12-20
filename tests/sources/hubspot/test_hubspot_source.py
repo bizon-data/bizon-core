@@ -1,9 +1,9 @@
-from bizon.source.auth.config import AuthType
 from bizon.connectors.sources.hubspot.src.hubspot_objects import (
     URL_TOKEN_REFRESH,
     HubSpotObjectsSource,
     HubSpotSourceConfig,
 )
+from bizon.source.auth.config import AuthType
 
 
 def test_source_config_valid():
