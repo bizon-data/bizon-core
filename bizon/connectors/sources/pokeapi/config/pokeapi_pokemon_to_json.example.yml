@@ -1,4 +1,4 @@
-name: pokemon to logger
+name: pokemon to json unnested
 
 source:
   name: pokeapi
