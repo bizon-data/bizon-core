@@ -1,0 +1,10 @@
+name: pokemon to logger
+
+source:
+  name: pokeapi
+  stream: pokemon
+
+destination:
+  name: logger
+  config:
+    buffer_flush_timeout: 2
