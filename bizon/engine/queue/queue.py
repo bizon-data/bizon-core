@@ -12,18 +12,7 @@ from bizon.engine.pipeline.consumer import AbstractQueueConsumer
 from bizon.source.models import SourceIteration, source_record_schema
 from bizon.transform.transform import Transform
 
-from .config import AbastractQueueConfigDetails, AbstractQueueConfig, QueueTypes
-
-QUEUE_TERMINATION = "TERMINATION"
-
-
-@dataclass
-class QueueMessage:
-    iteration: int
-    df_source_records: pl.DataFrame
-    extracted_at: datetime = datetime.now(tz=UTC)
-    pagination: Optional[dict] = None
-    signal: Optional[str] = None
+from .config import AbastractQueueConfigDetails, AbstractQueueConfig, QueueTypes, QueueMessage
 
 
 class AbstractQueue(ABC):

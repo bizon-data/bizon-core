@@ -5,7 +5,7 @@ from loguru import logger
 
 from bizon.destination.destination import AbstractDestination
 from bizon.engine.pipeline.consumer import AbstractQueueConsumer
-from bizon.engine.queue.queue import QUEUE_TERMINATION, QueueMessage
+from bizon.engine.queue.config import QUEUE_TERMINATION, QueueMessage
 
 from .config import KafkaConfigDetails
 

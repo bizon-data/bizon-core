@@ -3,8 +3,8 @@ import pika.connection
 from loguru import logger
 
 from bizon.destination.destination import AbstractDestination
+from bizon.engine.queue.config import QUEUE_TERMINATION
 from bizon.engine.queue.queue import (
-    QUEUE_TERMINATION,
     AbstractQueueConsumer,
     QueueMessage,
 )
