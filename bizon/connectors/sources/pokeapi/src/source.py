@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Any, List, Tuple
 
 from requests.auth import AuthBase
@@ -5,9 +6,9 @@ from requests.auth import AuthBase
 from bizon.source.config import SourceConfig
 from bizon.source.models import SourceIteration, SourceRecord
 from bizon.source.source import AbstractSource
-from enum import Enum
 
 BASE_URL = "https://pokeapi.co/api/v2"
+
 
 # Define the streams that the source supports
 class PokeAPIStreams(str, Enum):
