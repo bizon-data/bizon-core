@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from bizon.destinations.config import (
+from bizon.destination.config import (
     AbstractDestinationConfig,
     AbstractDestinationDetailsConfig,
 )

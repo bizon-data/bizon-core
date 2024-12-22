@@ -1,7 +1,23 @@
 from abc import ABC
+from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
+from typing import Optional
 
+import polars as pl
 from pydantic import BaseModel, ConfigDict, Field
+from pytz import UTC
+
+QUEUE_TERMINATION = "TERMINATION"
+
+
+@dataclass
+class QueueMessage:
+    iteration: int
+    df_source_records: pl.DataFrame
+    extracted_at: datetime = datetime.now(tz=UTC)
+    pagination: Optional[dict] = None
+    signal: Optional[str] = None
 
 
 class QueueTypes(str, Enum):

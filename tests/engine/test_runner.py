@@ -40,7 +40,7 @@ def test_run(my_runner: ThreadRunner):
 
 def test_get_source(my_runner: ThreadRunner):
     source = my_runner.get_source(bizon_config=my_runner.bizon_config, config=my_runner.config)
-    assert source.config.source_name == "dummy"
+    assert source.config.name == "dummy"
 
 
 def test_get_backend(my_runner: ThreadRunner):
@@ -79,4 +79,4 @@ def test_create_job_and_recover(my_runner: ThreadRunner, sqlite_db_session):
 
 
 def test_source_thread(my_producer: Producer):
-    assert my_producer.source.config.source_name == "dummy"
+    assert my_producer.source.config.name == "dummy"

@@ -38,8 +38,8 @@ Create a file named `config.yml` in your working directory with the following co
 name: demo-creatures-pipeline
 
 source:
-  source_name: dummy
-  stream_name: creatures
+  name: dummy
+  stream: creatures
   authentication:
     type: api_key
     params:

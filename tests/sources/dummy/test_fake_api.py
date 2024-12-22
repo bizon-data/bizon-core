@@ -1,4 +1,4 @@
-from bizon.sources.dummy.src.fake_api import (
+from bizon.connectors.sources.dummy.src.fake_api import (
     fake_api_call_creatures,
     fake_api_call_plants,
 )

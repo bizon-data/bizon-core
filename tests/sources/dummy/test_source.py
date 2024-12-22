@@ -1,19 +1,19 @@
 import pytest
 
-from bizon.source.auth.authenticators.token import TokenAuthParams
-from bizon.source.auth.config import AuthType
-from bizon.sources.dummy.src.source import (
+from bizon.connectors.sources.dummy.src.source import (
     DummyAuthConfig,
     DummySource,
     DummySourceConfig,
 )
+from bizon.source.auth.authenticators.token import TokenAuthParams
+from bizon.source.auth.config import AuthType
 
 
 @pytest.fixture
 def dummy_source_config():
     return DummySourceConfig(
-        source_name="dummy",
-        stream_name="creatures",
+        name="dummy",
+        stream="creatures",
         authentication=DummyAuthConfig(type=AuthType.API_KEY, params=TokenAuthParams(token="dummy_key")),
     )
 

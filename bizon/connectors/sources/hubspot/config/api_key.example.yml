@@ -1,0 +1,25 @@
+name: hubspot contacts to logger
+
+source:
+  name: hubspot
+  stream: contacts
+  properties:
+    strategy: all
+  authentication:
+    type: api_key
+    params:
+      token: <MY_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
+
+engine:
+  backend:
+    type: bigquery
+    database: <MY_GCP_PROJECT>
+    schema: bizon_test
+    syncCursorInDBEvery: 2
+  runner:
+    log_level: DEBUG

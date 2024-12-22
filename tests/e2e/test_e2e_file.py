@@ -15,8 +15,8 @@ def test_e2e_dummy_to_file():
         name: test_job_3
 
         source:
-          source_name: dummy
-          stream_name: creatures
+          name: dummy
+          stream: creatures
           authentication:
             type: api_key
             params:

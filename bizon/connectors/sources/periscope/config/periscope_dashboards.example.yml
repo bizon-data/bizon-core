@@ -1,0 +1,20 @@
+name: periscope dashboards to logger
+
+source:
+  name: periscope
+  stream: dashboards
+  max_iterations: 20
+  workspace_name: MY_WORKSPACE_NAME
+  client_site_id: 99999
+  database_id: 999
+  authentication:
+    type: cookies
+    params:
+      cookies:
+        periscope_session: ooooooooo
+        cf_bm: kkkkkkkk
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

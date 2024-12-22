@@ -2,10 +2,12 @@ from typing import Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from bizon.destinations.bigquery.src.config import BigQueryConfig
-from bizon.destinations.bigquery_streaming.src.config import BigQueryStreamingConfig
-from bizon.destinations.file.src.config import FileDestinationConfig
-from bizon.destinations.logger.src.config import LoggerConfig
+from bizon.connectors.destinations.bigquery.src.config import BigQueryConfig
+from bizon.connectors.destinations.bigquery_streaming.src.config import (
+    BigQueryStreamingConfig,
+)
+from bizon.connectors.destinations.file.src.config import FileDestinationConfig
+from bizon.connectors.destinations.logger.src.config import LoggerConfig
 from bizon.engine.config import EngineConfig
 from bizon.source.config import SourceConfig, SourceSyncModes
 from bizon.transform.config import TransformModel
@@ -63,8 +65,8 @@ class SyncMetadata(BaseModel):
         return cls(
             name=config.name,
             job_id=job_id,
-            source_name=config.source.source_name,
-            stream_name=config.source.stream_name,
+            source_name=config.source.name,
+            stream_name=config.source.stream,
             sync_mode=config.source.sync_mode,
             destination_name=config.destination.name,
         )

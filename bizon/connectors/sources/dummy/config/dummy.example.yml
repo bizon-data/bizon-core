@@ -1,0 +1,22 @@
+name: dummy to logger
+
+source:
+  name: dummy
+  stream: creatures
+  authentication:
+    type: api_key
+    params:
+      token: dummy_key
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
+
+# engine:
+#   backend:
+#     type: sqlite
+#     config:
+#       schema: dummy
+#       database: dummy.db
+#       syncCursorInDBEvery: 100

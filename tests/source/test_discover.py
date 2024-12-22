@@ -10,15 +10,15 @@ from bizon.source.discover import (
 )
 
 DUMMY_SOURCE_CONFIG_DICT = {
-    "source_name": "dummy",
-    "stream_name": "creatures",
+    "name": "dummy",
+    "stream": "creatures",
     "config": {"dummy": "dummy"},
     "authentication": {"type": "api_key", "params": {"token": "my_dummy_token"}},
 }
 
 DUMMY_EXTERNAL_SOURCE_CONFIG_DICT = {
-    "source_name": "dummy",
-    "stream_name": "flowers",
+    "name": "dummy",
+    "stream": "flowers",
     "config": {"dummy": "dummy"},
     "authentication": {"type": "api_key", "params": {"token": "my_dummy"}},
     "source_file_path": "./tests/source/custom_source.py",
@@ -33,7 +33,7 @@ def test_find_all_source_paths():
 
 def test_parse_streams_from_filepath():
     streams = parse_streams_from_filepath(
-        source_name="dummy", filepath="bizon/sources/dummy/src/source.py", skip_unavailable_sources=True
+        source_name="dummy", filepath="bizon/connectors/sources/dummy/src/source.py", skip_unavailable_sources=True
     )
     assert len(streams) > 0
     set(stream.name for stream in streams) == set(["creatures", "plants"])

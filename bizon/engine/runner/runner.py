@@ -9,7 +9,7 @@ from loguru import logger
 
 from bizon.cli.utils import parse_from_yaml
 from bizon.common.models import BizonConfig, SyncMetadata
-from bizon.destinations.destination import AbstractDestination, DestinationFactory
+from bizon.destination.destination import AbstractDestination, DestinationFactory
 from bizon.engine.backend.backend import AbstractBackend, BackendFactory
 from bizon.engine.backend.models import JobStatus, StreamJob
 from bizon.engine.pipeline.producer import Producer
@@ -50,12 +50,12 @@ class AbstractRunner(ABC):
     def get_source(bizon_config: BizonConfig, config: dict) -> AbstractSource:
         """Get an instance of the source based on the source config dict"""
 
-        logger.info(f"Creating client for {bizon_config.source.source_name} - {bizon_config.source.stream_name} ...")
+        logger.info(f"Creating client for {bizon_config.source.name} - {bizon_config.source.stream} ...")
 
         # Get the client class, validate the config and return the client
         return get_source_instance_by_source_and_stream(
-            source_name=bizon_config.source.source_name,
-            stream_name=bizon_config.source.stream_name,
+            source_name=bizon_config.source.name,
+            stream_name=bizon_config.source.stream,
             source_config=config["source"],  # We pass the raw config to have flexibility for custom sources
         )
 
@@ -111,8 +111,8 @@ class AbstractRunner(ABC):
         # Retrieve the last job for this stream
         job = backend.get_running_stream_job(
             name=bizon_config.name,
-            source_name=bizon_config.source.source_name,
-            stream_name=bizon_config.source.stream_name,
+            source_name=bizon_config.source.name,
+            stream_name=bizon_config.source.stream,
             session=session,
         )
 
@@ -134,8 +134,8 @@ class AbstractRunner(ABC):
         # Create a new job
         job = backend.create_stream_job(
             name=bizon_config.name,
-            source_name=bizon_config.source.source_name,
-            stream_name=bizon_config.source.stream_name,
+            source_name=bizon_config.source.name,
+            stream_name=bizon_config.source.stream,
             sync_mode=bizon_config.source.sync_mode,
             total_records_to_fetch=total_records,
             session=session,
@@ -158,9 +158,7 @@ class AbstractRunner(ABC):
         source = AbstractRunner.get_source(bizon_config=bizon_config, config=config)
 
         check_connection, connection_error = source.check_connection()
-        logger.info(
-            f"Connection to source {bizon_config.source.source_name} - {bizon_config.source.stream_name} successful"
-        )
+        logger.info(f"Connection to source {bizon_config.source.name} - {bizon_config.source.stream} successful")
 
         if not check_connection:
             logger.error(f"Error while connecting to source: {connection_error}")

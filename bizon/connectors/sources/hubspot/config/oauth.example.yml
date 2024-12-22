@@ -1,0 +1,26 @@
+name: hubspot contacts to bigquery
+
+source:
+  name: hubspot
+  stream: contacts
+  properties:
+    strategy: all
+  authentication:
+    type: oauth
+    params:
+      token_refresh_endpoint: https://api.hubapi.com/oauth/v1/token
+      client_id: <MY_CLIENT_ID>
+      client_secret: <MY_CLIENT_SECRET>
+      refresh_token: <MY_REFRESH_TOKEN>
+
+backend:
+  type: bigquery
+  database: <MY_GCP_PROJECT>
+  schema: bizon_test
+  syncCursorInDBEvery: 2
+
+destination:
+  name: bigquery
+
+pipeline:
+  log_level: DEBUG

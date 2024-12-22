@@ -1,0 +1,50 @@
+name: demo kafka to bigquery
+
+source:
+  name: kafka
+  stream: topic
+
+  sync_mode: full_refresh
+
+  topic: my-topic
+
+  nb_bytes_schema_id: 8
+
+  batch_size: 1000
+  consumer_timeout: 10
+  bootstrap_servers: <bootstrap-severs>:9092
+  group_id: <group-id>
+
+  authentication:
+    type: basic
+
+    schema_registry_url: <apicurio-url>
+    schema_registry_username: <username>
+    schema_registry_password: <password>
+
+    params:
+      username: <kafka-username>
+      password: <kafka-password>
+
+destination:
+  name: bigquery_streaming
+  config:
+    # buffer_size: 400
+    # buffer_flush_timeout: 50
+    table_id: <table-id>
+    dataset_id: <dataset-id>
+    dataset_location: US
+    project_id: <project-id>
+    # gcs_buffer_bucket: bizon-buffer
+    # gcs_buffer_format: parquet
+
+# engine:
+#   backend:
+#     type: bigquery
+#     config:
+#       database: <project-id>
+#       schema: <dataset-id>
+#       syncCursorInDBEvery: 100
+
+#   runner:
+#     log_level: INFO

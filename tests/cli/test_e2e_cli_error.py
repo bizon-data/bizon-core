@@ -8,8 +8,8 @@ BIZON_CONFIG_DUMMY_TO_FILE = f"""
 name: test_job_3
 
 source:
-    source_name: dummy
-    stream_name: creatures
+    name: dummy
+    stream: creatures
 
     authentication:
         type: api_key

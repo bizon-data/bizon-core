@@ -3,9 +3,9 @@ from datetime import datetime
 import polars as pl
 import pytest
 
-from bizon.destinations.bigquery.src.config import BigQueryColumn
-from bizon.destinations.bigquery.src.destination import BigQueryDestination
-from bizon.destinations.models import destination_record_schema
+from bizon.connectors.destinations.bigquery.src.config import BigQueryColumn
+from bizon.connectors.destinations.bigquery.src.destination import BigQueryDestination
+from bizon.destination.models import destination_record_schema
 
 
 def test_unnest_records_to_bigquery():

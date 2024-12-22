@@ -3,8 +3,8 @@ from datetime import datetime
 
 import polars as pl
 
-from bizon.destinations.buffer import DestinationBuffer
-from bizon.destinations.models import destination_record_schema
+from bizon.destination.buffer import DestinationBuffer
+from bizon.destination.models import destination_record_schema
 
 TEST_BUFFER_SIZE = 1  # Mb
 TEST_BUFFER_TIMEOUT = 1

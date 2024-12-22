@@ -31,7 +31,7 @@ class Producer:
 
     @property
     def name(self) -> str:
-        return f"producer-{self.source.config.source_name}-{self.source.config.stream_name}"
+        return f"producer-{self.source.config.name}-{self.source.config.stream}"
 
     def get_or_create_cursor(self, job_id: str, session=None) -> Cursor:
         """Get or create a cursor for the current stream, return the cursor"""
@@ -50,8 +50,8 @@ class Producer:
 
             # Initialize the recovery from the DestinationCursor
             cursor = Cursor.from_db(
-                source_name=self.source.config.source_name,
-                stream_name=self.source.config.stream_name,
+                source_name=self.source.config.name,
+                stream_name=self.source.config.stream,
                 job_id=job_id,
                 total_records=job.total_records_to_fetch,
                 iteration=cursor_from_db.to_source_iteration + 1,
@@ -63,8 +63,8 @@ class Producer:
             total_records = self.source.get_total_records_count()
             # Initialize the cursor
             cursor = Cursor(
-                source_name=self.source.config.source_name,
-                stream_name=self.source.config.stream_name,
+                source_name=self.source.config.name,
+                stream_name=self.source.config.stream,
                 job_id=job_id,
                 total_records=total_records,
             )
@@ -151,8 +151,8 @@ class Producer:
                     self.backend.create_source_cursor(
                         job_id=job_id,
                         name=self.bizon_config.name,
-                        source_name=self.source.config.source_name,
-                        stream_name=self.source.config.stream_name,
+                        source_name=self.source.config.name,
+                        stream_name=self.source.config.stream,
                         iteration=cursor.iteration,
                         rows_fetched=cursor.rows_fetched,
                         next_pagination=cursor.pagination,

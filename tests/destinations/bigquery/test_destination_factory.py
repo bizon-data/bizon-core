@@ -3,14 +3,14 @@ import os
 import pytest
 
 from bizon.common.models import SyncMetadata
-from bizon.destinations.bigquery.src.config import (
+from bizon.connectors.destinations.bigquery.src.config import (
     BigQueryConfig,
     BigQueryConfigDetails,
     GCSBufferFormat,
 )
-from bizon.destinations.bigquery.src.destination import BigQueryDestination
-from bizon.destinations.config import DestinationTypes
-from bizon.destinations.destination import DestinationFactory
+from bizon.connectors.destinations.bigquery.src.destination import BigQueryDestination
+from bizon.destination.config import DestinationTypes
+from bizon.destination.destination import DestinationFactory
 
 
 @pytest.fixture(scope="function")

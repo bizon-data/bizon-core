@@ -1,0 +1,19 @@
+name: pokemon to json unnested
+
+source:
+  name: pokeapi
+  stream: pokemon
+
+destination:
+  name: file
+  config:
+    filepath: pokemon.json
+    buffer_flush_timeout: 2
+
+    unnest: true
+
+    record_schema:
+      - name: name
+        type: string
+      - name: url
+        type: string
