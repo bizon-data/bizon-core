@@ -1,6 +1,7 @@
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 from typing import List, Tuple, Type
 
 import polars as pl
@@ -101,6 +102,16 @@ class BigQueryStreamingDestination(AbstractDestination):
         response = write_client.append_rows(iter([request]))
         return response.code().name
 
+    def safe_cast_record_values(self, row: dict):
+        for col in self.config.record_schema:
+            if col.type in ["TIMESTAMP", "DATETIME"]:
+                if isinstance(row[col.name], int):
+                    if row[col.name] > datetime(9999, 12, 31).timestamp():
+                        row[col.name] = datetime.fromtimestamp(row[col.name]/1_000_000).strftime("%Y-%m-%d %H:%M:%S.%f")
+                    else:
+                        row[col.name] = datetime.fromtimestamp(row[col.name]).strftime("%Y-%m-%d %H:%M:%S.%f")
+        return row
+
     @staticmethod
     def to_protobuf_serialization(TableRowClass: Type[Message], row: dict) -> bytes:
         """Convert a row to a Protobuf serialization."""
@@ -132,7 +143,7 @@ class BigQueryStreamingDestination(AbstractDestination):
 
         if self.config.unnest:
             serialized_rows = [
-                self.to_protobuf_serialization(TableRowClass=TableRow, row=row)
+                self.to_protobuf_serialization(TableRowClass=TableRow, row=self.safe_cast_record_values(row))
                 for row in df_destination_records["source_data"].str.json_decode().to_list()
             ]
         else:

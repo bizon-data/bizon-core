@@ -1,0 +1,112 @@
+name: Kafka debezium messages to bigquery streaming
+
+source:
+  name: kafka
+  stream: topic
+
+  sync_mode: full_refresh
+
+  force_ignore_checkpoint: true
+
+  topic: <TOPIC_NAME>
+
+  nb_bytes_schema_id: 8
+
+  batch_size: 1000
+  consumer_timeout: 10
+  bootstrap_servers: <BOOTSTRAP_SERVERS>
+  group_id: <GROUP_ID>
+
+  authentication:
+    type: basic
+
+    schema_registry_url: <SCHEMA_REGISTRY_URL>
+    schema_registry_username: <SCHEMA_REGISTRY_USERNAME>
+    schema_registry_password: <SCHEMA_REGISTRY_PASSWORD>
+
+    params:
+      username: <USERNAME>
+      password: <PASSWORD>
+
+destination:
+  name: bigquery_streaming
+
+  config:
+    buffer_size: 50
+    bq_max_rows_per_request: 10000
+    buffer_flush_timeout: 30
+
+    table_id: <TABLE_ID>
+    dataset_id: <DATASET_ID>
+    dataset_location: US
+    project_id: <PROJECT_ID>
+
+    unnest: true
+
+    time_partitioning:
+      # Mandatory if unnested
+      field: __event_timestamp
+
+    record_schema:
+      - name: account_id
+        type: INTEGER
+        mode: REQUIRED
+
+      - name: team_id
+        type: INTEGER
+        mode: REQUIRED
+
+      - name: user_id
+        type: INTEGER
+        mode: REQUIRED
+
+      - name: __deleted
+        type: BOOLEAN
+        mode: NULLABLE
+
+      - name: __cluster
+        type: STRING
+        mode: NULLABLE
+
+      - name: __kafka_partition
+        type: INTEGER
+        mode: NULLABLE
+
+      - name: __kafka_offset
+        type: INTEGER
+        mode: NULLABLE
+
+      - name: __event_timestamp
+        type: TIMESTAMP
+        mode: NULLABLE
+
+transforms:
+- label: debezium
+  python: |
+    from datetime import datetime
+
+    cluster = data['value']['source']['name'].replace('_', '-')
+    partition = data['partition']
+    offset = data['offset']
+
+    kafka_timestamp = datetime.utcfromtimestamp(data['value']['source']['ts_ms'] / 1000).strftime('%Y-%m-%d %H:%M:%S.%f')
+
+    deleted = False
+
+    if data['value']['op'] == 'd':
+      data = data['value']['before']
+      deleted = True
+    else:
+      data = data['value']['after']
+
+    data['__deleted'] = deleted
+    data['__cluster'] = cluster
+    data['__kafka_partition'] = partition
+    data['__kafka_offset'] = offset
+    data['__event_timestamp'] = kafka_timestamp
+
+engine:
+  queue:
+    type: python_queue
+    config:
+      max_nb_messages: 1000000
