@@ -1,3 +1,4 @@
+import json
 from abc import ABC
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,6 +19,23 @@ class QueueMessage:
     extracted_at: datetime = datetime.now(tz=UTC)
     pagination: Optional[dict] = None
     signal: Optional[str] = None
+
+    def dict(self) -> dict:
+        _dict = self.__dict__.copy()
+        _dict["df_source_records"] = self.df_source_records.to_dict()
+        return _dict
+
+    def to_json(self) -> str:
+        return json.dumps(self.dict())
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        data["df_source_records"] = pl.DataFrame(data["df_source_records"])
+        return cls(**data)
+
+    @classmethod
+    def from_json(cls, data: str):
+        return cls.from_dict(json.loads(data))
 
 
 class QueueTypes(str, Enum):

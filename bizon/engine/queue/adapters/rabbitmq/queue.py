@@ -28,10 +28,11 @@ class RabbitMQ(AbstractQueue):
         return RabbitMQConsumer(config=self.config, destination=destination)
 
     def put_queue_message(self, queue_message: QueueMessage):
+
         self.channel.basic_publish(
             exchange=self.config.queue.exchange,
             routing_key=self.config.queue.queue_name,
-            body=queue_message.model_dump_json(),
+            body=queue_message.to_json(),
         )
 
     def get_size(self) -> Union[int, None]:
