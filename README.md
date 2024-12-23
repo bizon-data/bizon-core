@@ -100,7 +100,7 @@ engine:
 
 **RabbitMQ**
 ```bash
-docker compose --file ./scripts/rabbitmq-compose.yml up
+docker compose --file ./scripts/queues/rabbitmq-compose.yml up
 ```
 
 In your YAML configuration, set the `queue` configuration to Kafka under `engine`:
