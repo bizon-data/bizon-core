@@ -32,8 +32,9 @@ class AbstractRunner(ABC):
         self._is_running: bool = False
 
         # Attributes should be serializable for multiprocessing
-        self.config: dict = config
-        self.bizon_config = BizonConfig.model_validate(obj=config)
+        self.config: dict = AbstractRunner.replace_env_variables_in_config(config=config)
+
+        self.bizon_config = BizonConfig.model_validate(obj=self.config)
 
         # Set pipeline information as environment variables
         os.environ["BIZON_SYNC_NAME"] = self.bizon_config.name
@@ -61,6 +62,17 @@ class AbstractRunner(ABC):
     def is_running(self) -> bool:
         """Return True if the pipeline is running"""
         return self._is_running
+
+    @staticmethod
+    def replace_env_variables_in_config(config: dict) -> dict:
+        """Replace templated secrets with actual values from environment variables"""
+        for key, value in config.items():
+            if isinstance(value, dict):
+                config[key] = AbstractRunner.replace_env_variables_in_config(value)
+            elif isinstance(value, str):
+                if value.startswith("BIZON_ENV_"):
+                    config[key] = os.getenv(value)
+        return config
 
     @classmethod
     def from_yaml(cls, filepath: str):

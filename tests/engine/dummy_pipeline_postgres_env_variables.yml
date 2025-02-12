@@ -1,0 +1,26 @@
+name: test_job
+
+source:
+  name: dummy
+  stream: creatures
+  authentication:
+    type: api_key
+    params:
+      token: dummy_key
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
+
+engine:
+  backend:
+    type: postgres
+    config:
+      syncCursorInDBEvery: 2
+      database: bizon_test
+      schema: public
+      host: BIZON_ENV_POSTGRES_HOST
+      port: 5432
+      username: BIZON_ENV_POSTGRES_USERNAME
+      password: BIZON_ENV_POSTGRES_PASSWORD
