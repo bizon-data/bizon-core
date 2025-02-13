@@ -7,9 +7,10 @@ from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus
 from bizon.engine.engine import RunnerFactory
-from bizon.engine.runner.runner import AbstractRunner
 from bizon.engine.pipeline.producer import Producer
 from bizon.engine.runner.adapters.thread import ThreadRunner
+from bizon.engine.runner.runner import AbstractRunner
+from bizon.engine.engine import replace_env_variables_in_config
 
 
 def test_load_from_config():
@@ -25,19 +26,23 @@ def test_replace_env_variables_in_config():
             "url": "BIZON_ENV_SOURCE_URL",
         }
     }
-    config = AbstractRunner.replace_env_variables_in_config(config=config)
+    config = replace_env_variables_in_config(config=config)
     assert config["source"]["url"] == "https://dummy.com"
+
 
 def test_replace_env_variables_in_yaml_config():
     os.environ["BIZON_ENV_POSTGRES_HOST"] = "localhost"
     os.environ["BIZON_ENV_POSTGRES_USERNAME"] = "postgres"
     os.environ["BIZON_ENV_POSTGRES_PASSWORD"] = "bizon"
+    os.environ["BIZON_ENV_MAX_ITERATIONS"] = "10"
 
     runner = RunnerFactory.create_from_yaml(os.path.abspath("tests/engine/dummy_pipeline_postgres_env_variables.yml"))
 
     assert runner.bizon_config.engine.backend.config.host == "localhost"
     assert runner.bizon_config.engine.backend.config.username == "postgres"
     assert runner.bizon_config.engine.backend.config.password == "bizon"
+    assert runner.bizon_config.source.max_iterations == 10
+
 
 @pytest.fixture(scope="function")
 def my_producer(my_sqlite_backend: AbstractBackend):

@@ -3,13 +3,17 @@ Extract and load your largest data streams with a framework you can trust for bi
 
 ## Features
 - **Natively fault-tolerant**: Bizon uses a checkpointing mechanism to keep track of the progress and recover from the last checkpoint.
+
 - **High throughput**: Bizon is designed to handle high throughput and can process billions of records.
+
 - **Queue system agnostic**: Bizon is agnostic of the queuing system, you can use any queuing system among Python Queue, RabbitMQ, Kafka or Redpanda. Thanks to the `bizon.engine.queue.Queue` interface, adapters can be written for any queuing system.
-- **Pipeline metrics**: Bizon provides exhaustive pipeline metrics and implement OpenTelemetry for tracing. You can monitor:
+
+- **Pipeline metrics**: Bizon provides exhaustive pipeline metrics and implement Datadog & OpenTelemetry for tracing. You can monitor:
     - ETAs for completion
     - Number of records processed
     - Completion percentage
     - Latency Source <> Destination
+
 - **Lightweight & lean**: Bizon is lightweight, minimal codebase and only uses few dependencies:
     - `requests` for HTTP requests
     - `pyyaml` for configuration
@@ -69,6 +73,13 @@ Queue is the interface used by Bizon to exchange data between `Source` and `Dest
 - `python_queue`: Python Queue, useful for testing and development.
 - `rabbitmq`: RabbitMQ, for production use and high throughput.
 - `kafka`: Apache Kafka, for production use and high throughput and strong persistence.
+
+## Runner configuration
+
+Runner is the interface used by Bizon to run the pipeline. It can be configured in the `runner` section of the configuration file. The following runners are supported:
+- `thread`
+- `process`
+- `stream`
 
 ## Start syncing your data 🚀
 

@@ -8,6 +8,8 @@ source:
     params:
       token: dummy_key
 
+  max_iterations: BIZON_ENV_MAX_ITERATIONS
+
 destination:
   name: logger
   config:
