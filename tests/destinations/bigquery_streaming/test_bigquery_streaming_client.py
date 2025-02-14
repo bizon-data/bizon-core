@@ -65,12 +65,15 @@ def test_streaming_records_to_bigquery(my_backend_config, sync_metadata_stream):
         config=BigQueryStreamingConfigDetails(
             project_id=TEST_PROJECT_ID,
             dataset_id=TEST_DATASET_ID,
-            table_id=TEST_TABLE_ID,
+            use_legacy_streaming_api=True,
         ),
     )
 
     bq_destination = DestinationFactory().get_destination(
-        sync_metadata=sync_metadata_stream, config=bigquery_config, backend=my_backend_config
+        sync_metadata=sync_metadata_stream,
+        config=bigquery_config,
+        backend=my_backend_config,
+        source_callback=None,
     )
 
     # Import here to not throw auth errors when running tests
@@ -79,6 +82,52 @@ def test_streaming_records_to_bigquery(my_backend_config, sync_metadata_stream):
     )
 
     assert isinstance(bq_destination, BigQueryStreamingDestination)
+
+    success, error_msg = bq_destination.write_records(df_destination_records=df_destination_records)
+
+    assert success is True
+    assert error_msg == ""
+
+
+@pytest.mark.skipif(
+    os.getenv("POETRY_ENV_TEST") == "CI",
+    reason="Skipping tests that require a BigQuery database",
+)
+def test_streaming_large_records_to_bigquery(my_backend_config, sync_metadata_stream):
+    bigquery_config = BigQueryStreamingConfig(
+        name=DestinationTypes.BIGQUERY_STREAMING,
+        config=BigQueryStreamingConfigDetails(
+            project_id=TEST_PROJECT_ID,
+            dataset_id=TEST_DATASET_ID,
+            use_legacy_streaming_api=True,
+        ),
+    )
+
+    bq_destination = DestinationFactory().get_destination(
+        sync_metadata=sync_metadata_stream,
+        config=bigquery_config,
+        backend=my_backend_config,
+        source_callback=None,
+    )
+
+    # Import here to not throw auth errors when running tests
+    from bizon.connectors.destinations.bigquery_streaming.src.destination import (
+        BigQueryStreamingDestination,
+    )
+
+    assert isinstance(bq_destination, BigQueryStreamingDestination)
+
+    df_destination_records = pl.DataFrame(
+        {
+            "bizon_id": ["id_1", "id_2"],
+            "bizon_extracted_at": [datetime(2024, 12, 5, 12, 0), datetime(2024, 12, 5, 13, 0)],
+            "bizon_loaded_at": [datetime(2024, 12, 5, 12, 30), datetime(2024, 12, 5, 13, 30)],
+            "source_record_id": ["record_1", "record_2"],
+            "source_timestamp": [datetime(2024, 12, 5, 11, 30), datetime(2024, 12, 5, 12, 30)],
+            "source_data": ["the_next_record_is_large", json.dumps({"data": "y" * 2_000_000})],
+        },
+        schema=destination_record_schema,
+    )
 
     success, error_msg = bq_destination.write_records(df_destination_records=df_destination_records)
 

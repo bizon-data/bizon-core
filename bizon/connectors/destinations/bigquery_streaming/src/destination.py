@@ -148,6 +148,7 @@ class BigQueryStreamingDestination(AbstractDestination):
 
     def load_to_bigquery_via_streaming(self, df_destination_records: pl.DataFrame) -> str:
         if self.config.use_legacy_streaming_api:
+            logger.debug("Using BigQuery legacy streaming API...")
             return self.load_to_bigquery_via_legacy_streaming(df_destination_records)
 
         # TODO: for now no clustering keys
@@ -230,13 +231,33 @@ class BigQueryStreamingDestination(AbstractDestination):
     )
     def _insert_batch(self, table, batch):
         """Helper method to insert a batch of rows with retry logic"""
+        logger.debug(f"Inserting batch in table {table.table_id}")
         try:
-            return self.bq_client.insert_rows_json(
-                table,
-                batch,
-                row_ids=[None] * len(batch),
-                timeout=300,  # 5 minutes timeout per request
-            )
+            # Handle streaming batch
+            if batch.get("stream_batch") and len(batch["stream_batch"]) > 0:
+                return self.bq_client.insert_rows_json(
+                    table,
+                    batch["stream_batch"],
+                    row_ids=[None] * len(batch["stream_batch"]),
+                    timeout=300,  # 5 minutes timeout per request
+                )
+
+            # Handle large rows batch
+            if batch.get("json_batch") and len(batch["json_batch"]) > 0:
+                job_config = bigquery.LoadJobConfig(
+                    source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+                    schema=table.schema,
+                    ignore_unknown_values=True,
+                )
+
+                load_job = self.bq_client.load_table_from_json(
+                    batch["json_batch"], table, job_config=job_config, timeout=300
+                )
+                load_job.result()
+
+                if load_job.state != "DONE":
+                    raise Exception(f"Failed to load rows to BigQuery: {load_job.errors}")
+
         except Exception as e:
             logger.error(f"Error inserting batch: {str(e)}, type: {type(e)}")
             raise
@@ -300,18 +321,11 @@ class BigQueryStreamingDestination(AbstractDestination):
         """
         current_batch = []
         current_batch_size = 0
+        large_rows = []
 
         for item in iterable:
             # Estimate the size of the item (as JSON)
             item_size = len(str(item).encode("utf-8"))  # Rough estimation
-
-            if item_size > self.MAX_ROW_SIZE_BYTES:
-                error_message = f"Skipping row larger than {self.MAX_ROW_SIZE_BYTES/1024/1024}MB limit in destination {self.table_id}"
-                logger.error(error_message)
-                raise Exception(
-                    f"Skipping row larger than {self.MAX_ROW_SIZE_BYTES/1024/1024}MB limit in destination {self.table_id}"
-                )
-                continue
 
             # If adding this item would exceed either limit, yield current batch and start new one
             if (
@@ -319,16 +333,22 @@ class BigQueryStreamingDestination(AbstractDestination):
                 or current_batch_size + item_size > self.MAX_REQUEST_SIZE_BYTES
             ):
                 logger.debug(f"Yielding batch of {len(current_batch)} rows, size: {current_batch_size/1024/1024:.2f}MB")
-                yield current_batch
+                yield {"stream_batch": current_batch, "json_batch": large_rows}
                 current_batch = []
                 current_batch_size = 0
+                large_rows = []
 
-            current_batch.append(item)
-            current_batch_size += item_size
+            if item_size > self.MAX_ROW_SIZE_BYTES:
+                large_rows.append(item)
+                logger.debug(f"Large row detected: {item_size} bytes")
+            else:
+                current_batch.append(item)
+                current_batch_size += item_size
 
         # Don't forget to yield the last batch
         if current_batch:
             logger.debug(
-                f"Yielding final batch of {len(current_batch)} rows, size: {current_batch_size/1024/1024:.2f}MB"
+                f"Yielding streaming batch of {len(current_batch)} rows, size: {current_batch_size/1024/1024:.2f}MB"
             )
-            yield current_batch
+            logger.debug(f"Yielding large rows batch of {len(large_rows)} rows")
+            yield {"stream_batch": current_batch, "json_batch": large_rows}
