@@ -71,8 +71,8 @@ class BigQueryStreamingDestination(AbstractDestination):
 
     @property
     def table_id(self) -> str:
-        tabled_id = self.destination_id or f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
-        return f"{self.project_id}.{self.dataset_id}.{tabled_id}"
+        tabled_id = f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
+        return self.destination_id or f"{self.project_id}.{self.dataset_id}.{tabled_id}"
 
     def get_bigquery_schema(self) -> List[bigquery.SchemaField]:
 
@@ -162,11 +162,22 @@ class BigQueryStreamingDestination(AbstractDestination):
         )
         table.time_partitioning = time_partitioning
 
+        # Override bigquery client with project's destination id
+        if self.destination_id:
+            project, dataset, table = self.destination_id.split(".")
+            self.bq_client = bigquery.Client(project=project)
+
         table = self.bq_client.create_table(table, exists_ok=True)
 
         # Create the stream
-        write_client = self.bq_storage_client
-        parent = write_client.table_path(self.project_id, self.dataset_id, self.destination_id)
+        if self.destination_id:
+            project, dataset, table = self.destination_id.split(".")
+            write_client = bigquery_storage_v1.BigQueryWriteClient(project=project)
+            parent = write_client.table_path(project, dataset, table)
+        else:
+            write_client = self.bq_storage_client
+            parent = write_client.table_path(self.project_id, self.dataset_id, self.destination_id)
+
         stream_name = f"{parent}/_default"
 
         # Generating the protocol buffer representation of the message descriptor.
@@ -263,7 +274,7 @@ class BigQueryStreamingDestination(AbstractDestination):
             raise
 
     def load_to_bigquery_via_legacy_streaming(self, df_destination_records: pl.DataFrame) -> str:
-        # Create table if it doesnt exist
+        # Create table if it does not exist
         schema = self.get_bigquery_schema()
         table = bigquery.Table(self.table_id, schema=schema)
         time_partitioning = TimePartitioning(
@@ -325,7 +336,7 @@ class BigQueryStreamingDestination(AbstractDestination):
 
         for item in iterable:
             # Estimate the size of the item (as JSON)
-            item_size = len(str(item).encode("utf-8"))  # Rough estimation
+            item_size = len(str(item).encode("utf-8"))
 
             # If adding this item would exceed either limit, yield current batch and start new one
             if (
@@ -345,7 +356,7 @@ class BigQueryStreamingDestination(AbstractDestination):
                 current_batch.append(item)
                 current_batch_size += item_size
 
-        # Don't forget to yield the last batch
+        # Yield the last batch
         if current_batch:
             logger.debug(
                 f"Yielding streaming batch of {len(current_batch)} rows, size: {current_batch_size/1024/1024:.2f}MB"

@@ -93,6 +93,41 @@ def test_streaming_records_to_bigquery(my_backend_config, sync_metadata_stream):
     os.getenv("POETRY_ENV_TEST") == "CI",
     reason="Skipping tests that require a BigQuery database",
 )
+def test_override_destination_id_streaming_records_to_bigquery(my_backend_config, sync_metadata_stream):
+    bigquery_config = BigQueryStreamingConfig(
+        name=DestinationTypes.BIGQUERY_STREAMING,
+        config=BigQueryStreamingConfigDetails(
+            project_id=TEST_PROJECT_ID,
+            dataset_id=TEST_DATASET_ID,
+            destination_id=f"{TEST_PROJECT_ID}.{TEST_DATASET_ID}.{TEST_TABLE_ID}_override",
+            use_legacy_streaming_api=True,
+        ),
+    )
+
+    bq_destination = DestinationFactory().get_destination(
+        sync_metadata=sync_metadata_stream,
+        config=bigquery_config,
+        backend=my_backend_config,
+        source_callback=None,
+    )
+
+    # Import here to not throw auth errors when running tests
+    from bizon.connectors.destinations.bigquery_streaming.src.destination import (
+        BigQueryStreamingDestination,
+    )
+
+    assert isinstance(bq_destination, BigQueryStreamingDestination)
+
+    success, error_msg = bq_destination.write_records(df_destination_records=df_destination_records)
+
+    assert success is True
+    assert error_msg == ""
+
+
+@pytest.mark.skipif(
+    os.getenv("POETRY_ENV_TEST") == "CI",
+    reason="Skipping tests that require a BigQuery database",
+)
 def test_streaming_large_records_to_bigquery(my_backend_config, sync_metadata_stream):
     bigquery_config = BigQueryStreamingConfig(
         name=DestinationTypes.BIGQUERY_STREAMING,
