@@ -255,6 +255,7 @@ class KafkaSource(AbstractSource):
             try:
 
                 data = {
+                    "topic": message.topic(),
                     "offset": message.offset(),
                     "partition": message.partition(),
                     "timestamp": message.timestamp()[1],
