@@ -139,8 +139,9 @@ class BigQueryStreamingDestination(AbstractDestination):
         for col in self.record_schemas[self.destination_id]:
 
             # Handle dicts as strings
-            if col.type == "STRING" and isinstance(row[col.name], dict):
-                row[col.name] = orjson.dumps(row[col.name]).decode("utf-8")
+            if col.type == "STRING":
+                if isinstance(row[col.name], dict) or isinstance(row[col.name], list):
+                    row[col.name] = orjson.dumps(row[col.name]).decode("utf-8")
 
             # Handle timestamps
             if col.type in ["TIMESTAMP", "DATETIME"] and col.default_value_expression is None:
