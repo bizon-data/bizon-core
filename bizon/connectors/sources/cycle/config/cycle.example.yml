@@ -1,0 +1,15 @@
+name: cycle to file
+
+source:
+  name: cycle
+  stream: customers
+  slug: <cycle_slug>
+  authentication:
+    type: api_key
+    params:
+      token: <cycle_api_key>
+
+destination:
+  name: file
+  config:
+    destination_id: cycle.jsonl
