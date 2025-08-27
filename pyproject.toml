@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "bizon"
-version = "0.1.1"
+version = "0.1.2"
 description = "Extract and load your data reliably from API Clients with native fault-tolerant and checkpointing mechanism."
 authors = ["Antoine Balliet <antoine.balliet@gmail.com>", "Anas El Mhamdi <anas.elmhamdi@gmail.com>"]
 readme = "README.md"
