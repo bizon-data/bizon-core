@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   kafka-e2e-test:
-    name: Kafka Async Polling E2E Tests
+    name: Kafka connector E2E tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
