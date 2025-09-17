@@ -59,6 +59,14 @@ class TopicOffsets(BaseModel):
         return sum([partition.last for partition in self.partitions.values()])
 
 
+def on_error(err: KafkaError):
+    # Fires for client-level errors (incl. DNS resolve failures)
+    if err.fatal():
+        logger.error(f"Kafka client error: {err} | fatal={err.fatal()} retriable={err.retriable()}")
+        raise KafkaException(err)
+    else:
+        logger.warning(f"Kafka client error: {err} | fatal={err.fatal()} retriable={err.retriable()}")
+
 class KafkaSource(AbstractSource):
 
     def __init__(self, config: KafkaSourceConfig):
@@ -75,6 +83,9 @@ class KafkaSource(AbstractSource):
         # Set the bootstrap servers and group id
         self.config.consumer_config["group.id"] = self.config.group_id
         self.config.consumer_config["bootstrap.servers"] = self.config.bootstrap_servers
+
+        # Set the error callback
+        self.config.consumer_config["error_cb"] = on_error
 
         # Consumer instance
         self.consumer = Consumer(self.config.consumer_config)
@@ -102,31 +113,43 @@ class KafkaSource(AbstractSource):
     def check_connection(self) -> Tuple[bool | Any | None]:
         """Check the connection to the Kafka source"""
 
-        logger.info(f"Found: {len(self.consumer.list_topics().topics)} topics")
+        try:
+            # Use a short timeout to avoid hanging on connection issues
+            cluster_metadata = self.consumer.list_topics(timeout=self.config.consumer_timeout)
+            topics = cluster_metadata.topics
 
-        topics = self.consumer.list_topics().topics
+            logger.info(f"Found: {len(topics)} topics")
 
-        config_topics = [topic.name for topic in self.config.topics]
+            config_topics = [topic.name for topic in self.config.topics]
 
-        # Display consumer config
-        # We ignore the key sasl.password and sasl.username
-        consumer_config = self.config.consumer_config.copy()
-        consumer_config.pop("sasl.password", None)
-        consumer_config.pop("sasl.username", None)
-        logger.info(f"Consumer config: {consumer_config}")
+            # Display consumer config
+            # We ignore the key sasl.password and sasl.username
+            consumer_config = self.config.consumer_config.copy()
+            consumer_config.pop("sasl.password", None)
+            consumer_config.pop("sasl.username", None)
+            logger.info(f"Consumer config: {consumer_config}")
 
-        for topic in config_topics:
-            if topic not in topics:
-                logger.error(f"Topic {topic} not found, available topics: {topics.keys()}")
-                return False, f"Topic {topic} not found"
+            for topic in config_topics:
+                if topic not in topics:
+                    logger.error(f"Topic {topic} not found, available topics: {topics.keys()}")
+                    return False, f"Topic {topic} not found"
 
-            logger.info(f"Topic {topic} has {len(topics[topic].partitions)} partitions")
+                logger.info(f"Topic {topic} has {len(topics[topic].partitions)} partitions")
 
-        return True, None
+            return True, None
+
+        except KafkaException as e:
+            error_msg = f"Kafka connection failed: {e}"
+            logger.error(error_msg)
+            return False, error_msg
+        except Exception as e:
+            error_msg = f"Connection check failed: {e}"
+            logger.error(error_msg)
+            return False, error_msg
 
     def get_number_of_partitions(self, topic: str) -> int:
         """Get the number of partitions for the topic"""
-        return len(self.consumer.list_topics().topics[topic].partitions)
+        return len(self.consumer.list_topics(timeout=self.config.consumer_timeout).topics[topic].partitions)
 
     def get_offset_partitions(self, topic: str) -> TopicOffsets:
         """Get the offsets for each partition of the topic"""
@@ -134,7 +157,7 @@ class KafkaSource(AbstractSource):
         partitions: Mapping[int, OffsetPartition] = {}
 
         for i in range(self.get_number_of_partitions(topic)):
-            offsets = self.consumer.get_watermark_offsets(TopicPartition(topic, i))
+            offsets = self.consumer.get_watermark_offsets(TopicPartition(topic, i), timeout=self.config.consumer_timeout)
             partitions[i] = OffsetPartition(first=offsets[0], last=offsets[1])
 
         return TopicOffsets(name=topic, partitions=partitions)
