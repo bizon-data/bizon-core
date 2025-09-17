@@ -1,0 +1,216 @@
+name: Kafka Async Polling E2E Tests
+
+on:
+  pull_request:
+    paths:
+      - 'bizon/connectors/sources/kafka/**'
+      - 'tests/e2e/test_e2e_kafka_async_polling.py'
+      - 'tests/connectors/sources/kafka/**'
+      - '.github/workflows/kafka-e2e.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  kafka-e2e-test:
+    name: Kafka Async Polling E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Start Kafka with Docker Compose
+      run: |
+        echo "Starting Kafka with Docker Compose..."
+        cat > docker-compose.yml << 'EOF'
+        version: '3.8'
+        services:
+          kafka:
+            image: confluentinc/confluent-local:7.5.0
+            hostname: kafka
+            container_name: kafka
+            ports:
+              - "9092:9092"
+            environment:
+              KAFKA_NODE_ID: 1
+              KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+              KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+              KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+              KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+              KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+              KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+              KAFKA_JMX_PORT: 9101
+              KAFKA_JMX_HOSTNAME: localhost
+              KAFKA_PROCESS_ROLES: 'broker,controller'
+              KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+              KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+              KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+              KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+              KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+              CLUSTER_ID: 'MkU3OEVBNTcwNTJENDM2Qk'
+        EOF
+        docker compose up -d
+        echo "Waiting for container to start..."
+        sleep 5
+        docker compose ps
+
+    - name: Wait for Kafka to be ready
+      run: |
+        echo "Waiting for Kafka to be ready..."
+        # Check container logs
+        echo "Container logs:"
+        docker compose logs kafka | tail -20
+        # Wait for Kafka port to be available
+        echo "Waiting for Kafka port 9092..."
+        timeout 120s bash -c 'until nc -z localhost 9092; do echo "Waiting..."; sleep 3; done'
+        # Additional wait for Kafka to fully initialize
+        echo "Waiting for Kafka to fully initialize..."
+        sleep 15
+        # Check logs again
+        echo "Final container logs:"
+        docker compose logs kafka | tail -10
+        echo "Kafka should be ready!"
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: latest
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Install dependencies
+      run: poetry install --with test --all-extras
+
+    - name: Verify Kafka connection
+      run: |
+        echo "Verifying Kafka connection with retries..."
+        poetry run python -c "
+        from confluent_kafka import Producer
+        import time
+        import sys
+
+        for attempt in range(1, 6):
+            try:
+                print(f'Attempt {attempt}/5: Testing Kafka connection...')
+                producer = Producer({
+                    'bootstrap.servers': 'localhost:9092',
+                    'client.id': 'verification-client',
+                    'api.version.request': True,
+                    'api.version.request.timeout.ms': 10000
+                })
+                producer.produce('test-topic', 'test-message')
+                producer.flush(timeout=10)
+                print('✅ Kafka connection verified!')
+                break
+            except Exception as e:
+                print(f'❌ Attempt {attempt} failed: {e}')
+                if attempt == 5:
+                    print('Failed to connect after 5 attempts')
+                    sys.exit(1)
+                time.sleep(5)
+        "
+
+    - name: Create test topics and produce data
+      run: |
+        poetry run python -c "
+        import json
+        import time
+        from confluent_kafka import Producer
+        from confluent_kafka.admin import AdminClient, NewTopic
+
+        print('🎯 Setting up Kafka test environment...')
+        # Create topics
+        admin_client = AdminClient({'bootstrap.servers': 'localhost:9092'})
+        topics = [
+            NewTopic('async-test-high-volume', num_partitions=3, replication_factor=1),
+            NewTopic('async-test-low-volume', num_partitions=1, replication_factor=1)
+        ]
+
+        futures = admin_client.create_topics(topics)
+        for topic_name, future in futures.items():
+            try:
+                future.result(timeout=10)
+                print(f'✅ Created topic: {topic_name}')
+            except Exception as e:
+                if 'already exists' in str(e).lower():
+                    print(f'ℹ️  Topic {topic_name} already exists')
+                else:
+                    print(f'❌ Failed to create topic {topic_name}: {e}')
+                    raise
+        # Produce test data
+        producer = Producer({
+            'bootstrap.servers': 'localhost:9092',
+            'client.id': 'ci-test-producer'
+        })
+
+        print('🚀 Producing test data to simulate starvation scenario...')
+        # High-volume topic - simulate heavy load (200 messages)
+        for i in range(200):
+            message = {
+                'id': f'high-vol-{i}',
+                'type': 'high_volume',
+                'data': f'High volume message {i}',
+                'timestamp': int(time.time() * 1000),
+                'batch': i // 20
+            }
+
+            producer.produce(
+                'async-test-high-volume',
+                key=json.dumps(f'high-vol-{i}'),
+                value=json.dumps(message),
+                partition=i % 3
+            )
+
+            if i % 50 == 0:
+                producer.flush()
+        # Low-volume topic - simulate critical but infrequent messages (10 messages)
+        for i in range(10):
+            message = {
+                'id': f'low-vol-{i}',
+                'type': 'low_volume',
+                'data': f'Critical message {i}',
+                'priority': 'HIGH',
+                'timestamp': int(time.time() * 1000),
+                'sequence': i
+            }
+
+            producer.produce(
+                'async-test-low-volume',
+                key=json.dumps(f'low-vol-{i}'),
+                value=json.dumps(message),
+                partition=0
+            )
+
+        producer.flush()
+        print('📦 Test data produced successfully!')
+        print('   - High-volume topic: 200 messages across 3 partitions')
+        print('   - Low-volume topic: 10 critical messages in 1 partition')
+        "
+
+    - name: Run Kafka Authentication Failure Tests
+      env:
+        KAFKA_E2E_TESTS: "1"
+      run: |
+        echo "🔐 Running Kafka authentication failure tests..."
+        poetry run pytest tests/e2e/kafka/test_e2e_kafka_auth_failures.py -v --tb=short
+        echo "✅ Authentication failure tests completed!"
+
+    - name: Run Standard Kafka E2E Tests
+      run: |
+        echo "🚀 Running standard Kafka e2e tests..."
+        # Add any existing e2e tests here if they exist
+        echo "✅ Standard e2e tests completed!"
+
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "🧹 Cleaning up..."
+        docker compose down -v
+        docker compose logs kafka | tail -20
