@@ -53,7 +53,7 @@ class AbstractOauth2Authenticator(AuthBase):
             "refresh_token": self.get_refresh_token(),
         }
 
-        if self.get_scopes:
+        if self.get_scopes():
             payload["scope"] = ",".join(self.get_scopes())
 
         if self.get_refresh_request_body():
