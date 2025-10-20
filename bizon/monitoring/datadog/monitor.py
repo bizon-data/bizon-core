@@ -130,7 +130,12 @@ class DatadogMonitor(AbstractMonitor):
 
         try:
             from ddtrace import tracer
+        except ImportError:
+            logger.warning("ddtrace not available, skipping tracing")
+            yield None
+            return
 
+        try:
             # Combine tags
             all_tags = self.tags.copy()
             if extra_tags:
@@ -145,9 +150,6 @@ class DatadogMonitor(AbstractMonitor):
                         span.set_tag(key, value)
                 span.set_tag("_sampling_priority_v1", 1)
                 yield span
-        except ImportError:
-            logger.warning("ddtrace not available, skipping tracing")
-            yield None
         except Exception as e:
             logger.warning(f"Failed to create trace: {e}")
             yield None

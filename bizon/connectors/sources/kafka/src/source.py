@@ -321,12 +321,35 @@ class KafkaSource(AbstractSource):
                         f"with value: {message.value()} and key: {message.key()}"
                     )
                 )
-                # Try to parse error message from the message
+
+                # Try to parse error message from the message value
                 try:
                     message_raw_text = message.value().decode("utf-8")
                     logger.error(f"Parsed Kafka value: {message_raw_text}")
                 except UnicodeDecodeError:
-                    logger.error("Message is not a valid UTF-8 string")
+                    logger.error("Message value is not a valid UTF-8 string")
+
+                # Try to parse error message from the message key
+                if message.key():
+                    try:
+                        key_raw_text = message.key().decode("utf-8")
+                        logger.error(f"Parsed Kafka key: {key_raw_text}")
+                    except UnicodeDecodeError:
+                        logger.error("Message key is not a valid UTF-8 string")
+                        logger.error(f"Raw message key bytes: {message.key()}")
+                else:
+                    logger.error("Message key is None or empty")
+
+                # Try to parse error message from the message headers
+                if message.headers():
+                    try:
+                        headers_dict = {key: value.decode("utf-8") for key, value in message.headers()}
+                        logger.error(f"Parsed Kafka headers: {headers_dict}")
+                    except UnicodeDecodeError as header_error:
+                        logger.error(f"Some message headers are not valid UTF-8 strings: {header_error}")
+                        logger.error(f"Raw message headers: {list(message.headers())}")
+                else:
+                    logger.error("Message headers are None or empty")
 
                 logger.error(traceback.format_exc())
                 raise e
