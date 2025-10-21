@@ -54,7 +54,9 @@ class KafkaSourceConfig(SourceConfig):
     skip_message_empty_value: bool = Field(
         default=True, description="Skip messages with empty value (tombstone messages)"
     )
-
+    skip_message_invalid_keys: bool = Field(
+        default=False, description="Skip messages with invalid keys (unparsable JSON keys)"
+    )
     # Kafka consumer configuration
     batch_size: int = Field(100, description="Kafka batch size, number of messages to fetch at once.")
     consumer_timeout: int = Field(10, description="Kafka consumer timeout in seconds, before returning batch.")

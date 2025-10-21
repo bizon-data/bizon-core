@@ -262,30 +262,45 @@ class KafkaSource(AbstractSource):
 
         for message in encoded_messages:
 
+            MESSAGE_LOG_METADATA = (
+                f"Message for topic {message.topic()} partition {message.partition()} and offset {message.offset()}"
+            )
+
             if message.error():
                 # If the message is too large, we skip it and update the offset
                 if message.error().code() == KafkaError.MSG_SIZE_TOO_LARGE:
                     logger.error(
                         (
-                            f"Message for topic {message.topic()} partition {message.partition()} and offset {message.offset()} is too large. "
-                            f"Raised MSG_SIZE_TOO_LARGE, if manually setting the offset, the message might not exist. Double-check in Confluent Cloud."
+                            f"{MESSAGE_LOG_METADATA} is too large. "
+                            "Raised MSG_SIZE_TOO_LARGE, if manually setting the offset, the message might not exist. Double-check in Confluent Cloud."
                         )
                     )
 
-                logger.error(
-                    (
-                        f"Error while consuming message for topic {message.topic()} partition {message.partition()} and offset {message.offset()}: "
-                        f"{message.error()}"
-                    )
-                )
+                logger.error((f"{MESSAGE_LOG_METADATA}: " f"{message.error()}"))
                 raise KafkaException(message.error())
 
             # We skip tombstone messages
             if self.config.skip_message_empty_value and not message.value():
-                logger.debug(
-                    f"Message for topic {message.topic()} partition {message.partition()} and offset {message.offset()} is empty, skipping."
-                )
+                logger.debug(f"{MESSAGE_LOG_METADATA} is empty, skipping.")
                 continue
+
+            # Parse message keys
+            if message.key():
+                try:
+                    message_keys = orjson.loads(message.key().decode("utf-8"))
+                except orjson.JSONDecodeError as e:
+                    # We skip messages with invalid keys
+                    if self.config.skip_message_invalid_keys:
+                        logger.warning(f"{MESSAGE_LOG_METADATA} has an invalid key={message.key()}, skipping.")
+                        # Skip the message
+                        continue
+
+                    logger.error(
+                        f"{MESSAGE_LOG_METADATA}: Error while parsing message key: {e}, raw key: {message.key()}"
+                    )
+                    raise e
+            else:
+                message_keys = {}
 
             # Decode the message
             try:
@@ -297,7 +312,7 @@ class KafkaSource(AbstractSource):
                     "offset": message.offset(),
                     "partition": message.partition(),
                     "timestamp": message.timestamp()[1],
-                    "keys": orjson.loads(message.key().decode("utf-8")) if message.key() else {},
+                    "keys": message_keys,
                     "headers": (
                         {key: value.decode("utf-8") for key, value in message.headers()} if message.headers() else {}
                     ),
@@ -317,7 +332,7 @@ class KafkaSource(AbstractSource):
             except Exception as e:
                 logger.error(
                     (
-                        f"Error while decoding message for topic {message.topic()} on partition {message.partition()}: {e} at offset {message.offset()} "
+                        f"{MESSAGE_LOG_METADATA}: Error while decoding message: {e} "
                         f"with value: {message.value()} and key: {message.key()}"
                     )
                 )
@@ -328,17 +343,6 @@ class KafkaSource(AbstractSource):
                     logger.error(f"Parsed Kafka value: {message_raw_text}")
                 except UnicodeDecodeError:
                     logger.error("Message value is not a valid UTF-8 string")
-
-                # Try to parse error message from the message key
-                if message.key():
-                    try:
-                        key_raw_text = message.key().decode("utf-8")
-                        logger.error(f"Parsed Kafka key: {key_raw_text}")
-                    except UnicodeDecodeError:
-                        logger.error("Message key is not a valid UTF-8 string")
-                        logger.error(f"Raw message key bytes: {message.key()}")
-                else:
-                    logger.error("Message key is None or empty")
 
                 # Try to parse error message from the message headers
                 if message.headers():
