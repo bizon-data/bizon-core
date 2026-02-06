@@ -1,4 +1,5 @@
 import click
+from dotenv import find_dotenv, load_dotenv
 
 from bizon.engine.engine import RunnerFactory
 from bizon.engine.runner.config import LoggerLevel
@@ -95,14 +96,27 @@ def destination():
     show_default=True,
     help="Log level to use.",
 )
+@click.option(
+    "--env-file",
+    required=False,
+    type=click.Path(exists=True),
+    help="Path to .env file to load environment variables from.",
+)
 def run(
     filename: str,
     custom_source: str,
     runner: str,
     log_level: LoggerLevel,
+    env_file: str,
     help="Run a bizon pipeline from a YAML file.",
 ):
     """Run a bizon pipeline from a YAML file."""
+
+    # Load environment variables from .env file
+    if env_file:
+        load_dotenv(env_file)
+    else:
+        load_dotenv(find_dotenv(".env"))
 
     # Parse config from YAML file as a dictionary
     config = parse_from_yaml(filename)
