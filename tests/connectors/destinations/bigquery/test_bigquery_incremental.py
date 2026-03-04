@@ -133,7 +133,7 @@ class TestBigQueryFinalize:
         assert "CREATE OR REPLACE TABLE" in query_call
 
     def test_finalize_incremental(self, bigquery_config, mock_bq_client, mock_gcs_client):
-        """Test finalize() for INCREMENTAL mode appends data."""
+        """Test finalize() for INCREMENTAL mode appends data when table exists."""
         sync_metadata = create_sync_metadata(SourceSyncModes.INCREMENTAL)
 
         destination = BigQueryDestination(
@@ -149,6 +149,8 @@ class TestBigQueryFinalize:
         mock_query.return_value.result = MagicMock()
         destination.bq_client.query = mock_query
         destination.bq_client.delete_table = MagicMock()
+        # Mock get_table to simulate table exists
+        destination.bq_client.get_table = MagicMock()
 
         result = destination.finalize()
 
@@ -157,6 +159,37 @@ class TestBigQueryFinalize:
         mock_query.assert_called_once()
         query_call = mock_query.call_args[0][0]
         assert "INSERT INTO" in query_call
+
+    def test_finalize_incremental_first_run(self, bigquery_config, mock_bq_client, mock_gcs_client):
+        """Test finalize() for INCREMENTAL mode creates table on first run."""
+        from google.api_core.exceptions import NotFound
+
+        sync_metadata = create_sync_metadata(SourceSyncModes.INCREMENTAL)
+
+        destination = BigQueryDestination(
+            sync_metadata=sync_metadata,
+            config=bigquery_config,
+            backend=MagicMock(),
+            source_callback=MagicMock(),
+            monitor=MagicMock(),
+        )
+
+        # Mock the query method
+        mock_query = MagicMock()
+        mock_query.return_value.result = MagicMock()
+        destination.bq_client.query = mock_query
+        destination.bq_client.delete_table = MagicMock()
+        # Mock get_table to simulate table does NOT exist
+        destination.bq_client.get_table = MagicMock(side_effect=NotFound("Table not found"))
+
+        result = destination.finalize()
+
+        assert result is True
+        # Check that CREATE TABLE was called instead of INSERT INTO
+        mock_query.assert_called_once()
+        query_call = mock_query.call_args[0][0]
+        assert "CREATE TABLE" in query_call
+        assert "INSERT INTO" not in query_call
 
     def test_finalize_stream(self, bigquery_config, mock_bq_client, mock_gcs_client):
         """Test finalize() for STREAM mode does nothing."""

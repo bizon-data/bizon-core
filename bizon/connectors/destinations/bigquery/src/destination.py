@@ -210,9 +210,20 @@ class BigQueryDestination(AbstractDestination):
             return True
 
         elif self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
-            # Append data from incremental temp table to main table
-            logger.info(f"Appending data from {self.temp_table_id} to {self.table_id} ...")
-            self.bq_client.query(f"INSERT INTO {self.table_id} SELECT * FROM {self.temp_table_id}").result()
+            # Check if main table exists (first incremental run won't have it)
+            try:
+                self.bq_client.get_table(self.table_id)
+                table_exists = True
+            except NotFound:
+                table_exists = False
+
+            if table_exists:
+                logger.info(f"Appending data from {self.temp_table_id} to {self.table_id} ...")
+                self.bq_client.query(f"INSERT INTO {self.table_id} SELECT * FROM {self.temp_table_id}").result()
+            else:
+                logger.info(f"Table {self.table_id} not found, creating from {self.temp_table_id} ...")
+                self.bq_client.query(f"CREATE TABLE {self.table_id} AS SELECT * FROM {self.temp_table_id}").result()
+
             logger.info(f"Deleting incremental temp table {self.temp_table_id} ...")
             self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
             return True
