@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bizon"
-version = "0.3.2"
+version = "0.3.3"
 description = "Extract and load your data reliably from API Clients with native fault-tolerant and checkpointing mechanism."
 authors = [
     { name = "Antoine Balliet", email = "antoine.balliet@gmail.com" },
