@@ -11,7 +11,7 @@ from bizon.connectors.sources.kafka.src.config import (
     MessageEncoding,
     TopicConfig,
 )
-from bizon.connectors.sources.kafka.src.source import KafkaSource
+from bizon.connectors.sources.kafka.src.source import KafkaSource, _sanitize_lone_surrogates
 from bizon.source.auth.config import AuthType
 
 
@@ -493,3 +493,185 @@ class TestKafkaDecodeErrorLogging:
         finally:
             # Clean up the loguru handler
             self.remove_loguru_handler(handler_id)
+
+
+class TestKafkaSurrogateSanitization:
+    """Test handling of lone Unicode surrogates in Kafka JSON messages."""
+
+    def create_mock_message(
+        self, key=None, value=None, headers=None, topic="test-topic", partition=0, offset=12345
+    ):
+        """Create a mock Kafka message."""
+        message = Mock(spec=Message)
+        message.key.return_value = key
+        message.value.return_value = value
+        message.headers.return_value = headers
+        message.error.return_value = None
+        message.topic.return_value = topic
+        message.partition.return_value = partition
+        message.offset.return_value = offset
+        message.timestamp.return_value = (None, 1640995200000)
+        return message
+
+    @pytest.fixture
+    def kafka_config(self):
+        from bizon.connectors.sources.kafka.src.config import KafkaAuthConfig
+        from bizon.source.auth.authenticators.basic import BasicHttpAuthParams
+
+        return KafkaSourceConfig(
+            name="test-kafka-source",
+            stream="test-stream",
+            topics=[TopicConfig(name="test-topic", destination_id="test-destination")],
+            bootstrap_servers="localhost:9092",
+            group_id="test-group",
+            message_encoding=MessageEncoding.UTF_8,
+            authentication=KafkaAuthConfig(
+                type=AuthType.BASIC,
+                params=BasicHttpAuthParams(username="test", password="test"),
+                schema_registry_type="apicurio",
+                schema_registry_url="http://localhost:8080",
+                schema_registry_username="test",
+                schema_registry_password="test",
+            ),
+        )
+
+    @pytest.fixture
+    def mock_consumer(self):
+        consumer = Mock()
+        consumer.list_topics.return_value = Mock(topics={"test-topic": Mock(partitions={0: Mock()})})
+        consumer.get_watermark_offsets.return_value = (0, 100)
+        return consumer
+
+    @pytest.fixture
+    def kafka_source(self, kafka_config, mock_consumer):
+        with patch("bizon.connectors.sources.kafka.src.source.Consumer", return_value=mock_consumer):
+            return KafkaSource(kafka_config)
+
+    @pytest.fixture
+    def kafka_source_skip_decode_error(self, mock_consumer):
+        from bizon.connectors.sources.kafka.src.config import KafkaAuthConfig
+        from bizon.source.auth.authenticators.basic import BasicHttpAuthParams
+
+        config = KafkaSourceConfig(
+            name="test-kafka-source",
+            stream="test-stream",
+            topics=[TopicConfig(name="test-topic", destination_id="test-destination")],
+            bootstrap_servers="localhost:9092",
+            group_id="test-group",
+            message_encoding=MessageEncoding.UTF_8,
+            skip_message_on_decode_error=True,
+            authentication=KafkaAuthConfig(
+                type=AuthType.BASIC,
+                params=BasicHttpAuthParams(username="test", password="test"),
+                schema_registry_type="apicurio",
+                schema_registry_url="http://localhost:8080",
+                schema_registry_username="test",
+                schema_registry_password="test",
+            ),
+        )
+        with patch("bizon.connectors.sources.kafka.src.source.Consumer", return_value=mock_consumer):
+            return KafkaSource(config)
+
+    # --- Tests for _sanitize_lone_surrogates ---
+
+    def test_sanitize_lone_low_surrogate(self):
+        text = r'{"msg": "\udf31 hello"}'
+        result = _sanitize_lone_surrogates(text)
+        assert result == r'{"msg": "\ufffd hello"}'
+
+    def test_sanitize_lone_high_surrogate(self):
+        text = r'{"msg": "\ud83d hello"}'
+        result = _sanitize_lone_surrogates(text)
+        assert result == r'{"msg": "\ufffd hello"}'
+
+    def test_sanitize_preserves_valid_surrogate_pair(self):
+        # \ud83d\ude00 = grinning face emoji
+        text = r'{"emoji": "\ud83d\ude00"}'
+        result = _sanitize_lone_surrogates(text)
+        assert result == text  # unchanged
+
+    def test_sanitize_mixed_pair_and_lone(self):
+        text = r'{"a": "\ud83d\ude00\udf31"}'
+        result = _sanitize_lone_surrogates(text)
+        assert result == r'{"a": "\ud83d\ude00\ufffd"}'
+
+    def test_sanitize_no_surrogates(self):
+        text = r'{"normal": "hello \u00e9"}'
+        result = _sanitize_lone_surrogates(text)
+        assert result == text  # unchanged
+
+    # --- Tests for decode_utf_8 with surrogates ---
+
+    def test_decode_utf8_lone_surrogate_sanitized(self, kafka_source):
+        """Lone surrogate in message value is sanitized and parsed successfully."""
+        value = b'{"id": "18", "message": " \\udf31 hello"}'
+        mock_msg = self.create_mock_message(key=b'{"k": "v"}', value=value, headers=[("h", b"v")])
+
+        records = kafka_source.parse_encoded_messages([mock_msg])
+
+        assert len(records) == 1
+        assert records[0].data["value"]["id"] == "18"
+        assert "\ufffd" in records[0].data["value"]["message"]
+
+    def test_decode_utf8_valid_surrogate_pair_preserved(self, kafka_source):
+        """Valid surrogate pair (flag emoji) parses correctly via orjson fast path."""
+        value = b'{"emoji": "\\ud83c\\udde9\\ud83c\\uddea"}'
+        mock_msg = self.create_mock_message(key=b'{"k": "v"}', value=value, headers=[("h", b"v")])
+
+        records = kafka_source.parse_encoded_messages([mock_msg])
+
+        assert len(records) == 1
+        assert records[0].data["value"]["emoji"] == "\U0001f1e9\U0001f1ea"  # flag DE
+
+    def test_decode_utf8_non_surrogate_error_still_raises(self, kafka_source):
+        """Malformed JSON (not a surrogate issue) still raises."""
+        value = b'{"incomplete":'
+        mock_msg = self.create_mock_message(key=b'{"k": "v"}', value=value, headers=[("h", b"v")])
+
+        with pytest.raises(orjson.JSONDecodeError):
+            kafka_source.parse_encoded_messages([mock_msg])
+
+    def test_decode_utf8_normal_message_fast_path(self, kafka_source):
+        """Normal messages go through the fast orjson path with no overhead."""
+        value = b'{"normal": "Hola, buenos d\\u00edas"}'
+        mock_msg = self.create_mock_message(key=b'{"k": "v"}', value=value, headers=[("h", b"v")])
+
+        records = kafka_source.parse_encoded_messages([mock_msg])
+
+        assert len(records) == 1
+        assert records[0].data["value"]["normal"] == "Hola, buenos d\u00edas"
+
+    # --- Tests for skip_message_on_decode_error ---
+
+    def test_skip_message_on_decode_error_skips(self, kafka_source_skip_decode_error):
+        """When skip_message_on_decode_error=True, decode failures skip the message."""
+        value = b'{"incomplete":'
+        mock_msg = self.create_mock_message(key=b'{"k": "v"}', value=value, headers=[("h", b"v")])
+
+        records = kafka_source_skip_decode_error.parse_encoded_messages([mock_msg])
+        assert len(records) == 0
+
+    def test_skip_message_on_decode_error_default_raises(self, kafka_source):
+        """When skip_message_on_decode_error=False (default), decode failures raise."""
+        value = b'{"incomplete":'
+        mock_msg = self.create_mock_message(key=b'{"k": "v"}', value=value, headers=[("h", b"v")])
+
+        with pytest.raises(orjson.JSONDecodeError):
+            kafka_source.parse_encoded_messages([mock_msg])
+
+    def test_skip_message_on_decode_error_config_default(self):
+        """The skip_message_on_decode_error config defaults to False."""
+        from bizon.connectors.sources.kafka.src.config import KafkaAuthConfig
+        from bizon.source.auth.authenticators.basic import BasicHttpAuthParams
+
+        config = KafkaSourceConfig(
+            name="test",
+            stream="test",
+            topics=[],
+            bootstrap_servers="localhost:9092",
+            authentication=KafkaAuthConfig(
+                type=AuthType.BASIC,
+                params=BasicHttpAuthParams(username="test", password="test"),
+            ),
+        )
+        assert config.skip_message_on_decode_error is False
