@@ -179,6 +179,8 @@ class BigQueryStreamingV2Destination(AbstractDestination):
     @staticmethod
     def to_protobuf_serialization(TableRowClass: Type[Message], row: dict) -> bytes:
         """Convert a row to a Protobuf serialization."""
+        # Proto schema only has scalar types — convert any dict/list values to JSON strings
+        row = {k: orjson.dumps(v).decode("utf-8") if isinstance(v, (dict, list)) else v for k, v in row.items()}
         try:
             record = ParseDict(row, TableRowClass())
         except ParseError as e:
