@@ -1,3 +1,4 @@
+import re
 import traceback
 from collections.abc import Mapping
 from datetime import datetime
@@ -31,6 +32,27 @@ from .decode import (
     decode_avro_message,
     parse_global_id_from_serialized_message,
 )
+
+
+# Regex to detect lone Unicode surrogates in JSON text while preserving valid surrogate pairs.
+# Valid pairs (high + low) are matched first and kept; lone surrogates are replaced.
+_HIGH_SURROGATE = r'\\u[dD][89aAbB][0-9a-fA-F]{2}'
+_LOW_SURROGATE = r'\\u[dD][cCdDeEfF][0-9a-fA-F]{2}'
+_SURROGATE_RE = re.compile(f'({_HIGH_SURROGATE}{_LOW_SURROGATE})|(\\\\u[dD][89a-fA-F][0-9a-fA-F]{{2}})')
+
+
+def _sanitize_lone_surrogates(text: str) -> str:
+    """Replace lone Unicode surrogate escapes in JSON text with U+FFFD (replacement character).
+
+    Valid surrogate pairs (high + low) are preserved. Only lone surrogates are replaced.
+    """
+
+    def _replace(m):
+        if m.group(1):  # Valid surrogate pair - keep it
+            return m.group(1)
+        return '\\ufffd'  # Lone surrogate -> replacement char
+
+    return _SURROGATE_RE.sub(_replace, text)
 
 
 class SchemaNotFound(Exception):
@@ -292,9 +314,30 @@ class KafkaSource(AbstractSource):
         )
 
     def decode_utf_8(self, message: Message) -> Tuple[dict, dict]:
-        """Decode the message as utf-8 and return the parsed message and the schema"""
-        # Decode the message as utf-8
-        return orjson.loads(message.value().decode("utf-8")), {}
+        """Decode the message as utf-8 and return the parsed message and the schema.
+
+        Uses orjson for fast JSON parsing. If orjson rejects the message due to
+        lone Unicode surrogate escape sequences (e.g., \\udf31), sanitizes them
+        by replacing with U+FFFD and retries.
+        """
+        raw_text = message.value().decode("utf-8")
+        try:
+            return orjson.loads(raw_text), {}
+        except orjson.JSONDecodeError as e:
+            if "surrogate" not in str(e).lower():
+                raise
+
+            sanitized = _sanitize_lone_surrogates(raw_text)
+            if sanitized == raw_text:
+                # No surrogates were found/replaced, so the error is something else
+                raise
+
+            logger.warning(
+                f"Message on topic {message.topic()} partition {message.partition()} "
+                f"offset {message.offset()} contains lone Unicode surrogates. "
+                f"Sanitized by replacing with U+FFFD."
+            )
+            return orjson.loads(sanitized), {}
 
     def decode(self, message) -> Tuple[dict, dict]:
         """Decode the message based on the encoding type
@@ -384,6 +427,13 @@ class KafkaSource(AbstractSource):
                     f"{MESSAGE_LOG_METADATA}: Error while decoding message: {e} "
                     f"with value: {message.value()} and key: {message.key()}"
                 )
+
+                # Skip message if configured to do so on decode errors
+                if self.config.skip_message_on_decode_error:
+                    logger.warning(
+                        f"{MESSAGE_LOG_METADATA} could not be decoded, skipping due to skip_message_on_decode_error=True."
+                    )
+                    continue
 
                 # Try to parse error message from the message value
                 try:

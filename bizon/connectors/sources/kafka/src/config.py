@@ -59,6 +59,9 @@ class KafkaSourceConfig(SourceConfig):
     skip_message_invalid_keys: bool = Field(
         default=False, description="Skip messages with invalid keys (unparsable JSON keys)"
     )
+    skip_message_on_decode_error: bool = Field(
+        default=False, description="Skip messages that fail to decode (e.g., invalid JSON in value)"
+    )
     # Kafka consumer configuration
     batch_size: int = Field(100, description="Kafka batch size, number of messages to fetch at once.")
     consumer_timeout: int = Field(10, description="Kafka consumer timeout in seconds, before returning batch.")
