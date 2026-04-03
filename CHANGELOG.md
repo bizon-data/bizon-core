@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-04-03
+
+### Fixed
+- Kafka consumer stalling due to rebalance by overlapping consume and BigQuery writes in separate threads
+- Added `max.poll.interval.ms` default (10 min) to Kafka consumer config
+
 ## [0.3.7] - 2026-04-03
 
 ### Fixed
