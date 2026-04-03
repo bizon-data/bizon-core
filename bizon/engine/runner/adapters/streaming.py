@@ -1,5 +1,6 @@
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import List
 
@@ -111,13 +112,35 @@ class StreamingRunner(AbstractRunner):
 
         destination.buffer.buffer_size = 0  # force buffer to be flushed immediately
         iteration = 0
+        executor = ThreadPoolExecutor(max_workers=1)
+        pending_future = None
+        should_commit = False
 
         while True:
             if source.config.max_iterations and iteration > source.config.max_iterations:
+                # Wait for last write before exiting
+                if pending_future is not None:
+                    pending_future.result()
                 logger.info(f"Max iterations {source.config.max_iterations} reached, terminating stream ...")
                 break
 
             with monitor.trace(operation_name="bizon.stream.iteration"):
+                # === BACKPRESSURE: wait for previous write to finish ===
+                if pending_future is not None:
+                    pending_future.result()  # raises if write failed
+                    pending_future = None
+
+                    # Commit only after write confirmed successful
+                    if should_commit and os.getenv("ENVIRONMENT") == "production":
+                        try:
+                            source.commit()
+                        except Exception as e:
+                            logger.error(f"Error committing source: {e}")
+                            monitor.track_pipeline_status(PipelineReturnStatus.ERROR)
+                            return RunnerStatus(stream=PipelineReturnStatus.ERROR)
+                        should_commit = False
+
+                # === CONSUME (main thread - keeps heartbeats alive) ===
                 source_iteration = source.get()
 
                 destination_id_indexed_records = {}
@@ -135,6 +158,8 @@ class StreamingRunner(AbstractRunner):
                     else:
                         destination_id_indexed_records[record.destination_id] = [record]
 
+                # === PREPARE DATA (main thread - fast) ===
+                write_jobs = []
                 for destination_id, records in destination_id_indexed_records.items():
                     df_source_records = StreamingRunner.convert_source_records(records)
 
@@ -146,30 +171,31 @@ class StreamingRunner(AbstractRunner):
                     df_destination_records = StreamingRunner.convert_to_destination_records(
                         df_source_records, datetime.now(tz=UTC)
                     )
-                    # Override destination_id
-                    destination.destination_id = destination_id
-                    destination.write_or_buffer_records(
-                        df_destination_records=df_destination_records,
-                        iteration=iteration,
-                        pagination=None,
-                    )
-                    monitor.track_records_synced(
-                        num_records=len(df_destination_records),
-                        destination_id=destination_id,
-                        extra_tags={"destination_id": destination_id},
-                        headers=dsm_headers,
+                    write_jobs.append(
+                        (destination_id, df_destination_records, len(df_destination_records), dsm_headers)
                     )
 
-                if os.getenv("ENVIRONMENT") == "production":
-                    try:
-                        source.commit()
-                    except Exception as e:
-                        logger.error(f"Error committing source: {e}")
-                        monitor.track_pipeline_status(PipelineReturnStatus.ERROR)
-                        return RunnerStatus(stream=PipelineReturnStatus.ERROR)
+                # === SUBMIT WRITE (background thread - slow BigQuery writes) ===
+                def do_writes(jobs, iter_num):
+                    for dest_id, df_dest, num_records, headers in jobs:
+                        destination.destination_id = dest_id
+                        destination.write_or_buffer_records(
+                            df_destination_records=df_dest,
+                            iteration=iter_num,
+                            pagination=None,
+                        )
+                        monitor.track_records_synced(
+                            num_records=num_records,
+                            destination_id=dest_id,
+                            extra_tags={"destination_id": dest_id},
+                            headers=headers,
+                        )
 
+                pending_future = executor.submit(do_writes, write_jobs, iteration)
+                should_commit = True
                 iteration += 1
 
                 monitor.track_pipeline_status(PipelineReturnStatus.SUCCESS)
 
+        executor.shutdown(wait=True)
         return RunnerStatus(stream=PipelineReturnStatus.SUCCESS)  # return when max iterations is reached

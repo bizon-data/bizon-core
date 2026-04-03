@@ -35,6 +35,7 @@ def default_kafka_consumer_config():
         "auto.offset.reset": "earliest",
         "enable.auto.commit": False,  # Turn off auto-commit for manual offset handling
         "session.timeout.ms": 45000,
+        "max.poll.interval.ms": 600000,  # 10 min - prevent rebalance during long destination writes
         "security.protocol": "SASL_SSL",
     }
 
