@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-04-03
+
+### Fixed
+- Kafka source crashing on messages with unescaped control characters in JSON strings
+- BigQuery streaming v2 crashing with `max_workers must be greater than 0` when batch list is empty
+
 ## [0.3.4] - 2026-04-02
 
 ### Fixed
