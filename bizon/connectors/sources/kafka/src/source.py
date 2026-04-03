@@ -33,12 +33,11 @@ from .decode import (
     parse_global_id_from_serialized_message,
 )
 
-
 # Regex to detect lone Unicode surrogates in JSON text while preserving valid surrogate pairs.
 # Valid pairs (high + low) are matched first and kept; lone surrogates are replaced.
-_HIGH_SURROGATE = r'\\u[dD][89aAbB][0-9a-fA-F]{2}'
-_LOW_SURROGATE = r'\\u[dD][cCdDeEfF][0-9a-fA-F]{2}'
-_SURROGATE_RE = re.compile(f'({_HIGH_SURROGATE}{_LOW_SURROGATE})|(\\\\u[dD][89a-fA-F][0-9a-fA-F]{{2}})')
+_HIGH_SURROGATE = r"\\u[dD][89aAbB][0-9a-fA-F]{2}"
+_LOW_SURROGATE = r"\\u[dD][cCdDeEfF][0-9a-fA-F]{2}"
+_SURROGATE_RE = re.compile(f"({_HIGH_SURROGATE}{_LOW_SURROGATE})|(\\\\u[dD][89a-fA-F][0-9a-fA-F]{{2}})")
 
 
 def _sanitize_lone_surrogates(text: str) -> str:
@@ -50,9 +49,23 @@ def _sanitize_lone_surrogates(text: str) -> str:
     def _replace(m):
         if m.group(1):  # Valid surrogate pair - keep it
             return m.group(1)
-        return '\\ufffd'  # Lone surrogate -> replacement char
+        return "\\ufffd"  # Lone surrogate -> replacement char
 
     return _SURROGATE_RE.sub(_replace, text)
+
+
+# Regex to match literal control characters (U+0000–U+001F) except tab, newline, carriage return
+# which are valid whitespace outside JSON strings. Inside JSON strings all control chars must be escaped.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _sanitize_control_characters(text: str) -> str:
+    """Remove literal control characters (U+0000–U+001F) that are invalid in JSON strings.
+
+    Tab (\\t), newline (\\n), and carriage return (\\r) are preserved as they are valid
+    JSON whitespace. All other control characters are stripped.
+    """
+    return _CONTROL_CHAR_RE.sub("", text)
 
 
 class SchemaNotFound(Exception):
@@ -317,26 +330,37 @@ class KafkaSource(AbstractSource):
         """Decode the message as utf-8 and return the parsed message and the schema.
 
         Uses orjson for fast JSON parsing. If orjson rejects the message due to
-        lone Unicode surrogate escape sequences (e.g., \\udf31), sanitizes them
-        by replacing with U+FFFD and retries.
+        lone Unicode surrogate escape sequences (e.g., \\udf31) or unexpected control
+        characters, sanitizes them and retries.
         """
         raw_text = message.value().decode("utf-8")
         try:
             return orjson.loads(raw_text), {}
         except orjson.JSONDecodeError as e:
-            if "surrogate" not in str(e).lower():
-                raise
+            error_msg = str(e).lower()
+            sanitized = raw_text
 
-            sanitized = _sanitize_lone_surrogates(raw_text)
+            if "surrogate" in error_msg:
+                sanitized = _sanitize_lone_surrogates(sanitized)
+                if sanitized != raw_text:
+                    logger.warning(
+                        f"Message on topic {message.topic()} partition {message.partition()} "
+                        f"offset {message.offset()} contains lone Unicode surrogates. "
+                        f"Sanitized by replacing with U+FFFD."
+                    )
+
+            if "control character" in error_msg:
+                sanitized = _sanitize_control_characters(sanitized)
+                if sanitized != raw_text:
+                    logger.warning(
+                        f"Message on topic {message.topic()} partition {message.partition()} "
+                        f"offset {message.offset()} contains invalid control characters. "
+                        f"Sanitized by stripping them."
+                    )
+
             if sanitized == raw_text:
-                # No surrogates were found/replaced, so the error is something else
                 raise
 
-            logger.warning(
-                f"Message on topic {message.topic()} partition {message.partition()} "
-                f"offset {message.offset()} contains lone Unicode surrogates. "
-                f"Sanitized by replacing with U+FFFD."
-            )
             return orjson.loads(sanitized), {}
 
     def decode(self, message) -> Tuple[dict, dict]:
