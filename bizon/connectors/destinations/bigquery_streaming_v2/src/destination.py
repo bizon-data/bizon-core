@@ -348,6 +348,10 @@ class BigQueryStreamingV2Destination(AbstractDestination):
         # Collect all batches first
         batches = list(self.batch(serialized_rows))
 
+        if not batches:
+            logger.info("No batches to process, skipping streaming upload")
+            return
+
         # Use ThreadPoolExecutor for parallel processing
         max_workers = min(len(batches), self.config.max_concurrent_threads)
         logger.info(f"Processing {len(batches)} batches with {max_workers} concurrent threads")
