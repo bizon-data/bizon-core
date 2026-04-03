@@ -421,7 +421,7 @@ class BigQueryStreamingV2Destination(AbstractDestination):
                 current_batch_size += item_size
 
         # Yield the last batch
-        if current_batch:
+        if current_batch or large_rows:
             logger.info(
                 f"Yielding streaming batch of {len(current_batch)} rows, size: {current_batch_size / 1024 / 1024:.2f}MB"
             )
