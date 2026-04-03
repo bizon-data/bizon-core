@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-04-03
+
+### Fixed
+- Kafka source crashing with `UnicodeDecodeError` on messages containing non-UTF-8 bytes
+
 ## [0.3.6] - 2026-04-03
 
 ### Fixed
