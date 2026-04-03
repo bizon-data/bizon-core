@@ -333,7 +333,13 @@ class KafkaSource(AbstractSource):
         lone Unicode surrogate escape sequences (e.g., \\udf31) or unexpected control
         characters, sanitizes them and retries.
         """
-        raw_text = message.value().decode("utf-8")
+        raw_text = message.value().decode("utf-8", errors="replace")
+        if "\ufffd" in raw_text:
+            logger.warning(
+                f"Message on topic {message.topic()} partition {message.partition()} "
+                f"offset {message.offset()} contains non-UTF-8 bytes. "
+                f"Replaced invalid bytes with U+FFFD."
+            )
         try:
             return orjson.loads(raw_text), {}
         except orjson.JSONDecodeError as e:
