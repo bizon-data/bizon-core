@@ -558,5 +558,19 @@ class KafkaSource(AbstractSource):
         try:
             self.consumer.commit(asynchronous=False)
         except CimplKafkaException as e:
+            error_code = e.args[0].code() if e.args else None
+            # Consumer has been evicted from the group. Further processing causes duplicate
+            # writes since the new partition owner is already processing these messages.
+            # Close gracefully and raise so the runner restarts the pod with a fresh consumer.
+            if error_code in (KafkaError.ILLEGAL_GENERATION, KafkaError.UNKNOWN_MEMBER_ID):
+                logger.error(
+                    f"Kafka commit rejected - consumer evicted from group (code={error_code}): {e}. "
+                    f"Closing consumer and exiting for clean restart."
+                )
+                try:
+                    self.consumer.close()
+                except Exception as close_err:
+                    logger.warning(f"Error closing consumer during eviction handling: {close_err}")
+                raise
             logger.error(f"Kafka exception occurred during commit: {e}")
             logger.info("Gracefully exiting without committing offsets due to Kafka exception")
