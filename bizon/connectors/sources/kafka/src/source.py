@@ -554,26 +554,25 @@ class KafkaSource(AbstractSource):
             return self.read_topics_manually(pagination)
 
     def commit(self):
-        """Commit the offsets of the consumer"""
+        """Commit the offsets of the consumer.
+
+        On ILLEGAL_GENERATION / UNKNOWN_MEMBER_ID we log and return without closing
+        or recreating the consumer. librdkafka's consumer group state machine handles
+        the rejoin internally on the next consume() call, preserving member.id and
+        avoiding the LeaveGroup -> cluster-wide rebalance cascade that closing would
+        trigger. Uncommitted records may be reprocessed by the new partition owner
+        after the rejoin -- this is Bizon's standard at-least-once contract.
+        """
         try:
             self.consumer.commit(asynchronous=False)
         except CimplKafkaException as e:
             error_code = e.args[0].code() if e.args else None
             if error_code in (KafkaError.ILLEGAL_GENERATION, KafkaError.UNKNOWN_MEMBER_ID):
-                # Consumer was evicted from the group. Close it, recreate in place, and
-                # let the pipeline continue — next subscribe()/assign() rejoins the group.
-                # The uncommitted batch may be reprocessed by the new partition owner
-                # (Kafka at-least-once); downstream must tolerate duplicates.
                 logger.warning(
-                    f"Kafka commit rejected - consumer evicted from group (code={error_code}): {e}. "
-                    f"Recreating consumer in place; previous iteration's records may be "
+                    f"Kafka commit skipped - stale generation (code={error_code}): {e}. "
+                    f"librdkafka will rejoin on next consume(); uncommitted records may be "
                     f"reprocessed by the new partition owner (at-least-once)."
                 )
-                try:
-                    self.consumer.close()
-                except Exception as close_err:
-                    logger.warning(f"Error closing evicted consumer: {close_err}")
-                self.consumer = Consumer(self.config.consumer_config)
                 return
             logger.error(f"Kafka exception occurred during commit: {e}")
             logger.info("Gracefully exiting without committing offsets due to Kafka exception")
