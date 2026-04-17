@@ -165,8 +165,8 @@ class StreamingRunner(AbstractRunner):
                         source.commit()
                     except Exception as e:
                         logger.error(f"Error committing source: {e}")
-                        monitor.track_pipeline_status(PipelineReturnStatus.ERROR)
-                        return RunnerStatus(stream=PipelineReturnStatus.ERROR)
+                        monitor.track_pipeline_status(PipelineReturnStatus.SOURCE_ERROR)
+                        return RunnerStatus(stream=PipelineReturnStatus.SOURCE_ERROR)
 
                 iteration += 1
 
