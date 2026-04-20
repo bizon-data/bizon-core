@@ -144,3 +144,43 @@ def test_e2e_dummy_to_file_recovery(file_destination, my_sqlite_backend, sqlite_
     assert cursor.source_name == "dummy"
     assert cursor.pagination == {"cursor": CURSOR}
     assert cursor.iteration == N_ITERATION + 1  # Should always be last iteration written to destination + 1
+
+
+def test_recovery_with_json_only_pagination_values(file_destination, my_sqlite_backend, sqlite_db_session):
+    """Regression test: pagination dicts with bool/None values must survive resume.
+
+    These are valid JSON but not Python literals, so parsing with ast.literal_eval
+    raised `ValueError: malformed node or string`. Stored via json.dumps, they
+    must be read back with json.loads.
+    """
+    N_ITERATION = 2
+    CURSOR = str(uuid4())
+    PAGINATION = {"cursor": CURSOR, "has_more": True, "next_page": None}
+
+    file_destination.buffer.buffer_size = 0
+    file_destination.write_or_buffer_records(
+        df_destination_records=df_destination_records,
+        iteration=N_ITERATION,
+        session=sqlite_db_session,
+        pagination=PAGINATION,
+    )
+    runner = RunnerFactory.create_from_config_dict(yaml.safe_load(BIZON_CONFIG_DUMMY_TO_FILE))
+
+    bizon_config = runner.bizon_config
+    config = runner.config
+    kwargs = runner.get_kwargs()
+    source = AbstractRunner.get_source(bizon_config=bizon_config, config=config)
+    queue = AbstractRunner.get_queue(bizon_config=bizon_config, **kwargs)
+
+    producer = AbstractRunner.get_producer(
+        bizon_config=bizon_config,
+        source=source,
+        queue=queue,
+        backend=my_sqlite_backend,
+    )
+
+    cursor = producer.get_or_create_cursor(job_id=file_destination.sync_metadata.job_id, session=sqlite_db_session)
+
+    assert cursor is not None
+    assert cursor.pagination == PAGINATION
+    assert cursor.iteration == N_ITERATION + 1

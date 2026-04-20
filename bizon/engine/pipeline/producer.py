@@ -1,4 +1,4 @@
-import ast
+import json
 import multiprocessing
 import multiprocessing.synchronize
 import threading
@@ -58,7 +58,7 @@ class Producer:
                 total_records=job.total_records_to_fetch,
                 iteration=cursor_from_db.to_source_iteration + 1,
                 rows_fetched=self.backend.get_number_of_written_rows_for_job(job_id=job_id),
-                pagination=ast.literal_eval(cursor_from_db.pagination),
+                pagination=json.loads(cursor_from_db.pagination),
             )
         else:
             # Get the total number of records
