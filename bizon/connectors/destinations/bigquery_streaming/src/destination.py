@@ -33,6 +33,7 @@ from bizon.connectors.destinations.bigquery.src.config import (
     BigQueryColumnMode,
     BigQueryColumnType,
 )
+from bizon.connectors.destinations.bigquery.src.table_naming import resolve_default_table_id
 from bizon.destination.destination import AbstractDestination
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.monitoring.monitor import AbstractMonitor
@@ -69,11 +70,20 @@ class BigQueryStreamingDestination(AbstractDestination):
         self.dataset_id = config.dataset_id
         self.dataset_location = config.dataset_location
         self.bq_max_rows_per_request = config.bq_max_rows_per_request
+        self._resolved_default_table_id: str | None = None
 
     @property
     def table_id(self) -> str:
-        tabled_id = f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
-        return self.destination_id or f"{self.project_id}.{self.dataset_id}.{tabled_id}"
+        # Explicit destination_id (full project.dataset.table path) is the user's choice -> never prefixed.
+        if self.destination_id:
+            return self.destination_id
+        # Auto-generated name: resolve once (reuses a legacy table if present, else `_bizon_` prefix).
+        if self._resolved_default_table_id is None:
+            base_name = f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
+            self._resolved_default_table_id = resolve_default_table_id(
+                self.bq_client, self.project_id, self.dataset_id, base_name, self.config.table_prefix
+            )
+        return self._resolved_default_table_id
 
     def get_bigquery_schema(self) -> List[bigquery.SchemaField]:
         if self.config.unnest:

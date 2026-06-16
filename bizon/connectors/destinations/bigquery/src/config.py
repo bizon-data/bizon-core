@@ -11,6 +11,8 @@ from bizon.destination.config import (
     DestinationTypes,
 )
 
+from .table_naming import BIZON_TABLE_PREFIX
+
 
 class GCSBufferFormat(str, Enum):
     PARQUET = "parquet"
@@ -115,6 +117,12 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     # Schema for unnesting
     record_schemas: Optional[list[BigQueryRecordSchemaConfig]] = Field(
         default=None, description="Schema for the records. Required if unnest is set to true."
+    )
+
+    table_prefix: str = Field(
+        default=BIZON_TABLE_PREFIX,
+        description="Prefix applied to auto-generated table names (when destination_id is not set). "
+        "An existing legacy (unprefixed) table is reused if present. Set to '' to disable.",
     )
 
     authentication: Optional[BigQueryAuthentication] = None

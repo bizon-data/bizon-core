@@ -35,6 +35,7 @@ from tenacity import (
 )
 
 from bizon.common.models import SyncMetadata
+from bizon.connectors.destinations.bigquery.src.table_naming import resolve_default_table_id
 from bizon.destination.destination import AbstractDestination
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.monitoring.monitor import AbstractMonitor
@@ -79,11 +80,20 @@ class BigQueryStreamingV2Destination(AbstractDestination):
         # Prevents calling create_table on every flush, which otherwise hits BigQuery's
         # per-table metadata quota (5 ops / 10s) and returns 403 rateLimitExceeded.
         self._ensured_tables: set[tuple[str, int]] = set()
+        self._resolved_default_table_id: str | None = None
 
     @property
     def table_id(self) -> str:
-        tabled_id = f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
-        return self.destination_id or f"{self.project_id}.{self.dataset_id}.{tabled_id}"
+        # Explicit destination_id (full project.dataset.table path) is the user's choice -> never prefixed.
+        if self.destination_id:
+            return self.destination_id
+        # Auto-generated name: resolve once (reuses a legacy table if present, else `_bizon_` prefix).
+        if self._resolved_default_table_id is None:
+            base_name = f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
+            self._resolved_default_table_id = resolve_default_table_id(
+                self.bq_client, self.project_id, self.dataset_id, base_name, self.config.table_prefix
+            )
+        return self._resolved_default_table_id
 
     @property
     def temp_table_id(self) -> str:
