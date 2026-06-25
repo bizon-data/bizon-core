@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- BigQuery destinations (`bigquery`, `bigquery_streaming`, `bigquery_streaming_v2`) now prefix auto-generated table names with `_bizon_` so bizon-managed tables are clearly namespaced in shared datasets. This is **backwards compatible**: when no explicit `destination_id` is set, the destination first checks whether the legacy unprefixed table (`{source}_{stream}`) already exists — if it does, it keeps writing to it untouched, so existing pipelines are never disrupted; only brand-new tables get the `_bizon_` prefix. The lookup result is cached (one `get_table` call per run) and any non-`NotFound` error falls back to the legacy name. An explicit `destination_id` is never prefixed. Temp/staging tables (`_temp` / `_incremental`) inherit the resolved name. The prefix is configurable per destination via the new `table_prefix` field (default `_bizon_`; set to `""` to disable).
+
 ## [0.3.16] - 2026-04-20
 
 ### Fixed
