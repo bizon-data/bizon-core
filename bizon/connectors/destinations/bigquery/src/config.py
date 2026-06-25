@@ -112,6 +112,25 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
         default=TimePartitioning.DAY, description="BigQuery Time partitioning type"
     )
 
+    # Async / batched load jobs (throughput + load-job quota optimization).
+    # When enabled, buffer flushes upload to GCS and submit load jobs without blocking,
+    # batching multiple GCS files into a single load job. Cursors are created only once a
+    # load lands (preserving the at-least-once recovery contract). Disabled by default.
+    async_load: bool = Field(
+        default=False,
+        description="Submit BigQuery load jobs asynchronously and batch GCS files into fewer jobs.",
+    )
+    load_files_per_job: int = Field(
+        default=10,
+        ge=1,
+        description="Number of GCS files batched into a single load job when async_load is enabled.",
+    )
+    load_max_in_flight_jobs: int = Field(
+        default=3,
+        ge=1,
+        description="Max concurrent in-flight load jobs before back-pressuring when async_load is enabled.",
+    )
+
     # Schema for unnesting
     record_schemas: Optional[list[BigQueryRecordSchemaConfig]] = Field(
         default=None, description="Schema for the records. Required if unnest is set to true."

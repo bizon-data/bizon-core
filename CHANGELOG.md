@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- BigQuery batch destination (`bigquery`) `finalize()` now publishes the temp table to the main table with a **copy job** (`copy_table`) instead of query DML. Full refresh uses `WRITE_TRUNCATE` and incremental uses `WRITE_APPEND`. Copy jobs are free (metadata-only) and near-instant, whereas the previous `CREATE OR REPLACE TABLE ... AS SELECT *` / `INSERT INTO ... SELECT *` scanned and rewrote the whole temp table and were billed on bytes processed. The incremental first run now also inherits the temp table's `_bizon_loaded_at` partitioning (previously lost by `CREATE TABLE AS SELECT`).
+
+### Added
+- BigQuery batch destination: optional asynchronous, batched load jobs to raise throughput and cut the per-table load-job quota. Enable with `async_load: true`; tune with `load_files_per_job` (GCS files batched into one load job, default 10) and `load_max_in_flight_jobs` (back-pressure bound, default 3). Buffer flushes upload to GCS and submit load jobs without blocking, batching multiple files into fewer jobs and overlapping uploads with loads. Destination cursors are created only once a load lands and strictly in submission order, preserving the at-least-once recovery contract. Disabled by default (`async_load: false`) — no behavior change for existing pipelines.
+
 ## [0.3.16] - 2026-04-20
 
 ### Fixed
