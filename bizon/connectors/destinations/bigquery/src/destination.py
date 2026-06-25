@@ -19,6 +19,7 @@ from bizon.source.config import SourceSyncModes
 from bizon.source.source import AbstractSourceCallback
 
 from .config import BigQueryColumn, BigQueryConfigDetails
+from .table_naming import resolve_default_table_id
 
 
 class BigQueryDestination(AbstractDestination):
@@ -47,6 +48,7 @@ class BigQueryDestination(AbstractDestination):
         self.buffer_format = config.gcs_buffer_format
         self.dataset_id = config.dataset_id
         self.dataset_location = config.dataset_location
+        self._resolved_default_table_id: str | None = None
 
         # State for the async / batched load-job path (config.async_load).
         # _pending_files: uploaded GCS files not yet submitted to a load job.
@@ -57,8 +59,16 @@ class BigQueryDestination(AbstractDestination):
 
     @property
     def table_id(self) -> str:
-        tabled_id = self.destination_id or f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
-        return f"{self.project_id}.{self.dataset_id}.{tabled_id}"
+        # Explicit destination_id (bare table name) is the user's choice -> never prefixed.
+        if self.destination_id:
+            return f"{self.project_id}.{self.dataset_id}.{self.destination_id}"
+        # Auto-generated name: resolve once (reuses a legacy table if present, else `_bizon_` prefix).
+        if self._resolved_default_table_id is None:
+            base_name = f"{self.sync_metadata.source_name}_{self.sync_metadata.stream_name}"
+            self._resolved_default_table_id = resolve_default_table_id(
+                self.bq_client, self.project_id, self.dataset_id, base_name, self.config.table_prefix
+            )
+        return self._resolved_default_table_id
 
     @property
     def temp_table_id(self) -> str:

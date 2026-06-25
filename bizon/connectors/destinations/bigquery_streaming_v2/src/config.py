@@ -4,6 +4,7 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
 from bizon.connectors.destinations.bigquery.src.config import BigQueryRecordSchemaConfig
+from bizon.connectors.destinations.bigquery.src.table_naming import BIZON_TABLE_PREFIX
 from bizon.destination.config import (
     AbstractDestinationConfig,
     AbstractDestinationDetailsConfig,
@@ -48,6 +49,11 @@ class BigQueryStreamingV2ConfigDetails(AbstractDestinationDetailsConfig):
     )
     record_schemas: Optional[list[BigQueryRecordSchemaConfig]] = Field(
         default=None, description="Schema for the records. Required if unnest is set to true."
+    )
+    table_prefix: str = Field(
+        default=BIZON_TABLE_PREFIX,
+        description="Prefix applied to auto-generated table names (when destination_id is not set). "
+        "An existing legacy (unprefixed) table is reused if present. Set to '' to disable.",
     )
 
 
