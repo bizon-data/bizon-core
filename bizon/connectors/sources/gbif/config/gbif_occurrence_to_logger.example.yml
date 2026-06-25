@@ -1,0 +1,16 @@
+name: gbif occurrence to logger
+
+source:
+  name: gbif
+  stream: occurrence
+  sync_mode: full_refresh
+  # Optional: cap the run. GBIF refuses deep paging beyond offset 100,000 (the default cap),
+  # so a single full_refresh streams up to ~100k rich (~2 KB) occurrence records.
+  max_records: 1000
+  # Optional: page size, max 300 (the GBIF search-endpoint maximum).
+  page_limit: 300
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
