@@ -184,8 +184,12 @@ class TestAsyncBackpressure:
 
 
 class TestAsyncFailure:
-    def test_failed_load_marks_cursor_failed_and_flags_run(self, mock_bq_client, mock_gcs_client):
-        """A load job that errors creates a success=False cursor and is reflected on later flushes."""
+    def test_failed_load_records_failed_cursor_then_aborts(self, mock_bq_client, mock_gcs_client):
+        """A failed load records a success=False cursor for its range, then raises to abort the run.
+
+        Aborting is what keeps the successful cursors a contiguous prefix: recovery resumes from
+        the last contiguous success and re-fetches the failed range (at-least-once), never skipping it.
+        """
         dest = make_destination(make_config(load_files_per_job=1, load_max_in_flight_jobs=10))
         failing_job = make_load_job(done=False)
         failing_job.result.side_effect = RuntimeError("load boom")
@@ -195,13 +199,34 @@ class TestAsyncFailure:
         assert dest.backend.create_destination_cursor.call_count == 0
 
         failing_job.done.return_value = True
-        di = flush(dest, iteration=1)  # reaps the failed job
+        with pytest.raises(Exception):
+            flush(dest, iteration=1)  # reaping the failed job must abort
 
         failed_cursor = dest.backend.create_destination_cursor.call_args_list[0]
         assert failed_cursor.kwargs["success"] is False
         assert failed_cursor.kwargs["from_source_iteration"] == 0
-        # Once a load has failed, subsequent flushes report the run as unsuccessful.
-        assert di.success is False
+
+    def test_failure_never_writes_a_later_success_cursor(self, mock_bq_client, mock_gcs_client):
+        """The gap guard: an earlier failed batch must prevent any later batch's success cursor
+        (which recovery would otherwise treat as the high-water mark and skip the failed range)."""
+        dest = make_destination(make_config(load_files_per_job=1, load_max_in_flight_jobs=10))
+        job_fail = make_load_job(done=False)
+        job_fail.result.side_effect = RuntimeError("boom")
+        job_ok = make_load_job(done=False)
+        dest.bq_client.load_table_from_uri.side_effect = [job_fail, job_ok]
+        dest.bq_client.copy_table = MagicMock()
+
+        flush(dest, iteration=0)  # batch A -> job_fail (in flight, not reaped)
+        flush(dest, iteration=1)  # batch B -> job_ok (in flight, not reaped)
+
+        with pytest.raises(Exception):
+            dest.finalize()  # drains A first: A fails -> abort before B is reaped
+
+        # No success cursor exists, so recovery resumes from before A and re-fetches A and B.
+        successes = [c for c in dest.backend.create_destination_cursor.call_args_list if c.kwargs["success"]]
+        assert successes == []
+        # And we never publish partial data to the main table on failure.
+        dest.bq_client.copy_table.assert_not_called()
 
 
 class TestAsyncFinalize:

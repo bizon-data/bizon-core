@@ -282,9 +282,6 @@ class BigQueryDestination(AbstractDestination):
             error_message = str(e)
             logger.error(f"Async load job failed: {e}")
 
-        if not success:
-            self._any_load_failed = True
-
         for destination_iteration in entry["iterations"]:
             destination_iteration.success = success
             destination_iteration.error_message = error_message
@@ -292,6 +289,15 @@ class BigQueryDestination(AbstractDestination):
 
         for gcs_file in entry["gcs_files"]:
             self.cleanup(gcs_file)
+
+        if not success:
+            # Fail fast. Loads are reaped strictly in iteration order, so at this point every
+            # cursor already written is a contiguous successful prefix and this batch's cursor is
+            # marked failed. Aborting prevents any later (higher-iteration) batch from writing a
+            # success cursor that would create a gap -- recovery resumes from the last contiguous
+            # success (get_last_cursor_by_job_id) and re-fetches this range, so no records are lost.
+            self._any_load_failed = True
+            raise RuntimeError(f"BigQuery async load job failed, aborting to preserve cursors: {error_message}")
 
     def _reap_landed_loads(self):
         """Complete any in-flight load jobs that have landed, in submission order."""
