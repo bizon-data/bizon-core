@@ -312,6 +312,25 @@ See `bizon/connectors/sources/notion/src/source.py` for a complete incremental i
 - `process` - ProcessPoolExecutor (true parallelism)
 - `stream` - Synchronous single-thread
 
+### Secret & Reference Resolution
+
+Keep secrets out of YAML by referencing them with a URI scheme. Resolution runs once over
+the raw config dict before Pydantic validation (`bizon/engine/resolvers/`), so **connectors
+need no changes** — they always read plain strings.
+
+- `gsm://<id>` → Google Secret Manager, latest version (ADC auth). Pin with
+  `gsm://<id>/versions/<N>`, or pass a full `gsm://projects/<p>/secrets/<id>/versions/<N>` path.
+- `env://<VAR>` → environment variable (also works **inline**).
+- Inline form: embed in a larger string with `${...}`, e.g.
+  `dsn: "postgres://u:${gsm://db-pw}@host/db"` (multiple tokens allowed).
+- Optional `secrets:` block holds provider defaults (e.g. `secrets.gsm.project_id`).
+- Legacy whole-value `BIZON_ENV_FOO` references still work unchanged.
+- Install GSM support: `pip install 'bizon[secretmanager]'`.
+- Validate before running: `bizon secrets check <config>` (dry-runs every reference, masked output).
+
+Add a provider by dropping one adapter in `bizon/engine/resolvers/adapters/` and one entry in
+`_SCHEME_FACTORIES` (`bizon/engine/resolvers/resolver.py`).
+
 ### Key Patterns
 
 - **Factory Pattern**: `RunnerFactory`, `QueueFactory`, `BackendFactory`, `DestinationFactory`

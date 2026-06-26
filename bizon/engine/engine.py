@@ -4,6 +4,7 @@ from bizon.cli.utils import parse_from_yaml
 from bizon.common.models import BizonConfig
 
 from .config import RunnerTypes
+from .resolvers import resolve_references_in_config
 from .runner.runner import AbstractRunner
 
 
@@ -21,8 +22,11 @@ def replace_env_variables_in_config(config: dict) -> dict:
 class RunnerFactory:
     @staticmethod
     def create_from_config_dict(config: dict) -> AbstractRunner:
-        # Replace env variables in config
+        # Replace legacy BIZON_ENV_ whole-value env references (kept for backwards compat)
         config = replace_env_variables_in_config(config=config)
+
+        # Resolve gsm:// / env:// references (whole-value and inline ${...})
+        config = resolve_references_in_config(config=config)
 
         bizon_config = BizonConfig.model_validate(obj=config)
 

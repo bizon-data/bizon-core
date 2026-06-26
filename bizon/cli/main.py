@@ -1,7 +1,12 @@
 import click
 from dotenv import find_dotenv, load_dotenv
 
-from bizon.engine.engine import RunnerFactory
+from bizon.engine.engine import RunnerFactory, replace_env_variables_in_config
+from bizon.engine.resolvers import (
+    ReferenceResolutionError,
+    ResolverRegistry,
+    collect_references_in_config,
+)
 from bizon.engine.runner.config import LoggerLevel
 from bizon.source.discover import discover_all_sources
 
@@ -71,6 +76,59 @@ def list(source_name: str):  # noqa
 def destination():
     """Subcommands for handling destinations."""
     pass
+
+
+# Create a 'secrets' group under 'bizon'
+@cli.group()
+def secrets():
+    """Subcommands for handling secret/reference resolution."""
+    pass
+
+
+@secrets.command()
+@click.argument("filename", type=click.Path(exists=True))
+@click.option(
+    "--env-file",
+    required=False,
+    type=click.Path(exists=True),
+    help="Path to .env file to load environment variables from.",
+)
+def check(filename: str, env_file: str):
+    """Dry-run all gsm:// / env:// references in a config and report (masked) results."""
+
+    # Load environment variables from .env file (same as `run`)
+    if env_file:
+        load_dotenv(env_file)
+    else:
+        load_dotenv(find_dotenv(".env"))
+
+    config = parse_from_yaml(filename)
+    # Resolve legacy BIZON_ENV_ whole-value references first, like the real run does
+    config = replace_env_variables_in_config(config=config)
+
+    references = collect_references_in_config(config)
+    if not references:
+        click.echo("No gsm:// / env:// references found in config.")
+        return
+
+    registry = ResolverRegistry(settings=config.get("secrets") or {})
+
+    path_width = max(len(path) for path, _ in references)
+    ref_width = max(len(reference) for _, reference in references)
+    failures = 0
+
+    for path, reference in references:
+        try:
+            value = registry.resolve_reference(reference)
+            status = click.style(f"✓  ({len(value)} chars)", fg="green")
+        except ReferenceResolutionError as error:
+            failures += 1
+            status = click.style(f"✗  {error}", fg="red")
+        click.echo(f"{path.ljust(path_width)}   {reference.ljust(ref_width)}   {status}")
+
+    if failures:
+        raise click.exceptions.ClickException(f"{failures} reference(s) failed to resolve.")
+    click.secho(f"All {len(references)} reference(s) resolved.", fg="green")
 
 
 @cli.command()

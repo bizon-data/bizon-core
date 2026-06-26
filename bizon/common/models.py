@@ -16,6 +16,7 @@ from bizon.connectors.destinations.bigquery_streaming_v2.src.config import (
 from bizon.connectors.destinations.file.src.config import FileDestinationConfig
 from bizon.connectors.destinations.logger.src.config import LoggerConfig
 from bizon.engine.config import EngineConfig
+from bizon.engine.resolvers.config import SecretsConfig
 from bizon.monitoring.config import MonitoringConfig
 from bizon.source.config import SourceConfig, SourceSyncModes
 from bizon.transform.config import TransformModel
@@ -130,6 +131,11 @@ class BizonConfig(BaseModel):
     monitoring: Optional[MonitoringConfig] = Field(
         description="Monitoring configuration",
         default=None,
+    )
+
+    secrets: Optional[SecretsConfig] = Field(
+        default=None,
+        description="Provider defaults for gsm:// / env:// reference resolution",
     )
 
     streams: Optional[list[StreamConfig]] = Field(
