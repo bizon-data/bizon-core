@@ -50,6 +50,7 @@ kafka = [
 rabbitmq = ["pika>=1.3.2"]
 gsheets = ["gspread>=6.1.2"]
 datadog = ["datadog>=0.50.2", "ddtrace>=3.10.0"]
+secretmanager = ["google-cloud-secret-manager>=2.20.0"]
 
 [project.scripts]
 bizon = "bizon.cli.main:cli"
