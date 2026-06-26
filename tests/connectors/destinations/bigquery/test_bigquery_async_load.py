@@ -199,7 +199,7 @@ class TestAsyncFailure:
         assert dest.backend.create_destination_cursor.call_count == 0
 
         failing_job.done.return_value = True
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             flush(dest, iteration=1)  # reaping the failed job must abort
 
         failed_cursor = dest.backend.create_destination_cursor.call_args_list[0]
@@ -219,7 +219,7 @@ class TestAsyncFailure:
         flush(dest, iteration=0)  # batch A -> job_fail (in flight, not reaped)
         flush(dest, iteration=1)  # batch B -> job_ok (in flight, not reaped)
 
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError):
             dest.finalize()  # drains A first: A fails -> abort before B is reaped
 
         # No success cursor exists, so recovery resumes from before A and re-fetches A and B.

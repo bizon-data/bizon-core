@@ -57,6 +57,8 @@ class BigQueryDestination(AbstractDestination):
         self._inflight_loads: List[dict] = []
         self._any_load_failed = False
 
+        self._dataset_ensured = False
+
     @property
     def table_id(self) -> str:
         # Explicit destination_id (bare table name) is the user's choice -> never prefixed.
@@ -107,15 +109,33 @@ class BigQueryDestination(AbstractDestination):
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
             ]
 
-    def check_connection(self) -> bool:
-        dataset_ref = DatasetReference(self.project_id, self.dataset_id)
+    def _ensure_dataset(self):
+        """Ensure the target dataset exists before writing (checked once per run).
 
+        Creates it when `create_dataset` is enabled; otherwise a missing dataset raises a
+        clear error instead of letting load jobs fail with retried 404s mid-run.
+        """
+        if self._dataset_ensured:
+            return
+
+        dataset_ref = DatasetReference(self.project_id, self.dataset_id)
         try:
             self.bq_client.get_dataset(dataset_ref)
         except NotFound:
+            if not self.config.create_dataset:
+                raise RuntimeError(
+                    f"BigQuery dataset {self.project_id}.{self.dataset_id} does not exist. "
+                    f"Create it manually or set `create_dataset: true` on the destination config."
+                )
+            logger.info(f"Dataset {self.project_id}.{self.dataset_id} not found, creating it ...")
             dataset = bigquery.Dataset(dataset_ref)
             dataset.location = self.dataset_location
-            dataset = self.bq_client.create_dataset(dataset)
+            self.bq_client.create_dataset(dataset, exists_ok=True)
+
+        self._dataset_ensured = True
+
+    def check_connection(self) -> bool:
+        self._ensure_dataset()
         return True
 
     def cleanup(self, gcs_file: str):
@@ -200,6 +220,7 @@ class BigQueryDestination(AbstractDestination):
         assert result.state == "DONE", f"Job failed with state {result.state} with error {result.error_result}"
 
     def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, str]:
+        self._ensure_dataset()
         gs_file_name = self.convert_and_upload_to_buffer(
             df_destination_records=self._rename_for_bq(df_destination_records)
         )
@@ -226,6 +247,8 @@ class BigQueryDestination(AbstractDestination):
         """
         if not self.config.async_load:
             return super().buffer_flush_handler(session=session)
+
+        self._ensure_dataset()
 
         # Snapshot iteration metadata before the buffer is flushed by the caller.
         destination_iteration = DestinationIteration(

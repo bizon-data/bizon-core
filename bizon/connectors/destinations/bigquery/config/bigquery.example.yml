@@ -19,6 +19,7 @@ destination:
     buffer_flush_timeout: 300 # in seconds
     dataset_id: bizon_test
     dataset_location: US
+    create_dataset: false # create the dataset if it doesn't exist (default false)
     project_id: my-gcp-project-id
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet

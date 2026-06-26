@@ -104,6 +104,10 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     project_id: str = Field(..., description="BigQuery Project ID")
     dataset_id: str = Field(..., description="BigQuery Dataset ID")
     dataset_location: str = Field(default="US", description="BigQuery Dataset location")
+    create_dataset: bool = Field(
+        default=False,
+        description="Create the dataset if it does not exist. When False, a missing dataset raises a clear error.",
+    )
 
     # GCS Buffer
     gcs_buffer_bucket: str = Field(..., description="GCS Buffer bucket")
