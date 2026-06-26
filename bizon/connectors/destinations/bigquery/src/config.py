@@ -104,6 +104,10 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     project_id: str = Field(..., description="BigQuery Project ID")
     dataset_id: str = Field(..., description="BigQuery Dataset ID")
     dataset_location: str = Field(default="US", description="BigQuery Dataset location")
+    create_dataset: bool = Field(
+        default=False,
+        description="Create the dataset if it does not exist. When False, a missing dataset raises a clear error.",
+    )
 
     # GCS Buffer
     gcs_buffer_bucket: str = Field(..., description="GCS Buffer bucket")
@@ -112,6 +116,25 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     # Time partitioning
     time_partitioning: TimePartitioning = Field(
         default=TimePartitioning.DAY, description="BigQuery Time partitioning type"
+    )
+
+    # Async / batched load jobs (throughput + load-job quota optimization).
+    # When enabled, buffer flushes upload to GCS and submit load jobs without blocking,
+    # batching multiple GCS files into a single load job. Cursors are created only once a
+    # load lands (preserving the at-least-once recovery contract). Disabled by default.
+    async_load: bool = Field(
+        default=False,
+        description="Submit BigQuery load jobs asynchronously and batch GCS files into fewer jobs.",
+    )
+    load_files_per_job: int = Field(
+        default=10,
+        ge=1,
+        description="Number of GCS files batched into a single load job when async_load is enabled.",
+    )
+    load_max_in_flight_jobs: int = Field(
+        default=3,
+        ge=1,
+        description="Max concurrent in-flight load jobs before back-pressuring when async_load is enabled.",
     )
 
     # Schema for unnesting

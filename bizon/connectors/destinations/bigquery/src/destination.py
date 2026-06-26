@@ -12,7 +12,7 @@ from google.cloud.bigquery import DatasetReference, TimePartitioning
 from loguru import logger
 
 from bizon.common.models import SyncMetadata
-from bizon.destination.destination import AbstractDestination
+from bizon.destination.destination import AbstractDestination, DestinationIteration
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.monitoring.monitor import AbstractMonitor
 from bizon.source.config import SourceSyncModes
@@ -50,6 +50,15 @@ class BigQueryDestination(AbstractDestination):
         self.dataset_location = config.dataset_location
         self._resolved_default_table_id: str | None = None
 
+        # State for the async / batched load-job path (config.async_load).
+        # _pending_files: uploaded GCS files not yet submitted to a load job.
+        # _inflight_loads: submitted load jobs (FIFO, in iteration order) awaiting completion.
+        self._pending_files: List[Tuple[str, DestinationIteration]] = []
+        self._inflight_loads: List[dict] = []
+        self._any_load_failed = False
+
+        self._dataset_ensured = False
+
     @property
     def table_id(self) -> str:
         # Explicit destination_id (bare table name) is the user's choice -> never prefixed.
@@ -74,7 +83,7 @@ class BigQueryDestination(AbstractDestination):
         elif self.sync_metadata.sync_mode == SourceSyncModes.STREAM:
             return f"{self.table_id}"
 
-    def get_bigquery_schema(self, df_destination_records: pl.DataFrame) -> List[bigquery.SchemaField]:
+    def get_bigquery_schema(self, df_destination_records: pl.DataFrame = None) -> List[bigquery.SchemaField]:
         # Case we unnest the data
         if self.config.unnest:
             return [
@@ -100,15 +109,33 @@ class BigQueryDestination(AbstractDestination):
                 bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
             ]
 
-    def check_connection(self) -> bool:
-        dataset_ref = DatasetReference(self.project_id, self.dataset_id)
+    def _ensure_dataset(self):
+        """Ensure the target dataset exists before writing (checked once per run).
 
+        Creates it when `create_dataset` is enabled; otherwise a missing dataset raises a
+        clear error instead of letting load jobs fail with retried 404s mid-run.
+        """
+        if self._dataset_ensured:
+            return
+
+        dataset_ref = DatasetReference(self.project_id, self.dataset_id)
         try:
             self.bq_client.get_dataset(dataset_ref)
         except NotFound:
+            if not self.config.create_dataset:
+                raise RuntimeError(
+                    f"BigQuery dataset {self.project_id}.{self.dataset_id} does not exist. "
+                    f"Create it manually or set `create_dataset: true` on the destination config."
+                )
+            logger.info(f"Dataset {self.project_id}.{self.dataset_id} not found, creating it ...")
             dataset = bigquery.Dataset(dataset_ref)
             dataset.location = self.dataset_location
-            dataset = self.bq_client.create_dataset(dataset)
+            self.bq_client.create_dataset(dataset, exists_ok=True)
+
+        self._dataset_ensured = True
+
+    def check_connection(self) -> bool:
+        self._ensure_dataset()
         return True
 
     def cleanup(self, gcs_file: str):
@@ -157,26 +184,10 @@ class BigQueryDestination(AbstractDestination):
             for col in record_schema
         )
 
-    def load_to_bigquery(self, gcs_file: str, df_destination_records: pl.DataFrame):
-        # We always partition by the loaded_at field
-        time_partitioning = TimePartitioning(field="_bizon_loaded_at", type_=self.config.time_partitioning)
-
-        job_config = bigquery.LoadJobConfig(
-            source_format=bigquery.SourceFormat.PARQUET,
-            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
-            schema=self.get_bigquery_schema(df_destination_records=df_destination_records),
-            time_partitioning=time_partitioning,
-        )
-
-        load_job = self.bq_client.load_table_from_uri(
-            f"gs://{self.buffer_bucket_name}/{gcs_file}", self.temp_table_id, job_config=job_config
-        )
-        result = load_job.result()  # Waits for the job to complete
-        assert result.state == "DONE", f"Job failed with state {result.state} with error {result.error_result}"
-
-    def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, str]:
-        # Rename fields to match BigQuery schema
-        df_destination_records = df_destination_records.rename(
+    @staticmethod
+    def _rename_for_bq(df_destination_records: pl.DataFrame) -> pl.DataFrame:
+        """Rename bizon/source fields to their underscore-prefixed BigQuery column names."""
+        return df_destination_records.rename(
             {
                 # Bizon fields
                 "bizon_extracted_at": "_bizon_extracted_at",
@@ -189,10 +200,33 @@ class BigQueryDestination(AbstractDestination):
             },
         )
 
-        gs_file_name = self.convert_and_upload_to_buffer(df_destination_records=df_destination_records)
+    def _build_load_job_config(self) -> bigquery.LoadJobConfig:
+        # We always partition by the loaded_at field. The schema does not depend on the data.
+        return bigquery.LoadJobConfig(
+            source_format=bigquery.SourceFormat.PARQUET,
+            write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
+            schema=self.get_bigquery_schema(),
+            time_partitioning=TimePartitioning(field="_bizon_loaded_at", type_=self.config.time_partitioning),
+        )
+
+    def _gcs_uri(self, gcs_file: str) -> str:
+        return f"gs://{self.buffer_bucket_name}/{gcs_file}"
+
+    def load_to_bigquery(self, gcs_file: str, df_destination_records: pl.DataFrame = None):
+        load_job = self.bq_client.load_table_from_uri(
+            self._gcs_uri(gcs_file), self.temp_table_id, job_config=self._build_load_job_config()
+        )
+        result = load_job.result()  # Waits for the job to complete
+        assert result.state == "DONE", f"Job failed with state {result.state} with error {result.error_result}"
+
+    def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, str]:
+        self._ensure_dataset()
+        gs_file_name = self.convert_and_upload_to_buffer(
+            df_destination_records=self._rename_for_bq(df_destination_records)
+        )
 
         try:
-            self.load_to_bigquery(gcs_file=gs_file_name, df_destination_records=df_destination_records)
+            self.load_to_bigquery(gcs_file=gs_file_name)
             self.cleanup(gs_file_name)
         except Exception as e:
             self.cleanup(gs_file_name)
@@ -201,13 +235,130 @@ class BigQueryDestination(AbstractDestination):
             return False, str(e)
         return True, ""
 
+    # ------------------------------------------------------------------
+    # Async / batched load-job path (config.async_load)
+    # ------------------------------------------------------------------
+    def buffer_flush_handler(self, session=None) -> DestinationIteration:
+        """Override the synchronous flush handler with an async, batched load path.
+
+        Each flush uploads the buffer to GCS without blocking on a load job. Files are
+        batched into fewer load jobs to cut the per-table load-job quota, and cursors are
+        created only once a load lands (preserving the at-least-once recovery contract).
+        """
+        if not self.config.async_load:
+            return super().buffer_flush_handler(session=session)
+
+        self._ensure_dataset()
+
+        # Snapshot iteration metadata before the buffer is flushed by the caller.
+        destination_iteration = DestinationIteration(
+            success=False,
+            records_written=self.buffer.df_destination_records.height,
+            pagination=self.buffer.pagination,
+            from_source_iteration=self.buffer.from_iteration,
+            to_source_iteration=self.buffer.to_iteration,
+        )
+
+        gcs_file = self.convert_and_upload_to_buffer(
+            df_destination_records=self._rename_for_bq(self.buffer.df_destination_records)
+        )
+        self._pending_files.append((gcs_file, destination_iteration))
+
+        if len(self._pending_files) >= self.config.load_files_per_job:
+            self._submit_pending_load()
+
+        self._enforce_max_in_flight()
+        self._reap_landed_loads()
+
+        # Optimistically successful unless an already-reaped load failed. The last flush's
+        # own load is drained in finalize() — the same failure window as the existing copy.
+        destination_iteration.success = not self._any_load_failed
+        return destination_iteration
+
+    def _submit_pending_load(self):
+        """Submit the accumulated GCS files as a single (non-blocking) load job."""
+        if not self._pending_files:
+            return
+
+        gcs_files = [f for f, _ in self._pending_files]
+        iterations = [di for _, di in self._pending_files]
+        uris = [self._gcs_uri(f) for f in gcs_files]
+
+        load_job = self.bq_client.load_table_from_uri(
+            uris, self.temp_table_id, job_config=self._build_load_job_config()
+        )
+        logger.info(f"Submitted async load job for {len(uris)} file(s) into {self.temp_table_id}")
+        self._inflight_loads.append({"job": load_job, "gcs_files": gcs_files, "iterations": iterations})
+        self._pending_files = []
+
+    def _complete_load(self, entry: dict):
+        """Finalize a single (FIFO) load job: wait for it, create its cursors, clean up its GCS files."""
+        success = True
+        error_message = None
+        try:
+            result = entry["job"].result()  # Waits if not yet done
+            if getattr(result, "state", "DONE") != "DONE":
+                success = False
+                error_message = f"Load job failed with state {result.state}"
+        except Exception as e:
+            success = False
+            error_message = str(e)
+            logger.error(f"Async load job failed: {e}")
+
+        for destination_iteration in entry["iterations"]:
+            destination_iteration.success = success
+            destination_iteration.error_message = error_message
+            self.create_cursors(destination_iteration=destination_iteration)
+
+        for gcs_file in entry["gcs_files"]:
+            self.cleanup(gcs_file)
+
+        if not success:
+            # Fail fast. Loads are reaped strictly in iteration order, so at this point every
+            # cursor already written is a contiguous successful prefix and this batch's cursor is
+            # marked failed. Aborting prevents any later (higher-iteration) batch from writing a
+            # success cursor that would create a gap -- recovery resumes from the last contiguous
+            # success (get_last_cursor_by_job_id) and re-fetches this range, so no records are lost.
+            self._any_load_failed = True
+            raise RuntimeError(f"BigQuery async load job failed, aborting to preserve cursors: {error_message}")
+
+    def _reap_landed_loads(self):
+        """Complete any in-flight load jobs that have landed, in submission order."""
+        while self._inflight_loads and self._inflight_loads[0]["job"].done():
+            self._complete_load(self._inflight_loads.pop(0))
+
+    def _enforce_max_in_flight(self):
+        """Back-pressure: block on the oldest job once we exceed the in-flight limit."""
+        while len(self._inflight_loads) >= self.config.load_max_in_flight_jobs:
+            self._complete_load(self._inflight_loads.pop(0))
+
+    def _drain_all_loads(self):
+        """Submit any remaining files and wait for all in-flight loads to complete."""
+        self._submit_pending_load()
+        while self._inflight_loads:
+            self._complete_load(self._inflight_loads.pop(0))
+
+    def _copy_temp_to_main(self, write_disposition: str):
+        """Materialize the temp table into the main table with a copy job.
+
+        Copy jobs are free (metadata-only) and near-instant, unlike DML
+        (CREATE OR REPLACE / INSERT INTO ... SELECT *) which scans + rewrites
+        the whole temp table and is billed on bytes processed. A copy job also
+        preserves the temp table's partitioning/clustering on the main table.
+        """
+        job_config = bigquery.CopyJobConfig(write_disposition=write_disposition)
+        copy_job = self.bq_client.copy_table(self.temp_table_id, self.table_id, job_config=job_config)
+        result = copy_job.result()  # Waits for the job to complete
+        logger.info(f"BigQuery copy job ({write_disposition}) {self.temp_table_id} -> {self.table_id}: {result}")
+
     def finalize(self):
+        # Drain any async load jobs (and still-pending files) before publishing the table.
+        if self.config.async_load:
+            self._drain_all_loads()
+
         if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
-            logger.info(f"Loading temp table {self.temp_table_id} data into {self.table_id} ...")
-            query = f"CREATE OR REPLACE TABLE {self.table_id} AS SELECT * FROM {self.temp_table_id}"
-            result = self.bq_client.query(query)
-            bq_result = result.result()  # Waits for the job to completew
-            logger.info(f"BigQuery CREATE OR REPLACE query result: {bq_result}")
+            logger.info(f"Replacing {self.table_id} with temp table {self.temp_table_id} via copy job ...")
+            self._copy_temp_to_main(write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE)
             # Check if the destination table exists by fetching it; raise if it doesn't exist
             try:
                 self.bq_client.get_table(self.table_id)
@@ -220,20 +371,10 @@ class BigQueryDestination(AbstractDestination):
             return True
 
         elif self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
-            # Check if main table exists (first incremental run won't have it)
-            try:
-                self.bq_client.get_table(self.table_id)
-                table_exists = True
-            except NotFound:
-                table_exists = False
-
-            if table_exists:
-                logger.info(f"Appending data from {self.temp_table_id} to {self.table_id} ...")
-                self.bq_client.query(f"INSERT INTO {self.table_id} SELECT * FROM {self.temp_table_id}").result()
-            else:
-                logger.info(f"Table {self.table_id} not found, creating from {self.temp_table_id} ...")
-                self.bq_client.query(f"CREATE TABLE {self.table_id} AS SELECT * FROM {self.temp_table_id}").result()
-
+            # WRITE_APPEND creates the main table on the first run (preserving the
+            # temp table's partitioning) and appends to it on subsequent runs.
+            logger.info(f"Appending temp table {self.temp_table_id} to {self.table_id} via copy job ...")
+            self._copy_temp_to_main(write_disposition=bigquery.WriteDisposition.WRITE_APPEND)
             logger.info(f"Deleting incremental temp table {self.temp_table_id} ...")
             self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
             return True

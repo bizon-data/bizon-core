@@ -108,7 +108,9 @@ class TestBigQueryFinalize:
     """Test cases for finalize() method."""
 
     def test_finalize_full_refresh(self, bigquery_config, mock_bq_client, mock_gcs_client):
-        """Test finalize() for FULL_REFRESH mode creates/replaces table."""
+        """Test finalize() for FULL_REFRESH replaces the table with a free copy job (WRITE_TRUNCATE)."""
+        from google.cloud import bigquery
+
         sync_metadata = create_sync_metadata(SourceSyncModes.FULL_REFRESH)
 
         destination = BigQueryDestination(
@@ -119,21 +121,29 @@ class TestBigQueryFinalize:
             monitor=MagicMock(),
         )
 
-        # Mock the query method
-        mock_query = MagicMock()
-        destination.bq_client.query = mock_query
+        mock_copy = MagicMock()
+        destination.bq_client.copy_table = mock_copy
+        destination.bq_client.query = MagicMock()
+        destination.bq_client.get_table = MagicMock()
         destination.bq_client.delete_table = MagicMock()
 
         result = destination.finalize()
 
         assert result is True
-        # Check that CREATE OR REPLACE was called
-        mock_query.assert_called_once()
-        query_call = mock_query.call_args[0][0]
-        assert "CREATE OR REPLACE TABLE" in query_call
+        # Finalize must use a copy job, not query DML (no bytes billed)
+        destination.bq_client.query.assert_not_called()
+        mock_copy.assert_called_once()
+        args, kwargs = mock_copy.call_args
+        assert args[0] == destination.temp_table_id
+        assert args[1] == destination.table_id
+        assert kwargs["job_config"].write_disposition == bigquery.WriteDisposition.WRITE_TRUNCATE
+        # Temp table is cleaned up
+        destination.bq_client.delete_table.assert_called_once()
 
     def test_finalize_incremental(self, bigquery_config, mock_bq_client, mock_gcs_client):
-        """Test finalize() for INCREMENTAL mode appends data when table exists."""
+        """Test finalize() for INCREMENTAL appends via a free copy job (WRITE_APPEND)."""
+        from google.cloud import bigquery
+
         sync_metadata = create_sync_metadata(SourceSyncModes.INCREMENTAL)
 
         destination = BigQueryDestination(
@@ -144,25 +154,27 @@ class TestBigQueryFinalize:
             monitor=MagicMock(),
         )
 
-        # Mock the query method
-        mock_query = MagicMock()
-        mock_query.return_value.result = MagicMock()
-        destination.bq_client.query = mock_query
+        mock_copy = MagicMock()
+        destination.bq_client.copy_table = mock_copy
+        destination.bq_client.query = MagicMock()
         destination.bq_client.delete_table = MagicMock()
-        # Mock get_table to simulate table exists
-        destination.bq_client.get_table = MagicMock()
 
         result = destination.finalize()
 
         assert result is True
-        # Check that INSERT INTO was called
-        mock_query.assert_called_once()
-        query_call = mock_query.call_args[0][0]
-        assert "INSERT INTO" in query_call
+        # No query DML — append is done with a copy job
+        destination.bq_client.query.assert_not_called()
+        mock_copy.assert_called_once()
+        args, kwargs = mock_copy.call_args
+        assert args[0] == destination.temp_table_id
+        assert args[1] == destination.table_id
+        assert kwargs["job_config"].write_disposition == bigquery.WriteDisposition.WRITE_APPEND
+        destination.bq_client.delete_table.assert_called_once()
 
     def test_finalize_incremental_first_run(self, bigquery_config, mock_bq_client, mock_gcs_client):
-        """Test finalize() for INCREMENTAL mode creates table on first run."""
+        """INCREMENTAL first run (no main table): a WRITE_APPEND copy job creates it, no DML needed."""
         from google.api_core.exceptions import NotFound
+        from google.cloud import bigquery
 
         sync_metadata = create_sync_metadata(SourceSyncModes.INCREMENTAL)
 
@@ -174,22 +186,20 @@ class TestBigQueryFinalize:
             monitor=MagicMock(),
         )
 
-        # Mock the query method
-        mock_query = MagicMock()
-        mock_query.return_value.result = MagicMock()
-        destination.bq_client.query = mock_query
+        mock_copy = MagicMock()
+        destination.bq_client.copy_table = mock_copy
+        destination.bq_client.query = MagicMock()
         destination.bq_client.delete_table = MagicMock()
-        # Mock get_table to simulate table does NOT exist
+        # Main table does not exist yet on the first incremental run
         destination.bq_client.get_table = MagicMock(side_effect=NotFound("Table not found"))
 
         result = destination.finalize()
 
         assert result is True
-        # Check that CREATE TABLE was called instead of INSERT INTO
-        mock_query.assert_called_once()
-        query_call = mock_query.call_args[0][0]
-        assert "CREATE TABLE" in query_call
-        assert "INSERT INTO" not in query_call
+        destination.bq_client.query.assert_not_called()
+        mock_copy.assert_called_once()
+        _, kwargs = mock_copy.call_args
+        assert kwargs["job_config"].write_disposition == bigquery.WriteDisposition.WRITE_APPEND
 
     def test_finalize_stream(self, bigquery_config, mock_bq_client, mock_gcs_client):
         """Test finalize() for STREAM mode does nothing."""
@@ -203,12 +213,14 @@ class TestBigQueryFinalize:
             monitor=MagicMock(),
         )
 
-        # Mock the query method
         mock_query = MagicMock()
         destination.bq_client.query = mock_query
+        mock_copy = MagicMock()
+        destination.bq_client.copy_table = mock_copy
 
         result = destination.finalize()
 
         assert result is True
-        # STREAM mode should not call query
+        # STREAM mode writes directly to the final table: no query, no copy
         mock_query.assert_not_called()
+        mock_copy.assert_not_called()
