@@ -148,7 +148,8 @@ source:
 │  4. Records written to temp table: {table}_incremental              │
 │                                                                     │
 │  5. finalize() appends temp table to main table                     │
-│     └─> INSERT INTO main_table SELECT * FROM temp_table             │
+│     └─> BigQuery: free copy job (WRITE_APPEND), creating the         │
+│         main table on first run; other destinations: INSERT INTO     │
 │     └─> Deletes temp table                                          │
 │                                                                     │
 │  FIRST RUN: No previous job → falls back to get() (full refresh)    │

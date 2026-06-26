@@ -23,6 +23,13 @@ destination:
     project_id: my-gcp-project-id
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet
+    # Async batched load jobs (optional, default false). When enabled, buffer flushes upload
+    # to GCS and submit load jobs without blocking, batching several files into one load job to
+    # cut the per-table load-job quota (1,500/table/day). Cursors are only committed once a load
+    # lands, so the at-least-once recovery contract is preserved.
+    async_load: false
+    load_files_per_job: 10 # GCS files batched into a single load job (when async_load is true)
+    load_max_in_flight_jobs: 3 # max concurrent in-flight load jobs before back-pressuring
     service_account_key: >-
       {
         "type": "service_account",

@@ -21,9 +21,14 @@ destination:
     buffer_flush_timeout: 300 # in seconds
     dataset_id: bizon_test
     dataset_location: US
+    create_dataset: false # create the dataset if it doesn't exist (default false)
     project_id: my-gcp-project-id
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet
+    # Async batched load jobs (optional, default false) — see bigquery.example.yml for details.
+    async_load: false
+    load_files_per_job: 10
+    load_max_in_flight_jobs: 3
     # Optional: service_account_key for explicit authentication
     # service_account_key: >-
     #   { ... }
