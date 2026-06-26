@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Bizon is a Python-based data extraction and loading (EL) framework for processing large data streams with native fault tolerance, checkpointing, and high throughput (billions of records).
+Bizon is a Python-based ETL framework (extract, optionally transform in-flight with Python, and load) for processing large data streams with native fault tolerance, checkpointing, and high throughput (billions of records).
+
+> For user-facing docs (full feature list, config reference, connector catalog, examples), see [`README.md`](README.md). This file is the contributor/agent guide.
 
 ## Common Commands
 
@@ -105,6 +107,19 @@ YAML Config → RunnerFactory → Producer → Queue → Consumer → Destinatio
 - `bizon/connectors/destinations/` - Built-in destination connectors
 - `bizon/common/models.py` - `BizonConfig` main YAML schema
 - `bizon/transform/` - Data transformation system
+- `bizon/monitoring/` - Datadog metrics & tracing
+- `bizon/alerting/` - Slack alerting
+
+### Built-in Connectors
+
+**Sources** (`bizon/connectors/sources/`) — auto-discovered, run `bizon source list`:
+`cycle`, `dummy`, `gbif`, `gsheets`, `hubspot`, `kafka`, `notion`, `periscope`, `pokeapi`, `sana_ai`.
+`notion` is the reference incremental source (implements `get_records_after()`); `kafka` is the
+reference streaming source.
+
+**Destinations** (`bizon/connectors/destinations/`) — registered in 3 places (see below):
+`bigquery` (GCS+Parquet batch loads, atomic copy-job swaps), `bigquery_streaming` (legacy streaming
+insert API), `bigquery_streaming_v2` (Storage Write API), `file` (NDJSON), `logger` (stdout, testing).
 
 ### Adding New Sources
 
@@ -330,6 +345,44 @@ need no changes** — they always read plain strings.
 
 Add a provider by dropping one adapter in `bizon/engine/resolvers/adapters/` and one entry in
 `_SCHEME_FACTORIES` (`bizon/engine/resolvers/resolver.py`).
+
+### Transforms
+
+In-pipeline record mutation, applied by the consumer in order (`bizon/transform/`). A
+`TransformModel` has two fields: `label` (display name) and `python` (code executed per record).
+The record payload is exposed as a `data` dict; reassign `data` to change the output. There are no
+built-in transforms — the logic is user-supplied.
+
+```yaml
+transforms:
+  - label: redact
+    python: |
+      data.pop("ssn", None)
+```
+
+### Monitoring & Alerting
+
+Both are optional top-level config blocks (`bizon/monitoring/config.py`, `bizon/alerting/models.py`).
+
+- **Monitoring** — `type: datadog` with `config` (`enable_tracing`, `datadog_agent_host` or
+  `datadog_host_env_var`, `datadog_agent_port` default `8125`, `tags`). Needs `bizon[datadog]`.
+- **Alerting** — `type: slack`, `log_levels` (default `[ERROR]`), `config.webhook_url`.
+
+### Multi-Stream Routing
+
+The optional top-level `streams` block (`bizon/common/models.py`) maps multiple source streams to
+their own destination tables/schemas in one run. Requires `source.sync_mode: stream` and the
+`stream` runner. For Kafka, topics are auto-extracted from the `streams` block. Validation rejects
+duplicate stream names and `table_id`s; `table_id` must be `project.dataset.table`. Reference:
+`bizon/connectors/sources/kafka/config/kafka_streams.example.yml`.
+
+### Config Defaults (gotchas)
+
+- `engine.backend` defaults to file-based `sqlite` with `syncCursorInDBEvery: 2`.
+- `engine.queue` defaults to `python_queue`; `engine.runner` defaults to `thread`.
+- `source.sync_mode` defaults to `full_refresh`; `api_config.retry_limit` defaults to `10`.
+- `BizonConfig` and `EngineConfig` are `extra="forbid"` — unknown keys raise validation errors.
+- Python support is `>=3.9,<3.13`.
 
 ### Key Patterns
 
