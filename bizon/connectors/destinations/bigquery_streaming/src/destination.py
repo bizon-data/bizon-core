@@ -151,7 +151,8 @@ class BigQueryStreamingDestination(AbstractDestination):
         except NotFound:
             dataset = bigquery.Dataset(dataset_ref)
             dataset.location = self.dataset_location
-            dataset = self.bq_client.create_dataset(dataset)
+            # exists_ok=True: swallow the 409 if another worker created it in the race window
+            dataset = self.bq_client.create_dataset(dataset, exists_ok=True)
         return True
 
     def append_rows_to_stream(

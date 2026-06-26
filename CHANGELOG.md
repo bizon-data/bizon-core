@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BigQuery batch destination: `create_dataset` config flag (default `false`). When enabled, the dataset is created if it does not exist before the first write; when disabled, a missing dataset raises a clear error up front instead of failing load jobs with retried 404s mid-run. (The destination's `check_connection` was never invoked during a run, so datasets were not auto-created previously.)
 - BigQuery batch destination: optional asynchronous, batched load jobs to raise throughput and cut the per-table load-job quota. Enable with `async_load: true`; tune with `load_files_per_job` (GCS files batched into one load job, default 10) and `load_max_in_flight_jobs` (back-pressure bound, default 3). Buffer flushes upload to GCS and submit load jobs without blocking, batching multiple files into fewer jobs and overlapping uploads with loads. Destination cursors are created only once a load lands and strictly in submission order, and a failed load aborts the run before any later cursor is written — so successful cursors always stay a contiguous prefix and recovery (`get_last_cursor_by_job_id`) resumes from the last good point and re-fetches the failed range, preserving the at-least-once contract with no lost records. Disabled by default (`async_load: false`) — no behavior change for existing pipelines.
 
+### Fixed
+- BigQuery streaming destinations (`bigquery_streaming`, `bigquery_streaming_v2`) now pass `exists_ok=True` when creating the dataset in `check_connection`, avoiding a 409 `Conflict` when multiple workers race to create the same missing dataset.
+
 ## [0.3.16] - 2026-04-20
 
 ### Fixed
