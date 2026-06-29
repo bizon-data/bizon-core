@@ -98,15 +98,19 @@ class BigQueryDestination(AbstractDestination):
 
         # Case we don't unnest the data
         else:
+            # Metadata columns are NULLABLE (not REQUIRED): BigQuery forbids promoting an existing
+            # NULLABLE column to REQUIRED, so a REQUIRED schema is rejected by load jobs against any
+            # table whose metadata columns are already NULLABLE. bizon always populates these fields,
+            # so NULLABLE drops only a BQ-level NOT NULL guarantee, not data.
             return [
-                bigquery.SchemaField("_source_record_id", "STRING", mode="REQUIRED"),
-                bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_source_record_id", "STRING", mode="NULLABLE"),
+                bigquery.SchemaField("_source_timestamp", "TIMESTAMP", mode="NULLABLE"),
                 bigquery.SchemaField("_source_data", "STRING", mode="NULLABLE"),
-                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_extracted_at", "TIMESTAMP", mode="NULLABLE"),
                 bigquery.SchemaField(
-                    "_bizon_loaded_at", "TIMESTAMP", mode="REQUIRED", default_value_expression="CURRENT_TIMESTAMP()"
+                    "_bizon_loaded_at", "TIMESTAMP", mode="NULLABLE", default_value_expression="CURRENT_TIMESTAMP()"
                 ),
-                bigquery.SchemaField("_bizon_id", "STRING", mode="REQUIRED"),
+                bigquery.SchemaField("_bizon_id", "STRING", mode="NULLABLE"),
             ]
 
     def _ensure_dataset(self):
@@ -206,6 +210,13 @@ class BigQueryDestination(AbstractDestination):
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
             schema=self.get_bigquery_schema(),
+            # Self-heal schema drift: relax any pre-existing REQUIRED column to NULLABLE and tolerate
+            # additive source-schema changes, so tables created by older code converge without a
+            # manual migration. Relaxation is one-way (REQUIRED -> NULLABLE) and safe.
+            schema_update_options=[
+                bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
+                bigquery.SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
+            ],
             time_partitioning=TimePartitioning(field="_bizon_loaded_at", type_=self.config.time_partitioning),
         )
 

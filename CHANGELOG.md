@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-06-29
+
+### Fixed
+- BigQuery batch destination (`bigquery`): metadata columns (`_source_record_id`, `_source_timestamp`, `_bizon_extracted_at`, `_bizon_loaded_at`, `_bizon_id`) were declared `REQUIRED` in the load-job schema, but BigQuery forbids promoting an existing `NULLABLE` column to `REQUIRED`. Load jobs against any table whose metadata columns were already `NULLABLE` failed with `400 Provided Schema does not match Table ... Field _source_record_id has changed mode from NULLABLE to REQUIRED`, breaking every affected pipeline (most visibly in `stream` mode, which loads directly into the final table). These columns are now `NULLABLE` (bizon always populates them, so only the BQ-level NOT NULL constraint is dropped, not data). Load jobs additionally set `ALLOW_FIELD_RELAXATION` and `ALLOW_FIELD_ADDITION` so any table created `REQUIRED` by the previous behavior self-heals on its next load without a manual migration.
+
 ## [0.4.0] - 2026-06-26
 
 ### Added
