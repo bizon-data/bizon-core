@@ -89,11 +89,18 @@ def list(source_name: str):  # noqa
     help="Path to .env file to load environment variables from.",
 )
 @click.option("--cancel", is_flag=True, default=False, help="Cancel pending reset requests instead of adding one.")
-def reset(filename: str, env_file: str, cancel: bool):
+@click.option(
+    "--stream",
+    "stream_name",
+    required=False,
+    help="Reset this stream instead of the one named in the config, for configs templated across streams.",
+)
+def reset(filename: str, env_file: str, cancel: bool, stream_name: str):
     """Request a reset of the incremental stream defined by a config file.
 
     The request is stored in the backend and consumed by the next run of that pipeline, so scheduled
-    pipelines pick it up without any change to their command line.
+    pipelines pick it up without any change to their command line. It is scoped to a single stream:
+    resetting one stream never affects another, even under the same pipeline name.
     """
 
     if env_file:
@@ -102,6 +109,10 @@ def reset(filename: str, env_file: str, cancel: bool):
         load_dotenv(find_dotenv(".env"))
 
     config = resolve_config(parse_from_yaml(filename))
+
+    if stream_name:
+        config["source"]["stream"] = stream_name
+
     bizon_config = BizonConfig.model_validate(obj=config)
 
     if bizon_config.source.sync_mode != SourceSyncModes.INCREMENTAL:
@@ -142,6 +153,19 @@ def reset(filename: str, env_file: str, cancel: bool):
     ):
         click.echo(f"A reset is already pending for {stream_label}, nothing to do.")
         return
+
+    # Nothing validates the stream name here (the source is never instantiated), so a typo — most
+    # likely via --stream — would otherwise queue a reset that silently never fires.
+    if not backend.get_last_successful_stream_job(
+        name=bizon_config.name,
+        source_name=bizon_config.source.name,
+        stream_name=bizon_config.source.stream,
+    ):
+        click.secho(
+            f"Warning: no previous successful run found for {stream_label}. Check the stream name — "
+            f"a stream that has never run already fetches everything on its next run.",
+            fg="yellow",
+        )
 
     backend.create_stream_reset(
         name=bizon_config.name,

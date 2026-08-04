@@ -226,7 +226,11 @@ are submitted, and both are handed the same `bizon_config` / `config` objects.
 
 - **Trigger** — `bizon run --reset`, `source.reset: true`, or a pending row in `stream_resets`
   written by `bizon stream reset <config>` (the only form that reaches a run whose command line a
-  scheduler owns). `AbstractRunner.resolve_reset()` collapses all three into one bool.
+  scheduler owns; `--stream` overrides the config's stream). `AbstractRunner.resolve_reset()`
+  collapses all three into one bool.
+- **Granularity** — keyed on `(name, source_name, stream_name)`, the same triple as
+  `get_last_successful_stream_job`, so a reset is exactly as scoped as the watermark it overrides.
+  Multi-stream configs (the `streams:` block) can never be reset: they require `sync_mode: stream`.
 - **Producer** (`pipeline/producer.py`) — skips the `get_last_successful_stream_job` lookup and falls
   through to `source.get()`.
 - **Destination** — reads `SyncMetadata.destination_sync_mode`, not `sync_mode`. That property maps a

@@ -63,8 +63,8 @@ def write_config(sqlite_database: str, sync_mode: str = "incremental") -> str:
     return temp.name
 
 
-def pending(backend: SQLAlchemyBackend):
-    return backend.get_pending_stream_reset(name="test_reset_pipeline", source_name="dummy", stream_name="creatures")
+def pending(backend: SQLAlchemyBackend, stream_name: str = "creatures"):
+    return backend.get_pending_stream_reset(name="test_reset_pipeline", source_name="dummy", stream_name=stream_name)
 
 
 def test_reset_records_a_pending_request(sqlite_database, backend):
@@ -112,5 +112,47 @@ def test_reset_is_rejected_for_non_incremental_streams(sqlite_database, backend)
 
     assert result.exit_code != 0
     assert "Only incremental streams can be reset" in result.output
+
+    os.unlink(config_path)
+
+
+def test_stream_option_overrides_the_config(sqlite_database, backend):
+    """One templated config, many streams: --stream picks which one to reset."""
+    config_path = write_config(sqlite_database)
+
+    result = CliRunner().invoke(cli, ["stream", "reset", config_path, "--stream", "pokemons"])
+
+    assert result.exit_code == 0, result.output
+    assert pending(backend, "pokemons") is not None
+    # The config's own stream must not be touched.
+    assert pending(backend, "creatures") is None
+
+    os.unlink(config_path)
+
+
+def test_stream_option_resets_are_independent(sqlite_database, backend):
+    """Resetting one stream must never fan out to another under the same pipeline name."""
+    config_path = write_config(sqlite_database)
+    runner = CliRunner()
+
+    runner.invoke(cli, ["stream", "reset", config_path, "--stream", "pokemons"])
+    runner.invoke(cli, ["stream", "reset", config_path, "--stream", "pokemons", "--cancel"])
+
+    runner.invoke(cli, ["stream", "reset", config_path, "--stream", "berries"])
+
+    assert pending(backend, "pokemons") is None
+    assert pending(backend, "berries") is not None
+
+    os.unlink(config_path)
+
+
+def test_never_run_stream_is_flagged(sqlite_database, backend):
+    """A typo'd --stream would otherwise queue a reset that silently never fires."""
+    config_path = write_config(sqlite_database)
+
+    result = CliRunner().invoke(cli, ["stream", "reset", config_path, "--stream", "typoo"])
+
+    assert result.exit_code == 0, result.output
+    assert "no previous successful run found" in result.output
 
     os.unlink(config_path)

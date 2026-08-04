@@ -436,6 +436,9 @@ bizon run config.yml --reset
 # The next `bizon run config.yml` picks it up — no change to the cron/Airflow job.
 bizon stream reset config.yml
 bizon stream reset config.yml --cancel   # changed your mind
+
+# One config templated across streams? Pick which stream to reset.
+bizon stream reset config.yml --stream deals
 ```
 
 ```yaml
@@ -451,6 +454,9 @@ What the run does differently:
 - The job row stays `incremental`, so the next run uses *this* run as its new watermark
 
 Notes:
+- **Scoped to a single stream.** The request is keyed on `(name, source_name, stream_name)` — the same
+  triple as the watermark it overrides — so resetting one stream never affects another, even under the
+  same pipeline name. `bizon stream reset` takes the stream from the config; `--stream` overrides it.
 - Only meaningful with `sync_mode: incremental`; ignored (with a warning) for the other modes.
 - Supported by the `bigquery` and `logger` destinations. The others still append on incremental, so a
   reset there is rejected at config validation rather than silently duplicating your data.
