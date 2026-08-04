@@ -29,6 +29,7 @@ uv run ruff check --fix .       # Lint and auto-fix
 uv run bizon run config.yml     # Run a pipeline from YAML config
 uv run bizon source list        # List available sources
 uv run bizon stream list <source>  # List streams for a source
+uv run bizon stream reset config.yml  # Queue a stream reset for the next run
 ```
 
 ## Releasing
@@ -212,6 +213,34 @@ Then register in:
 - `FULL_REFRESH` - Full dataset each run
 - `INCREMENTAL` - Only new/updated records since last run (append-only)
 - `STREAM` - Continuous streaming mode
+
+### Stream Reset
+
+One incremental run that ignores the watermark, re-fetches everything, and **replaces** the
+destination table — then incremental resumes from that run. See `README.md#stream-reset` for the
+user-facing docs.
+
+The whole feature hangs off a single config field, `source.reset`, so it needs no new plumbing:
+`init_job()` (`bizon/engine/runner/runner.py`) runs in the parent before the producer and consumer
+are submitted, and both are handed the same `bizon_config` / `config` objects.
+
+- **Trigger** — `bizon run --reset`, `source.reset: true`, or a pending row in `stream_resets`
+  written by `bizon stream reset <config>` (the only form that reaches a run whose command line a
+  scheduler owns). `AbstractRunner.resolve_reset()` collapses all three into one bool.
+- **Producer** (`pipeline/producer.py`) — skips the `get_last_successful_stream_job` lookup and falls
+  through to `source.get()`.
+- **Destination** — reads `SyncMetadata.destination_sync_mode`, not `sync_mode`. That property maps a
+  reset onto `FULL_REFRESH` so the existing full-refresh path (`{table}_temp` +
+  `WRITE_TRUNCATE` copy job) is reused with no new finalize branch. **New destinations should branch
+  on `destination_sync_mode`**; ones that still read `sync_mode` are rejected by the
+  `RESET_SUPPORTED_DESTINATIONS` guard in `bizon/common/models.py` rather than silently appending.
+- **Job row** — stays `incremental`, so `get_last_successful_stream_job` picks the reset run up as the
+  next watermark automatically.
+- **Crash safety** — every reset job has a consumed `stream_resets` row pointing at it
+  (`bind_stream_reset_to_job`). That is how a retry knows the in-flight job is a reset instead of
+  degrading into an append. `BigQueryDestination._ensure_clean_temp_table()` only drops the stale temp
+  table when the job has written no destination cursor yet — otherwise it would discard iterations the
+  resuming producer will not re-fetch.
 
 ### Implementing Incremental Sync
 

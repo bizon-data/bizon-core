@@ -15,11 +15,16 @@ from bizon.connectors.destinations.bigquery_streaming_v2.src.config import (
 )
 from bizon.connectors.destinations.file.src.config import FileDestinationConfig
 from bizon.connectors.destinations.logger.src.config import LoggerConfig
+from bizon.destination.config import DestinationTypes
 from bizon.engine.config import EngineConfig
 from bizon.engine.resolvers.config import SecretsConfig
 from bizon.monitoring.config import MonitoringConfig
 from bizon.source.config import SourceConfig, SourceSyncModes
 from bizon.transform.config import TransformModel
+
+# Destinations that replace their table on a stream reset. `bigquery` implements it via
+# `SyncMetadata.destination_sync_mode`; `logger` is a no-op sink with nothing to replace.
+RESET_SUPPORTED_DESTINATIONS = {DestinationTypes.BIGQUERY, DestinationTypes.LOGGER}
 
 
 class StreamSourceConfig(BaseModel):
@@ -176,6 +181,28 @@ class BizonConfig(BaseModel):
 
         return v
 
+    @model_validator(mode="after")
+    def validate_reset_is_supported_by_destination(self) -> "BizonConfig":
+        """Reject a reset on destinations that would append instead of replacing the table.
+
+        Only destinations that honour `SyncMetadata.destination_sync_mode` can replace their table on
+        a reset. The others still branch on `sync_mode`, so a reset there would re-fetch the whole
+        stream and append it — silently duplicating the data. Fail loudly instead.
+        """
+        # Only incremental runs act on the flag (see AbstractRunner.resolve_reset), so a reset that is
+        # already going to be ignored must not be rejected here.
+        if not self.source.reset or self.source.sync_mode != SourceSyncModes.INCREMENTAL:
+            return self
+
+        if self.destination.name not in RESET_SUPPORTED_DESTINATIONS:
+            supported = ", ".join(sorted(d.value for d in RESET_SUPPORTED_DESTINATIONS))
+            raise ValueError(
+                f"Configuration Error: source.reset is not supported by destination "
+                f"'{self.destination.name}'. Supported destinations: {supported}."
+            )
+
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def inject_config_from_streams(cls, data: Any) -> Any:
@@ -260,6 +287,18 @@ class SyncMetadata(BaseModel):
     sync_mode: SourceSyncModes
     destination_name: str
     destination_alias: str
+    reset: bool = False
+
+    @property
+    def destination_sync_mode(self) -> SourceSyncModes:
+        """Sync mode destinations must apply, which is not always the sync mode of the job.
+
+        A reset replaces the destination table like a full refresh, but the job itself stays
+        `incremental` so `get_last_successful_stream_job` keeps using it as the next watermark.
+        """
+        if self.reset and self.sync_mode == SourceSyncModes.INCREMENTAL:
+            return SourceSyncModes.FULL_REFRESH
+        return self.sync_mode
 
     @classmethod
     def from_bizon_config(cls, job_id: str, config: BizonConfig) -> "SyncMetadata":
@@ -271,4 +310,5 @@ class SyncMetadata(BaseModel):
             sync_mode=config.source.sync_mode,
             destination_name=config.destination.name,
             destination_alias=config.destination.alias,
+            reset=config.source.reset,
         )

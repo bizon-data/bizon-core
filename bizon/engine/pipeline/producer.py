@@ -136,7 +136,13 @@ class Producer:
         source_incremental_state = None
         is_incremental = self.bizon_config.source.sync_mode == SourceSyncModes.INCREMENTAL
 
-        if is_incremental:
+        if is_incremental and self.bizon_config.source.reset:
+            # Stream reset: deliberately ignore the watermark and re-pull everything. The destination
+            # replaces its table for this run, and the next run picks this job up as its new watermark.
+            logger.info("Stream reset: re-fetching the full stream, the destination table will be replaced.")
+            is_incremental = False
+
+        elif is_incremental:
             # Get the last successful job to determine last_run timestamp
             last_successful_job = self.backend.get_last_successful_stream_job(
                 name=self.bizon_config.name,

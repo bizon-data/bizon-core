@@ -25,6 +25,12 @@ def set_custom_source_path_in_config(config: dict, custom_source: str):
         config["source"]["source_file_path"] = custom_source
 
 
+def set_reset_in_config(config: dict, reset: bool):
+    # Only ever written when the flag is passed: writing False would clobber `reset: true` set in YAML.
+    if reset:
+        config["source"]["reset"] = True
+
+
 # TODO: Refacto
 def set_runner_in_config(config: dict, runner: str):
     if runner:

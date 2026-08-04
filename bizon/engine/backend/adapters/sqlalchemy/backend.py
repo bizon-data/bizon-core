@@ -14,12 +14,14 @@ from bizon.engine.backend.models import (
     TABLE_DESTINATION_CURSOR,
     TABLE_SOURCE_CURSOR,
     TABLE_STREAM_INFO,
+    TABLE_STREAM_RESET,
     Base,
     CursorStatus,
     DestinationCursor,
     JobStatus,
     SourceCursor,
     StreamJob,
+    StreamReset,
 )
 
 from .config import BigQueryConfigDetails, PostgresConfigDetails, SQLiteConfigDetails
@@ -160,6 +162,10 @@ class SQLAlchemyBackend(AbstractBackend):
             all_entities_exist = False
             logger.info(f"Table {TABLE_DESTINATION_CURSOR} does not exist in the database, we will create it")
 
+        if not inspect(engine).has_table(TABLE_STREAM_RESET):
+            all_entities_exist = False
+            logger.info(f"Table {TABLE_STREAM_RESET} does not exist in the database, we will create it")
+
         return all_entities_exist
 
     def _add_and_commit(self, obj, session: Optional[Session] = None):
@@ -269,6 +275,74 @@ class SQLAlchemyBackend(AbstractBackend):
 
         logger.info(f"No last successful job found for source={source_name} stream={stream_name}")
         return None
+
+    #### STREAM RESET ####
+
+    def create_stream_reset(
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
+    ) -> StreamReset:
+        """Record a pending reset request for the given stream and return it"""
+
+        new_stream_reset = StreamReset(name=name, source_name=source_name, stream_name=stream_name)
+        new_stream_reset = self._add_and_commit(new_stream_reset, session=session)
+        logger.debug(f"New stream reset has been requested: {new_stream_reset}")
+        return new_stream_reset
+
+    def get_pending_stream_reset(
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
+    ) -> Optional[StreamReset]:
+        """Get the most recent reset request for the given stream that no run has consumed yet"""
+
+        query = (
+            select(StreamReset)
+            .filter(
+                StreamReset.name == name,
+                StreamReset.source_name == source_name,
+                StreamReset.stream_name == stream_name,
+                StreamReset.consumed_at.is_(None),
+            )
+            .order_by(StreamReset.requested_at.desc())
+            .limit(1)
+        )
+
+        return self._execute(query, session=session).scalar_one_or_none()
+
+    def get_stream_reset_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[StreamReset]:
+        """Get the reset request consumed by the given job, if that job is a reset job"""
+
+        query = select(StreamReset).filter(StreamReset.consumed_by_job_id == job_id).limit(1)
+        return self._execute(query, session=session).scalar_one_or_none()
+
+    def consume_stream_reset(self, reset_id: str, job_id: str, session: Optional[Session] = None):
+        """Mark the reset request as consumed by the given job"""
+
+        stmt = (
+            update(StreamReset)
+            .where(StreamReset.id == reset_id)
+            .values(consumed_at=datetime.now(tz=UTC), consumed_by_job_id=job_id)
+            .execution_options(synchronize_session="fetch")
+        )
+        self._execute(stmt, session=session)
+
+    def cancel_pending_stream_resets(
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
+    ) -> int:
+        """Retire every pending reset request for the given stream, return how many were retired"""
+
+        # consumed_at without a consumed_by_job_id is what distinguishes a cancelled request from one
+        # a run actually picked up.
+        stmt = (
+            update(StreamReset)
+            .where(
+                StreamReset.name == name,
+                StreamReset.source_name == source_name,
+                StreamReset.stream_name == stream_name,
+                StreamReset.consumed_at.is_(None),
+            )
+            .values(consumed_at=datetime.now(tz=UTC))
+            .execution_options(synchronize_session="fetch")
+        )
+        return self._execute(stmt, session=session).rowcount
 
     #### SOURCE CURSOR ####
 
