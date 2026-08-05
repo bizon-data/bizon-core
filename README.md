@@ -449,8 +449,8 @@ source:
 
 What the run does differently:
 - **Producer** ignores the watermark and calls `get()` instead of `get_records_after()`
-- **Destination** stages into `{table}_temp` and publishes with a `WRITE_TRUNCATE` copy job, replacing
-  the table rather than appending to it
+- **Destination** materializes the run as a full refresh, replacing the table rather than appending to
+  it (for `bigquery`: staging into `{table}_temp`, then a `WRITE_TRUNCATE` copy job)
 - The job row stays `incremental`, so the next run uses *this* run as its new watermark
 
 Notes:
@@ -458,8 +458,9 @@ Notes:
   triple as the watermark it overrides — so resetting one stream never affects another, even under the
   same pipeline name. `bizon stream reset` takes the stream from the config; `--stream` overrides it.
 - Only meaningful with `sync_mode: incremental`; ignored (with a warning) for the other modes.
-- Supported by the `bigquery` and `logger` destinations. The others still append on incremental, so a
-  reset there is rejected at config validation rather than silently duplicating your data.
+- Supported by every destination with a working full-refresh path, since that is what a reset
+  materializes as. The exception is `bigquery_streaming`, which has no staging table and appends even
+  on a full refresh; a reset there is rejected at config validation rather than duplicating your data.
 - A reset that crashes is retried as a reset — the request stays bound to its job, so a rerun cannot
   silently degrade into an append.
 - `bizon stream reset` writes to the backend, so it must reach the same one the pipeline uses. With

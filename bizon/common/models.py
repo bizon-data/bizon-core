@@ -22,9 +22,11 @@ from bizon.monitoring.config import MonitoringConfig
 from bizon.source.config import SourceConfig, SourceSyncModes
 from bizon.transform.config import TransformModel
 
-# Destinations that replace their table on a stream reset. `bigquery` implements it via
-# `SyncMetadata.destination_sync_mode`; `logger` is a no-op sink with nothing to replace.
-RESET_SUPPORTED_DESTINATIONS = {DestinationTypes.BIGQUERY, DestinationTypes.LOGGER}
+# A reset reaches destinations as `sync_mode: full_refresh` (see SyncMetadata.from_bizon_config), so
+# any destination with a working full-refresh path supports it for free. `bigquery_streaming` is the
+# exception: it has no `finalize()` and no staging table, so even a plain full refresh appends to the
+# final table instead of replacing it.
+RESET_UNSUPPORTED_DESTINATIONS = {DestinationTypes.BIGQUERY_STREAMING}
 
 
 class StreamSourceConfig(BaseModel):
@@ -183,22 +185,20 @@ class BizonConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_reset_is_supported_by_destination(self) -> "BizonConfig":
-        """Reject a reset on destinations that would append instead of replacing the table.
+        """Reject a reset on destinations that cannot replace their table.
 
-        Only destinations that honour `SyncMetadata.destination_sync_mode` can replace their table on
-        a reset. The others still branch on `sync_mode`, so a reset there would re-fetch the whole
-        stream and append it — silently duplicating the data. Fail loudly instead.
+        A reset re-fetches the whole stream, so a destination that appends instead of replacing would
+        silently duplicate the data. Fail loudly instead.
         """
         # Only incremental runs act on the flag (see AbstractRunner.resolve_reset), so a reset that is
         # already going to be ignored must not be rejected here.
         if not self.source.reset or self.source.sync_mode != SourceSyncModes.INCREMENTAL:
             return self
 
-        if self.destination.name not in RESET_SUPPORTED_DESTINATIONS:
-            supported = ", ".join(sorted(d.value for d in RESET_SUPPORTED_DESTINATIONS))
+        if self.destination.name in RESET_UNSUPPORTED_DESTINATIONS:
             raise ValueError(
                 f"Configuration Error: source.reset is not supported by destination "
-                f"'{self.destination.name}'. Supported destinations: {supported}."
+                f"'{self.destination.name}', which appends to its table instead of replacing it."
             )
 
         return self
@@ -289,25 +289,24 @@ class SyncMetadata(BaseModel):
     destination_alias: str
     reset: bool = False
 
-    @property
-    def destination_sync_mode(self) -> SourceSyncModes:
-        """Sync mode destinations must apply, which is not always the sync mode of the job.
-
-        A reset replaces the destination table like a full refresh, but the job itself stays
-        `incremental` so `get_last_successful_stream_job` keeps using it as the next watermark.
-        """
-        if self.reset and self.sync_mode == SourceSyncModes.INCREMENTAL:
-            return SourceSyncModes.FULL_REFRESH
-        return self.sync_mode
-
     @classmethod
     def from_bizon_config(cls, job_id: str, config: BizonConfig) -> "SyncMetadata":
+        sync_mode = config.source.sync_mode
+
+        # A reset materializes as a full refresh: it re-fetches the whole stream and replaces the
+        # table. Mapping it here means every destination with a working full-refresh path supports
+        # reset with no changes of its own. Note this is the sync mode of the *materialization*, not
+        # of the job: the job row is written from bizon_config and stays `incremental`, so
+        # get_last_successful_stream_job keeps using the reset run as the next watermark.
+        if config.source.reset and sync_mode == SourceSyncModes.INCREMENTAL:
+            sync_mode = SourceSyncModes.FULL_REFRESH
+
         return cls(
             name=config.name,
             job_id=job_id,
             source_name=config.source.name,
             stream_name=config.source.stream,
-            sync_mode=config.source.sync_mode,
+            sync_mode=sync_mode,
             destination_name=config.destination.name,
             destination_alias=config.destination.alias,
             reset=config.source.reset,

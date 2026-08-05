@@ -75,15 +75,13 @@ class BigQueryDestination(AbstractDestination):
 
     @property
     def temp_table_id(self) -> str:
-        # destination_sync_mode, not sync_mode: a reset stages into the full-refresh temp table
-        # because it publishes with the same WRITE_TRUNCATE copy job.
-        if self.sync_metadata.destination_sync_mode == SourceSyncModes.FULL_REFRESH:
+        if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
             return f"{self.table_id}_temp"
 
-        elif self.sync_metadata.destination_sync_mode == SourceSyncModes.INCREMENTAL:
+        elif self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
             return f"{self.table_id}_incremental"
 
-        elif self.sync_metadata.destination_sync_mode == SourceSyncModes.STREAM:
+        elif self.sync_metadata.sync_mode == SourceSyncModes.STREAM:
             return f"{self.table_id}"
 
     def get_bigquery_schema(self, df_destination_records: pl.DataFrame = None) -> List[bigquery.SchemaField]:
@@ -394,7 +392,7 @@ class BigQueryDestination(AbstractDestination):
         if self.config.async_load:
             self._drain_all_loads()
 
-        if self.sync_metadata.destination_sync_mode == SourceSyncModes.FULL_REFRESH:
+        if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
             logger.info(f"Replacing {self.table_id} with temp table {self.temp_table_id} via copy job ...")
             self._copy_temp_to_main(write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE)
             # Check if the destination table exists by fetching it; raise if it doesn't exist
@@ -408,7 +406,7 @@ class BigQueryDestination(AbstractDestination):
             self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
             return True
 
-        elif self.sync_metadata.destination_sync_mode == SourceSyncModes.INCREMENTAL:
+        elif self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
             # WRITE_APPEND creates the main table on the first run (preserving the
             # temp table's partitioning) and appends to it on subsequent runs.
             logger.info(f"Appending temp table {self.temp_table_id} to {self.table_id} via copy job ...")
@@ -417,6 +415,6 @@ class BigQueryDestination(AbstractDestination):
             self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
             return True
 
-        elif self.sync_metadata.destination_sync_mode == SourceSyncModes.STREAM:
+        elif self.sync_metadata.sync_mode == SourceSyncModes.STREAM:
             # Nothing to do as we write directly to the final table
             return True

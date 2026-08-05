@@ -233,11 +233,12 @@ are submitted, and both are handed the same `bizon_config` / `config` objects.
   Multi-stream configs (the `streams:` block) can never be reset: they require `sync_mode: stream`.
 - **Producer** (`pipeline/producer.py`) — skips the `get_last_successful_stream_job` lookup and falls
   through to `source.get()`.
-- **Destination** — reads `SyncMetadata.destination_sync_mode`, not `sync_mode`. That property maps a
-  reset onto `FULL_REFRESH` so the existing full-refresh path (`{table}_temp` +
-  `WRITE_TRUNCATE` copy job) is reused with no new finalize branch. **New destinations should branch
-  on `destination_sync_mode`**; ones that still read `sync_mode` are rejected by the
-  `RESET_SUPPORTED_DESTINATIONS` guard in `bizon/common/models.py` rather than silently appending.
+- **Destination** — needs no reset-specific code. `SyncMetadata.from_bizon_config()` maps a reset onto
+  `sync_mode: full_refresh`, so the existing full-refresh path is reused with no new finalize branch
+  and every destination that can replace its table supports reset for free. Note this is the sync mode
+  of the *materialization*, not of the job. Destinations that append even on a full refresh (only
+  `bigquery_streaming`, which has no `finalize()`) are listed in `RESET_UNSUPPORTED_DESTINATIONS` in
+  `bizon/common/models.py` and rejected at config validation.
 - **Job row** — stays `incremental`, so `get_last_successful_stream_job` picks the reset run up as the
   next watermark automatically.
 - **Crash safety** — every reset job has a consumed `stream_resets` row pointing at it

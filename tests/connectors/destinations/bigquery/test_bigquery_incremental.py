@@ -3,8 +3,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
-from bizon.common.models import SyncMetadata
+from bizon.common.models import BizonConfig, SyncMetadata
 from bizon.connectors.destinations.bigquery.src.config import (
     BigQueryConfigDetails,
     GCSBufferFormat,
@@ -50,6 +51,26 @@ def create_sync_metadata(sync_mode: SourceSyncModes, reset: bool = False) -> Syn
         sync_mode=sync_mode.value,
         reset=reset,
     )
+
+
+RESET_CONFIG = """
+name: test_pipeline
+source:
+  name: dummy
+  stream: creatures
+  sync_mode: incremental
+  cursor_field: updated_at
+  reset: {reset}
+  authentication: {{type: api_key, params: {{token: t}}}}
+destination:
+  name: bigquery
+  config: {{project_id: test-project, dataset_id: test_dataset, gcs_buffer_bucket: test-bucket}}
+"""
+
+
+def build_reset_config(reset: bool = True) -> BizonConfig:
+    """An incremental config with `reset` set, as the runner would hand it to the destination."""
+    return BizonConfig.model_validate(obj=yaml.safe_load(RESET_CONFIG.format(reset=str(reset).lower())))
 
 
 class TestBigQueryTempTableId:
@@ -231,8 +252,10 @@ class TestBigQueryStreamReset:
     """Test cases for stream reset: an incremental job that replaces the table for one run."""
 
     def _destination(self, bigquery_config, backend=None, reset=True):
+        # Built from a real config through from_bizon_config, so these exercise the actual wiring:
+        # an `incremental` + `reset` config is what has to reach the destination as a full refresh.
         return BigQueryDestination(
-            sync_metadata=create_sync_metadata(SourceSyncModes.INCREMENTAL, reset=reset),
+            sync_metadata=SyncMetadata.from_bizon_config(job_id="test_job_123", config=build_reset_config(reset=reset)),
             config=bigquery_config,
             backend=backend or MagicMock(),
             source_callback=MagicMock(),
