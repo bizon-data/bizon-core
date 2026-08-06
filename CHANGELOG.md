@@ -7,8 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-06
+
 ### Added
-- **Stream reset for incremental syncs**: re-fetch an incremental stream in full and *replace* the destination table for one run, then resume incremental from it. Previously the only way to rebuild a drifted table was to delete backend rows by hand — the watermark (`last_run`, taken from the last succeeded job) had no escape hatch. Request one with `bizon run config.yml --reset`, with `source.reset: true` in the config, or with `bizon stream reset <config>` (`--cancel` to withdraw, `--stream` to target a stream other than the config's for templated configs). Requests are scoped to a single stream — keyed on `(name, source_name, stream_name)`, the same triple as the watermark they override — so resetting one stream never affects another under the same pipeline name. The last form records the request in the backend and the next run consumes it, so pipelines whose command line is fixed by a scheduler need no change. During a reset the producer skips the watermark and calls `get()` instead of `get_records_after()`, and the run reaches destinations as `sync_mode: full_refresh` so they replace their table through their existing full-refresh path (for `bigquery`: staging into `{table}_temp`, then a `WRITE_TRUNCATE` copy job). The job row stays `incremental`, so the reset run becomes the next run's watermark. The request stays bound to the job running it, so a crashed reset is retried as a reset rather than silently degrading into an append. Only meaningful for `sync_mode: incremental` (ignored with a warning otherwise) and supported by every destination with a working full-refresh path — the exception is `bigquery_streaming`, which has no staging table and appends even on a full refresh, so a reset there is rejected at validation instead of duplicating data. Adds a `stream_resets` table, created automatically alongside the existing ones (no migration needed).
+
+- **Stream reset for incremental syncs** — one run that re-fetches an incremental stream in full and *replaces* the destination table, after which incremental resumes from that run. Previously the only way to rebuild a drifted table was to delete backend rows by hand: the watermark (`last_run`, taken from the last succeeded job) had no escape hatch.
+
+  Three ways to ask for one, all equivalent:
+
+  ```bash
+  bizon run config.yml --reset                    # one-shot, manual
+  bizon stream reset config.yml                   # queued, consumed by the next run
+  bizon stream reset config.yml --cancel          # withdraw it
+  bizon stream reset config.yml --stream deals    # pick the stream, for templated configs
+  ```
+
+  ...or `source.reset: true` in the config. `bizon stream reset` records the request in the backend rather than running anything, so a pipeline whose command line is fixed by a scheduler picks it up with no change to its cron/Airflow job.
+
+- Requests are **scoped to a single stream**, keyed on `(name, source_name, stream_name)` — the same triple as the watermark they override — so resetting one stream never affects another under the same pipeline name.
+
+- During a reset the producer skips the watermark and calls `get()` instead of `get_records_after()`, and the run reaches destinations as `sync_mode: full_refresh` so they replace their table through their existing full-refresh path (for `bigquery`: staging into `{table}_temp`, then a `WRITE_TRUNCATE` copy job). The job row stays `incremental`, so the reset run becomes the next run's watermark. The request stays bound to the job running it, so a crashed reset is retried as a reset rather than silently degrading into an append.
+
+- Only meaningful for `sync_mode: incremental` (ignored with a warning otherwise), and supported by every destination with a working full-refresh path. The exception is `bigquery_streaming`, which has no staging table and appends even on a full refresh, so a reset there is rejected at config validation instead of duplicating data.
+
+### Changed
+
+- `AbstractBackend` gains five `stream_resets` methods. Backends bundled with bizon implement them; an out-of-tree `AbstractBackend` subclass will need them added. Adds a `stream_resets` table, created automatically alongside the existing ones — no migration needed.
 
 ## [0.4.1] - 2026-06-29
 
