@@ -1,6 +1,11 @@
-from google.api_core.exceptions import NotFound
-from google.cloud import bigquery
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from loguru import logger
+
+if TYPE_CHECKING:
+    from google.cloud import bigquery
 
 BIZON_TABLE_PREFIX = "_bizon_"
 
@@ -28,6 +33,11 @@ def resolve_default_table_id(
     Returns:
         Fully-qualified ``project.dataset.table`` id.
     """
+    # Imported lazily: this module is pulled in by the BigQuery destination *config*, which
+    # `bizon.common.models` imports unconditionally, so a module-level google import would make
+    # every CLI command fail on an install without the `bigquery` extra.
+    from google.api_core.exceptions import NotFound
+
     legacy_id = f"{project_id}.{dataset_id}.{base_name}"
 
     # No prefix configured -> keep the historical behavior.
