@@ -4,7 +4,14 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .config import AbstractBackendConfig, AbstractBackendConfigDetails, BackendTypes
-from .models import CursorStatus, DestinationCursor, JobStatus, SourceCursor, StreamJob
+from .models import (
+    CursorStatus,
+    DestinationCursor,
+    JobStatus,
+    SourceCursor,
+    StreamJob,
+    StreamReset,
+)
 
 
 class AbstractBackend(ABC):
@@ -67,6 +74,39 @@ class AbstractBackend(ABC):
         self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
     ) -> Optional[StreamJob]:
         """Get the last successful job for the given source and stream name"""
+        pass
+
+    #### STREAM RESET ####
+
+    @abstractmethod
+    def create_stream_reset(
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
+    ) -> StreamReset:
+        """Record a pending reset request for the given stream and return it"""
+        pass
+
+    @abstractmethod
+    def get_pending_stream_reset(
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
+    ) -> Optional[StreamReset]:
+        """Get the most recent reset request for the given stream that no run has consumed yet"""
+        pass
+
+    @abstractmethod
+    def get_stream_reset_by_job_id(self, job_id: str, session: Optional[Session] = None) -> Optional[StreamReset]:
+        """Get the reset request consumed by the given job, if that job is a reset job"""
+        pass
+
+    @abstractmethod
+    def consume_stream_reset(self, reset_id: str, job_id: str, session: Optional[Session] = None):
+        """Mark the reset request as consumed by the given job"""
+        pass
+
+    @abstractmethod
+    def cancel_pending_stream_resets(
+        self, name: str, source_name: str, stream_name: str, session: Optional[Session] = None
+    ) -> int:
+        """Retire every pending reset request for the given stream, return how many were retired"""
         pass
 
     @abstractmethod

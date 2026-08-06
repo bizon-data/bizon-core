@@ -3,8 +3,9 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+import yaml
 
-from bizon.common.models import SyncMetadata
+from bizon.common.models import BizonConfig, SyncMetadata
 from bizon.connectors.destinations.bigquery.src.config import (
     BigQueryConfigDetails,
     GCSBufferFormat,
@@ -38,7 +39,7 @@ def bigquery_config():
     )
 
 
-def create_sync_metadata(sync_mode: SourceSyncModes) -> SyncMetadata:
+def create_sync_metadata(sync_mode: SourceSyncModes, reset: bool = False) -> SyncMetadata:
     """Create SyncMetadata with specified sync mode."""
     return SyncMetadata(
         name="test_pipeline",
@@ -48,7 +49,28 @@ def create_sync_metadata(sync_mode: SourceSyncModes) -> SyncMetadata:
         destination_name="bigquery",
         destination_alias="bigquery",
         sync_mode=sync_mode.value,
+        reset=reset,
     )
+
+
+RESET_CONFIG = """
+name: test_pipeline
+source:
+  name: dummy
+  stream: creatures
+  sync_mode: incremental
+  cursor_field: updated_at
+  reset: {reset}
+  authentication: {{type: api_key, params: {{token: t}}}}
+destination:
+  name: bigquery
+  config: {{project_id: test-project, dataset_id: test_dataset, gcs_buffer_bucket: test-bucket}}
+"""
+
+
+def build_reset_config(reset: bool = True) -> BizonConfig:
+    """An incremental config with `reset` set, as the runner would hand it to the destination."""
+    return BizonConfig.model_validate(obj=yaml.safe_load(RESET_CONFIG.format(reset=str(reset).lower())))
 
 
 class TestBigQueryTempTableId:
@@ -224,3 +246,86 @@ class TestBigQueryFinalize:
         # STREAM mode writes directly to the final table: no query, no copy
         mock_query.assert_not_called()
         mock_copy.assert_not_called()
+
+
+class TestBigQueryStreamReset:
+    """Test cases for stream reset: an incremental job that replaces the table for one run."""
+
+    def _destination(self, bigquery_config, backend=None, reset=True):
+        # Built from a real config through from_bizon_config, so these exercise the actual wiring:
+        # an `incremental` + `reset` config is what has to reach the destination as a full refresh.
+        return BigQueryDestination(
+            sync_metadata=SyncMetadata.from_bizon_config(job_id="test_job_123", config=build_reset_config(reset=reset)),
+            config=bigquery_config,
+            backend=backend or MagicMock(),
+            source_callback=MagicMock(),
+            monitor=MagicMock(),
+        )
+
+    def test_temp_table_id_uses_full_refresh_staging(self, bigquery_config, mock_bq_client, mock_gcs_client):
+        """A reset stages into the full-refresh temp table, since it publishes with WRITE_TRUNCATE."""
+        destination = self._destination(bigquery_config)
+
+        assert destination.temp_table_id == f"{destination.table_id}_temp"
+
+    def test_finalize_replaces_table(self, bigquery_config, mock_bq_client, mock_gcs_client):
+        """A reset must replace the table (WRITE_TRUNCATE), not append to it like a normal incremental."""
+        from google.cloud import bigquery
+
+        destination = self._destination(bigquery_config)
+
+        mock_copy = MagicMock()
+        destination.bq_client.copy_table = mock_copy
+        destination.bq_client.query = MagicMock()
+        destination.bq_client.get_table = MagicMock()
+        destination.bq_client.delete_table = MagicMock()
+
+        assert destination.finalize() is True
+
+        destination.bq_client.query.assert_not_called()
+        _, kwargs = mock_copy.call_args
+        assert kwargs["job_config"].write_disposition == bigquery.WriteDisposition.WRITE_TRUNCATE
+
+    def test_stale_temp_table_is_dropped_on_a_fresh_reset(self, bigquery_config, mock_bq_client, mock_gcs_client):
+        """Rows left by an earlier crashed run must not survive into the replaced table."""
+        backend = MagicMock()
+        backend.get_last_cursor_by_job_id.return_value = None
+        destination = self._destination(bigquery_config, backend=backend)
+        destination.bq_client.delete_table = MagicMock()
+
+        destination._ensure_clean_temp_table()
+
+        destination.bq_client.delete_table.assert_called_once_with(destination.temp_table_id, not_found_ok=True)
+
+    def test_temp_table_is_kept_when_resuming_a_crashed_reset(self, bigquery_config, mock_bq_client, mock_gcs_client):
+        """The producer resumes from the last cursor, so already-written iterations must be kept."""
+        backend = MagicMock()
+        backend.get_last_cursor_by_job_id.return_value = MagicMock(to_source_iteration=4)
+        destination = self._destination(bigquery_config, backend=backend)
+        destination.bq_client.delete_table = MagicMock()
+
+        destination._ensure_clean_temp_table()
+
+        destination.bq_client.delete_table.assert_not_called()
+
+    def test_temp_table_is_only_dropped_once(self, bigquery_config, mock_bq_client, mock_gcs_client):
+        """Both write paths call the guard on every flush; only the first may drop the table."""
+        backend = MagicMock()
+        backend.get_last_cursor_by_job_id.return_value = None
+        destination = self._destination(bigquery_config, backend=backend)
+        destination.bq_client.delete_table = MagicMock()
+
+        destination._ensure_clean_temp_table()
+        destination._ensure_clean_temp_table()
+
+        destination.bq_client.delete_table.assert_called_once()
+
+    def test_non_reset_run_never_drops_its_temp_table(self, bigquery_config, mock_bq_client, mock_gcs_client):
+        """A plain incremental appends into `_incremental` across runs and must leave it alone."""
+        destination = self._destination(bigquery_config, reset=False)
+        destination.bq_client.delete_table = MagicMock()
+
+        destination._ensure_clean_temp_table()
+
+        assert destination.temp_table_id == f"{destination.table_id}_incremental"
+        destination.bq_client.delete_table.assert_not_called()

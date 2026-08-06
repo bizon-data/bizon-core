@@ -1,19 +1,28 @@
 import click
 from dotenv import find_dotenv, load_dotenv
 
-from bizon.engine.engine import RunnerFactory, replace_env_variables_in_config
+from bizon.common.models import BizonConfig
+from bizon.engine.backend.backend import BackendFactory
+from bizon.engine.backend.config import BackendTypes
+from bizon.engine.engine import (
+    RunnerFactory,
+    replace_env_variables_in_config,
+    resolve_config,
+)
 from bizon.engine.resolvers import (
     ReferenceResolutionError,
     ResolverRegistry,
     collect_references_in_config,
 )
 from bizon.engine.runner.config import LoggerLevel
+from bizon.source.config import SourceSyncModes
 from bizon.source.discover import discover_all_sources
 
 from .utils import (
     parse_from_yaml,
     set_custom_source_path_in_config,
     set_log_level,
+    set_reset_in_config,
     set_runner_in_config,
 )
 
@@ -69,6 +78,105 @@ def list(source_name: str):  # noqa
     for stream in source_model.streams:
         stream_mode = "[Supports incremental]" if stream.supports_incremental else "[Full refresh only]"
         click.echo(f"{stream_mode} - {stream.name}")
+
+
+@stream.command()
+@click.argument("filename", type=click.Path(exists=True))
+@click.option(
+    "--env-file",
+    required=False,
+    type=click.Path(exists=True),
+    help="Path to .env file to load environment variables from.",
+)
+@click.option("--cancel", is_flag=True, default=False, help="Cancel pending reset requests instead of adding one.")
+@click.option(
+    "--stream",
+    "stream_name",
+    required=False,
+    help="Reset this stream instead of the one named in the config, for configs templated across streams.",
+)
+def reset(filename: str, env_file: str, cancel: bool, stream_name: str):
+    """Request a reset of the incremental stream defined by a config file.
+
+    The request is stored in the backend and consumed by the next run of that pipeline, so scheduled
+    pipelines pick it up without any change to their command line. It is scoped to a single stream:
+    resetting one stream never affects another, even under the same pipeline name.
+    """
+
+    if env_file:
+        load_dotenv(env_file)
+    else:
+        load_dotenv(find_dotenv(".env"))
+
+    config = resolve_config(parse_from_yaml(filename))
+
+    if stream_name:
+        config["source"]["stream"] = stream_name
+
+    bizon_config = BizonConfig.model_validate(obj=config)
+
+    if bizon_config.source.sync_mode != SourceSyncModes.INCREMENTAL:
+        raise click.exceptions.ClickException(
+            f"Only incremental streams can be reset, but sync_mode is '{bizon_config.source.sync_mode.value}'. "
+            f"A '{bizon_config.source.sync_mode.value}' stream already rebuilds its destination on every run."
+        )
+
+    backend = BackendFactory.get_backend(config=bizon_config.engine.backend)
+    backend.check_prerequisites()
+    backend.create_all_tables()
+
+    if bizon_config.engine.backend.type == BackendTypes.SQLITE:
+        click.secho(
+            "Warning: the sqlite backend is a local file, so this request is only visible to runs using the same file.",
+            fg="yellow",
+        )
+
+    stream_label = f"{bizon_config.source.name} - {bizon_config.source.stream}"
+
+    if cancel:
+        cancelled = backend.cancel_pending_stream_resets(
+            name=bizon_config.name,
+            source_name=bizon_config.source.name,
+            stream_name=bizon_config.source.stream,
+        )
+
+        if cancelled:
+            click.secho(f"Cancelled {cancelled} pending reset request(s) for {stream_label}.", fg="green")
+        else:
+            click.echo(f"No pending reset request for {stream_label}.")
+        return
+
+    if backend.get_pending_stream_reset(
+        name=bizon_config.name,
+        source_name=bizon_config.source.name,
+        stream_name=bizon_config.source.stream,
+    ):
+        click.echo(f"A reset is already pending for {stream_label}, nothing to do.")
+        return
+
+    # Nothing validates the stream name here (the source is never instantiated), so a typo — most
+    # likely via --stream — would otherwise queue a reset that silently never fires.
+    if not backend.get_last_successful_stream_job(
+        name=bizon_config.name,
+        source_name=bizon_config.source.name,
+        stream_name=bizon_config.source.stream,
+    ):
+        click.secho(
+            f"Warning: no previous successful run found for {stream_label}. Check the stream name — "
+            f"a stream that has never run already fetches everything on its next run.",
+            fg="yellow",
+        )
+
+    backend.create_stream_reset(
+        name=bizon_config.name,
+        source_name=bizon_config.source.name,
+        stream_name=bizon_config.source.stream,
+    )
+    click.secho(
+        f"Reset requested for {stream_label}. The next run will re-fetch the full stream, replace the "
+        f"destination table, and resume incremental from there.",
+        fg="green",
+    )
 
 
 # Create a 'destination' group under 'bizon'
@@ -160,12 +268,20 @@ def check(filename: str, env_file: str):
     type=click.Path(exists=True),
     help="Path to .env file to load environment variables from.",
 )
+@click.option(
+    "--reset",
+    is_flag=True,
+    default=False,
+    help="Reset the incremental stream: re-fetch it in full and replace the destination table, "
+    "then resume incremental from this run.",
+)
 def run(
     filename: str,
     custom_source: str,
     runner: str,
     log_level: LoggerLevel,
     env_file: str,
+    reset: bool,
     help="Run a bizon pipeline from a YAML file.",
 ):
     """Run a bizon pipeline from a YAML file."""
@@ -187,6 +303,9 @@ def run(
 
     # Override runner param in config
     set_runner_in_config(config=config, runner=runner)
+
+    # Override reset param in config
+    set_reset_in_config(config=config, reset=reset)
 
     runner = RunnerFactory.create_from_config_dict(config=config)
     result = runner.run()

@@ -336,3 +336,77 @@ def test_number_of_rows_written(backend: SQLAlchemyBackend, session: Session):
         success=True,
     )
     assert backend.get_number_of_written_rows_for_job(job_id=new_job.id, session=session) == 15
+
+
+@pytest.mark.parametrize(
+    "backend,session",
+    [
+        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
+        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+    ],
+)
+def test_stream_reset_request_and_consume(backend: SQLAlchemyBackend, session: Session):
+    backend.create_all_tables()
+
+    stream_name = f"stream_{uuid.uuid4().hex}"
+    stream = {"name": "testjob", "source_name": "sourcetest", "stream_name": stream_name}
+
+    assert backend.get_pending_stream_reset(session=session, **stream) is None
+
+    stream_reset = backend.create_stream_reset(session=session, **stream)
+
+    pending = backend.get_pending_stream_reset(session=session, **stream)
+    assert pending is not None
+    assert pending.id == stream_reset.id
+
+    job_id = uuid.uuid4().hex
+    backend.consume_stream_reset(reset_id=stream_reset.id, job_id=job_id, session=session)
+
+    # A consumed request must never be picked up twice, but stays attached to the job running it so a
+    # crashed reset can be recognised as a reset on retry.
+    assert backend.get_pending_stream_reset(session=session, **stream) is None
+    consumed = backend.get_stream_reset_by_job_id(job_id=job_id, session=session)
+    assert consumed is not None
+    assert consumed.id == stream_reset.id
+
+
+@pytest.mark.parametrize(
+    "backend,session",
+    [
+        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
+        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+    ],
+)
+def test_stream_reset_is_scoped_to_its_stream(backend: SQLAlchemyBackend, session: Session):
+    backend.create_all_tables()
+
+    requested = f"stream_{uuid.uuid4().hex}"
+    other = f"stream_{uuid.uuid4().hex}"
+
+    backend.create_stream_reset(name="testjob", source_name="sourcetest", stream_name=requested, session=session)
+
+    assert (
+        backend.get_pending_stream_reset(name="testjob", source_name="sourcetest", stream_name=other, session=session)
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "backend,session",
+    [
+        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
+        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+    ],
+)
+def test_cancel_pending_stream_resets(backend: SQLAlchemyBackend, session: Session):
+    backend.create_all_tables()
+
+    stream_name = f"stream_{uuid.uuid4().hex}"
+    stream = {"name": "testjob", "source_name": "sourcetest", "stream_name": stream_name}
+
+    backend.create_stream_reset(session=session, **stream)
+    backend.create_stream_reset(session=session, **stream)
+
+    assert backend.cancel_pending_stream_resets(session=session, **stream) == 2
+    assert backend.get_pending_stream_reset(session=session, **stream) is None
+    assert backend.cancel_pending_stream_resets(session=session, **stream) == 0

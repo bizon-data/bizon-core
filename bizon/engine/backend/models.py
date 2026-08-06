@@ -9,6 +9,7 @@ from sqlalchemy.orm import DeclarativeBase, relationship
 TABLE_STREAM_INFO = "stream_jobs"
 TABLE_SOURCE_CURSOR = "source_cursors"
 TABLE_DESTINATION_CURSOR = "destination_cursors"
+TABLE_STREAM_RESET = "stream_resets"
 
 
 def generate_uuid():
@@ -109,3 +110,33 @@ class DestinationCursor(Base):
     pagination = Column(
         String, nullable=True, default=None, doc="Pagination source information from latest written buffer"
     )
+
+
+class StreamReset(Base):
+    """A request to reset an incremental stream: re-fetch it in full and replace the destination table.
+
+    Lives in its own table rather than as a column on `stream_jobs` because `create_all_tables()` only
+    creates missing tables, so a new table is migration-free for existing backends while a new column
+    would not be.
+
+    A row is pending until a run consumes it. `consumed_by_job_id` is what makes a reset survive a
+    crash: the retry recognises the in-flight job as a reset instead of degrading to an append.
+    """
+
+    __tablename__ = TABLE_STREAM_RESET
+
+    id = Column(String(100), primary_key=True, default=generate_uuid, doc="Unique identifier for the reset request")
+    name = Column(String(100), nullable=False, doc="Name of the configuration, must be unique for a given pipeline")
+    source_name = Column(String(100), nullable=False, doc="Name of the source")
+    stream_name = Column(String(100), nullable=False, doc="Name of the stream")
+    requested_at = Column(
+        DateTime, nullable=False, default=lambda: datetime.now(tz=UTC), doc="Timestamp when the reset was requested"
+    )
+    consumed_at = Column(DateTime, nullable=True, default=None, doc="Timestamp when a run picked up this reset request")
+    consumed_by_job_id = Column(
+        String(100), nullable=True, default=None, doc="Id of the job running this reset request"
+    )
+
+    def __repr__(self):
+        state = f"consumed by {self.consumed_by_job_id}" if self.consumed_at else "pending"
+        return f"<StreamReset {self.source_name} {self.stream_name} ({state})>"

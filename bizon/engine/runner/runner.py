@@ -133,6 +133,60 @@ class AbstractRunner(ABC):
         return MonitorFactory.get_monitor(sync_metadata, bizon_config.monitoring)
 
     @staticmethod
+    def resolve_reset(bizon_config: BizonConfig, backend: AbstractBackend, resuming_reset: bool) -> bool:
+        """Decide whether this run is a stream reset: re-fetch in full, then replace the table.
+
+        A reset can be asked for in three ways, all converging here: the `--reset` CLI flag,
+        `source.reset` in the config, or a pending `stream_resets` marker written by
+        `bizon stream reset` (the only one that reaches a run whose command line is fixed by a
+        scheduler).
+        """
+        if bizon_config.source.sync_mode != SourceSyncModes.INCREMENTAL:
+            if bizon_config.source.reset:
+                logger.warning(
+                    f"source.reset is set but sync_mode is {bizon_config.source.sync_mode.value}, "
+                    "there is no incremental state to reset - ignoring."
+                )
+            return False
+
+        if resuming_reset:
+            logger.info("Resuming an in-flight stream reset.")
+            return True
+
+        if backend.get_pending_stream_reset(
+            name=bizon_config.name,
+            source_name=bizon_config.source.name,
+            stream_name=bizon_config.source.stream,
+        ):
+            logger.info("Found a pending stream reset request.")
+            return True
+
+        return bizon_config.source.reset
+
+    @staticmethod
+    def bind_stream_reset_to_job(bizon_config: BizonConfig, backend: AbstractBackend, job_id: str):
+        """Make sure the reset job has a consumed marker row pointing at it.
+
+        This is the invariant that lets a crashed reset be retried: the next run recognises the
+        in-flight job as a reset instead of falling back to an incremental append. The `--reset`
+        flag path has no marker of its own, so one is created here.
+        """
+        if backend.get_stream_reset_by_job_id(job_id=job_id):
+            return
+
+        stream_reset = backend.get_pending_stream_reset(
+            name=bizon_config.name,
+            source_name=bizon_config.source.name,
+            stream_name=bizon_config.source.stream,
+        ) or backend.create_stream_reset(
+            name=bizon_config.name,
+            source_name=bizon_config.source.name,
+            stream_name=bizon_config.source.stream,
+        )
+
+        backend.consume_stream_reset(reset_id=stream_reset.id, job_id=job_id)
+
+    @staticmethod
     def get_or_create_job(
         bizon_config: BizonConfig,
         backend: AbstractBackend,
@@ -200,13 +254,37 @@ class AbstractRunner(ABC):
             logger.error(f"Error while connecting to source: {connection_error}")
             raise ConnectionError(f"Error while connecting to source: {connection_error}")
 
+        # Resolve the reset before touching the job: a reset that is not already in flight must start
+        # from iteration 0, so it needs a fresh job rather than the running one.
+        running_job = backend.get_running_stream_job(
+            name=bizon_config.name,
+            source_name=bizon_config.source.name,
+            stream_name=bizon_config.source.stream,
+        )
+        resuming_reset = bool(running_job and backend.get_stream_reset_by_job_id(job_id=running_job.id))
+        is_reset = AbstractRunner.resolve_reset(
+            bizon_config=bizon_config, backend=backend, resuming_reset=resuming_reset
+        )
+
         # Get or create the job, if force_ignore_checkpoint, we cancel the existing job and create a new one
         job = AbstractRunner.get_or_create_job(
             bizon_config=bizon_config,
             backend=backend,
             source=source,
-            force_create=bizon_config.source.force_ignore_checkpoint,
+            force_create=bizon_config.source.force_ignore_checkpoint or (is_reset and not resuming_reset),
         )
+
+        if is_reset:
+            AbstractRunner.bind_stream_reset_to_job(bizon_config=bizon_config, backend=backend, job_id=job.id)
+            logger.info(
+                f"Stream reset for job {job.id}: the full stream will be re-fetched and the destination "
+                "table replaced. Incremental resumes from this run."
+            )
+
+        # Producer and consumer are handed these very objects (see the runner adapters), so setting the
+        # flag once here is what carries the reset to both sides of the pipeline.
+        bizon_config.source.reset = is_reset
+        config.setdefault("source", {})["reset"] = is_reset
 
         # Set job status to running
         backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING)

@@ -58,6 +58,7 @@ class BigQueryDestination(AbstractDestination):
         self._any_load_failed = False
 
         self._dataset_ensured = False
+        self._temp_table_ensured = False
 
     @property
     def table_id(self) -> str:
@@ -137,6 +138,28 @@ class BigQueryDestination(AbstractDestination):
             self.bq_client.create_dataset(dataset, exists_ok=True)
 
         self._dataset_ensured = True
+
+    def _ensure_clean_temp_table(self):
+        """Drop a stale temp table once per reset run, before the first load.
+
+        Loads always WRITE_APPEND into the temp table, so rows left behind by an earlier crashed run
+        would be published by finalize()'s WRITE_TRUNCATE copy and end up in a table the user asked to
+        be replaced. Only resets need this: a reset shares the `_temp` staging table with full refresh
+        and is the one incremental case that publishes with WRITE_TRUNCATE.
+        """
+        if self._temp_table_ensured or not self.sync_metadata.reset:
+            return
+
+        self._temp_table_ensured = True
+
+        # A reset that already wrote cursors is being resumed after a crash: the producer restarts from
+        # the last destination cursor, so the temp table holds iterations it will not re-fetch.
+        if self.backend.get_last_cursor_by_job_id(job_id=self.sync_metadata.job_id) is not None:
+            logger.info(f"Resuming stream reset, keeping temp table {self.temp_table_id} ...")
+            return
+
+        logger.info(f"Stream reset: dropping stale temp table {self.temp_table_id} ...")
+        self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
 
     def check_connection(self) -> bool:
         self._ensure_dataset()
@@ -232,6 +255,7 @@ class BigQueryDestination(AbstractDestination):
 
     def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, str]:
         self._ensure_dataset()
+        self._ensure_clean_temp_table()
         gs_file_name = self.convert_and_upload_to_buffer(
             df_destination_records=self._rename_for_bq(df_destination_records)
         )
@@ -260,6 +284,7 @@ class BigQueryDestination(AbstractDestination):
             return super().buffer_flush_handler(session=session)
 
         self._ensure_dataset()
+        self._ensure_clean_temp_table()
 
         # Snapshot iteration metadata before the buffer is flushed by the caller.
         destination_iteration = DestinationIteration(

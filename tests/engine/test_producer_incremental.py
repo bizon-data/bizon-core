@@ -1,6 +1,8 @@
 import os
 from datetime import datetime
 from queue import Queue
+from threading import Event
+from unittest.mock import MagicMock
 
 import pytest
 from pytz import UTC
@@ -10,7 +12,7 @@ from bizon.engine.backend.models import JobStatus, StreamJob
 from bizon.engine.engine import RunnerFactory
 from bizon.engine.pipeline.producer import Producer
 from bizon.source.config import SourceSyncModes
-from bizon.source.models import SourceIncrementalState
+from bizon.source.models import SourceIncrementalState, SourceIteration
 
 
 @pytest.fixture(scope="function")
@@ -130,3 +132,48 @@ def test_source_incremental_state_default_values():
     assert state.last_run == now
     assert state.state == {}
     assert state.cursor_field is None
+
+
+@pytest.fixture(scope="function")
+def started_job(incremental_producer: Producer, sqlite_db_session) -> StreamJob:
+    """Create the job the producer under test is running."""
+    return incremental_producer.backend.create_stream_job(
+        name=incremental_producer.bizon_config.name,
+        source_name=incremental_producer.source.config.name,
+        stream_name=incremental_producer.source.config.stream,
+        sync_mode=SourceSyncModes.INCREMENTAL.value,
+        job_status=JobStatus.STARTED,
+        session=sqlite_db_session,
+    )
+
+
+def _stub_source_fetches(producer: Producer):
+    """Stub both fetch methods with a single terminal iteration, so run() exits after one loop."""
+    terminal = SourceIteration(records=[], next_pagination={})
+    producer.source.get = MagicMock(return_value=terminal)
+    producer.source.get_records_after = MagicMock(return_value=terminal)
+
+
+def test_incremental_uses_watermark_without_reset(
+    incremental_producer: Producer, previous_successful_job: StreamJob, started_job: StreamJob
+):
+    """Baseline: with a previous successful job and no reset, the producer fetches incrementally."""
+    _stub_source_fetches(incremental_producer)
+
+    incremental_producer.run(job_id=started_job.id, stop_event=Event())
+
+    incremental_producer.source.get_records_after.assert_called_once()
+    incremental_producer.source.get.assert_not_called()
+
+
+def test_reset_ignores_the_watermark(
+    incremental_producer: Producer, previous_successful_job: StreamJob, started_job: StreamJob
+):
+    """A reset re-fetches the whole stream, even though a watermark is available."""
+    incremental_producer.bizon_config.source.reset = True
+    _stub_source_fetches(incremental_producer)
+
+    incremental_producer.run(job_id=started_job.id, stop_event=Event())
+
+    incremental_producer.source.get.assert_called_once()
+    incremental_producer.source.get_records_after.assert_not_called()

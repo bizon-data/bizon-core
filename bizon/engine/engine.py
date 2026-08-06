@@ -19,14 +19,20 @@ def replace_env_variables_in_config(config: dict) -> dict:
     return config
 
 
+def resolve_config(config: dict) -> dict:
+    """Resolve every reference in a raw config dict, leaving it ready for BizonConfig validation."""
+
+    # Replace legacy BIZON_ENV_ whole-value env references (kept for backwards compat)
+    config = replace_env_variables_in_config(config=config)
+
+    # Resolve gsm:// / env:// references (whole-value and inline ${...})
+    return resolve_references_in_config(config=config)
+
+
 class RunnerFactory:
     @staticmethod
     def create_from_config_dict(config: dict) -> AbstractRunner:
-        # Replace legacy BIZON_ENV_ whole-value env references (kept for backwards compat)
-        config = replace_env_variables_in_config(config=config)
-
-        # Resolve gsm:// / env:// references (whole-value and inline ${...})
-        config = resolve_references_in_config(config=config)
+        config = resolve_config(config=config)
 
         bizon_config = BizonConfig.model_validate(obj=config)
 

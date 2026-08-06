@@ -53,6 +53,12 @@ class SourceConfig(BaseModel, ABC):
         default=False,
     )
 
+    reset: bool = Field(
+        description="Re-fetch the whole stream and replace the destination table for this run, then resume "
+        "incremental from it. Only meaningful with sync_mode: incremental.",
+        default=False,
+    )
+
     authentication: Optional[AuthConfig] = Field(
         description="Configuration for the authentication",
         default=None,

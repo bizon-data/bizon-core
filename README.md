@@ -23,6 +23,7 @@ staying small enough to read end to end.
   - [Destinations](#destinations)
 - [Sync Modes](#sync-modes)
   - [Incremental Sync](#incremental-sync)
+  - [Stream Reset](#stream-reset)
 - [Engine Configuration](#engine-configuration)
   - [Backends](#backends-state-storage)
   - [Queues](#queues)
@@ -166,6 +167,7 @@ The CLI entry point is `bizon` (`bizon.cli.main:cli`).
 | `bizon run <config.yml>` | Run a pipeline from a YAML config |
 | `bizon source list` | List available sources and their streams |
 | `bizon stream list <source>` | List a source's streams, flagged `[Supports incremental]` / `[Full refresh only]` |
+| `bizon stream reset <config.yml>` | Queue a [stream reset](#stream-reset) for the next run of that pipeline |
 | `bizon secrets check <config.yml>` | Dry-run every `gsm://` / `env://` reference and report (masked) results |
 | `bizon destination` | Subcommand group (no subcommands yet) |
 
@@ -220,6 +222,7 @@ Common `SourceConfig` fields (`bizon/source/config.py`); each connector adds its
 | `cursor_field` | `None` | Timestamp field for incremental filtering (e.g. `updated_at`) |
 | `authentication` | `None` | Auth block (`type` + `params`); connector-specific |
 | `force_ignore_checkpoint` | `false` | Ignore existing checkpoints and restart from iteration 0 |
+| `reset` | `false` | Re-fetch the whole stream and replace the destination table, then resume incremental ([details](#stream-reset)) |
 | `max_iterations` | `None` | Cap iterations per run (default: run until source is exhausted) |
 | `api_config.retry_limit` | `10` | Retries before giving up on an API call |
 | `source_file_path` | `None` | Path to a custom source file (same as `--custom-source`) |
@@ -416,6 +419,52 @@ On the first incremental run (no previous successful job):
 - All data is fetched and loaded
 - The job is marked successful
 - Subsequent runs use `get_records_after()` with the `last_run` timestamp
+
+#### Stream Reset
+
+A reset re-fetches the whole stream once and **replaces** the destination table, then resumes
+incremental from that run. Use it when the table has drifted — a backfill, a bug in a transform, or
+records the source changed without bumping its cursor field.
+
+There are three ways to ask for one; all do the same thing:
+
+```bash
+# One-shot, for a run you launch yourself
+bizon run config.yml --reset
+
+# Queued in the backend, for a pipeline whose command line is fixed by a scheduler.
+# The next `bizon run config.yml` picks it up — no change to the cron/Airflow job.
+bizon stream reset config.yml
+bizon stream reset config.yml --cancel   # changed your mind
+
+# One config templated across streams? Pick which stream to reset.
+bizon stream reset config.yml --stream deals
+```
+
+```yaml
+source:
+  sync_mode: incremental
+  reset: true      # same effect, set in the config
+```
+
+What the run does differently:
+- **Producer** ignores the watermark and calls `get()` instead of `get_records_after()`
+- **Destination** materializes the run as a full refresh, replacing the table rather than appending to
+  it (for `bigquery`: staging into `{table}_temp`, then a `WRITE_TRUNCATE` copy job)
+- The job row stays `incremental`, so the next run uses *this* run as its new watermark
+
+Notes:
+- **Scoped to a single stream.** The request is keyed on `(name, source_name, stream_name)` — the same
+  triple as the watermark it overrides — so resetting one stream never affects another, even under the
+  same pipeline name. `bizon stream reset` takes the stream from the config; `--stream` overrides it.
+- Only meaningful with `sync_mode: incremental`; ignored (with a warning) for the other modes.
+- Supported by every destination with a working full-refresh path, since that is what a reset
+  materializes as. The exception is `bigquery_streaming`, which has no staging table and appends even
+  on a full refresh; a reset there is rejected at config validation rather than duplicating your data.
+- A reset that crashes is retried as a reset — the request stays bound to its job, so a rerun cannot
+  silently degrade into an append.
+- `bizon stream reset` writes to the backend, so it must reach the same one the pipeline uses. With
+  the default file-based `sqlite` backend that means the same machine and file.
 
 ## Engine Configuration
 
