@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-08-06
+
+### Fixed
+
+- **`pip install bizon` with no extras produced a CLI that could not start.** Every command, `bizon --help` included, failed with `ImportError: cannot import name 'bigquery' from 'google.cloud'`. `bizon.common.models` imports every destination config unconditionally (pydantic needs the classes to build the discriminated union), and the BigQuery config pulled in `table_naming` purely for a string constant — but that module imported `google.cloud.bigquery` at module level, so the whole CLI depended on the `bigquery` extra. This affected anyone using only the `file` or `logger` destination. The import is now made inside `resolve_default_table_id()`, which is the only thing that needs it and only runs when a BigQuery destination is actually writing. Present since well before 0.5.0.
+
 ## [0.5.0] - 2026-08-06
 
 ### Added
