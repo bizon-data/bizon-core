@@ -50,6 +50,22 @@ class Producer:
                 f"Recovered cursor from DB for iteration {cursor_from_db.from_source_iteration} -> {cursor_from_db.to_source_iteration}"
             )
 
+            # create_destination_cursor() stores a falsy pagination as NULL rather than "{}", so this
+            # reads back as None whenever the last written iteration had no pagination left - which
+            # update_state() treats as "the source is exhausted" (it sets the job SUCCEEDED). Such a
+            # job cannot be resumed: there is no pagination to continue from, and handing the source
+            # an empty one would silently restart it from the first page and re-fetch the whole
+            # stream. Fail with something that names the job and the remedy - this used to surface as
+            # `json.loads(None)` -> "the JSON object must be str, bytes or bytearray, not NoneType",
+            # which pointed at neither.
+            if not cursor_from_db.pagination:
+                raise ValueError(
+                    f"Job {job_id} for stream {self.source.config.name}.{self.source.config.stream} cannot be "
+                    f"resumed: its last cursor (iteration {cursor_from_db.to_source_iteration}) has no pagination "
+                    "left, meaning the source was already exhausted when the run was interrupted. Start a fresh "
+                    "run with `force_ignore_checkpoint: true`, or reset the stream with `bizon stream reset`."
+                )
+
             # Initialize the recovery from the DestinationCursor
             cursor = Cursor.from_db(
                 source_name=self.source.config.name,

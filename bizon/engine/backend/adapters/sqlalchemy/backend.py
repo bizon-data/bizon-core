@@ -6,6 +6,7 @@ from loguru import logger
 from pytz import UTC
 from sqlalchemy import Result, Select, create_engine, func, inspect, select, update
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from bizon.engine.backend.backend import AbstractBackend
@@ -128,9 +129,32 @@ class SQLAlchemyBackend(AbstractBackend):
 
     #### INIT DATABASE ####
 
+    def _missing_tables(self) -> list[str]:
+        """Return the state tables that do not exist yet."""
+        inspector = inspect(self.get_engine())
+        return [
+            table
+            for table in (TABLE_STREAM_INFO, TABLE_SOURCE_CURSOR, TABLE_DESTINATION_CURSOR, TABLE_STREAM_RESET)
+            if not inspector.has_table(table)
+        ]
+
     def create_all_tables(self):
         engine = self.get_engine()
-        Base.metadata.create_all(engine)
+
+        # `create_all` inspects before creating (checkfirst=True), but inspect-then-create is not
+        # atomic: pipelines sharing a schema and starting on the same cron all see a table missing,
+        # all issue CREATE TABLE, and every process but one fails with "Already Exists" (409 on
+        # BigQuery, DuplicateTable on Postgres). Losing that race is not an error - the table existing
+        # is the outcome we wanted - so re-inspect and only re-raise if something is genuinely missing.
+        # Checked generically rather than by catching a dialect-specific exception, since this adapter
+        # also serves SQLite and Postgres and must not import the BigQuery client libraries.
+        try:
+            Base.metadata.create_all(engine)
+        except SQLAlchemyError:
+            missing = self._missing_tables()
+            if missing:
+                raise
+            logger.debug("Lost a concurrent state-table creation race; all tables exist, continuing.")
 
     def drop_all_tables(self):
         engine = self.get_engine()
@@ -145,26 +169,12 @@ class SQLAlchemyBackend(AbstractBackend):
         if self.type != BackendTypes.SQLITE:
             self._check_schema_exist()
 
-        all_entities_exist = True
+        missing = self._missing_tables()
 
-        engine = self.get_engine()
+        for table in missing:
+            logger.info(f"Table {table} does not exist in the database, we will create it")
 
-        # Check if TABLE_STREAM_INFO exists, otherwise create it
-        if not inspect(engine).has_table(TABLE_STREAM_INFO):
-            all_entities_exist = False
-            logger.info(f"Table {TABLE_STREAM_INFO} does not exist in the database, we will create it")
-
-        if not inspect(engine).has_table(TABLE_SOURCE_CURSOR):
-            all_entities_exist = False
-            logger.info(f"Table {TABLE_SOURCE_CURSOR} does not exist in the database, we will create it")
-
-        if not inspect(engine).has_table(TABLE_DESTINATION_CURSOR):
-            all_entities_exist = False
-            logger.info(f"Table {TABLE_DESTINATION_CURSOR} does not exist in the database, we will create it")
-
-        if not inspect(engine).has_table(TABLE_STREAM_RESET):
-            all_entities_exist = False
-            logger.info(f"Table {TABLE_STREAM_RESET} does not exist in the database, we will create it")
+        all_entities_exist = not missing
 
         return all_entities_exist
 

@@ -184,3 +184,57 @@ def test_recovery_with_json_only_pagination_values(file_destination, my_sqlite_b
     assert cursor is not None
     assert cursor.pagination == PAGINATION
     assert cursor.iteration == N_ITERATION + 1
+
+
+def test_recovery_with_empty_pagination_fails_with_an_actionable_message(
+    file_destination, my_sqlite_backend, sqlite_db_session
+):
+    """An exhausted-source cursor is unresumable, and must say so.
+
+    create_destination_cursor() stores a falsy pagination as SQL NULL rather than "{}", so this reads
+    back as None whenever the last written iteration had no pagination left - which update_state()
+    treats as "source exhausted". Resuming is impossible: an empty pagination would restart the source
+    from its first page and re-fetch the whole stream.
+
+    It used to surface as `json.loads(None)` -> "the JSON object must be str, bytes or bytearray, not
+    NoneType", naming neither the job, the stream, nor the remedy.
+    """
+    N_ITERATION = 2
+
+    file_destination.buffer.buffer_size = 0
+    file_destination.write_or_buffer_records(
+        df_destination_records=df_destination_records,
+        iteration=N_ITERATION,
+        session=sqlite_db_session,
+        pagination={},
+    )
+    runner = RunnerFactory.create_from_config_dict(yaml.safe_load(BIZON_CONFIG_DUMMY_TO_FILE))
+
+    bizon_config = runner.bizon_config
+    config = runner.config
+    kwargs = runner.get_kwargs()
+    source = AbstractRunner.get_source(bizon_config=bizon_config, config=config)
+    queue = AbstractRunner.get_queue(bizon_config=bizon_config, **kwargs)
+
+    producer = AbstractRunner.get_producer(
+        bizon_config=bizon_config,
+        source=source,
+        queue=queue,
+        backend=my_sqlite_backend,
+    )
+
+    # The stored value really is NULL, not "{}" - this is the asymmetry that produced the old crash.
+    stored = my_sqlite_backend.get_last_cursor_by_job_id(
+        job_id=file_destination.sync_metadata.job_id, session=sqlite_db_session
+    )
+    assert stored.pagination is None
+
+    job_id = file_destination.sync_metadata.job_id
+    with pytest.raises(ValueError) as excinfo:
+        producer.get_or_create_cursor(job_id=job_id, session=sqlite_db_session)
+
+    message = str(excinfo.value)
+    assert job_id in message, "the message must name the job so it can be found in the backend"
+    assert "dummy.creatures" in message, "the message must name the stream"
+    assert "force_ignore_checkpoint" in message, "the message must name a remedy"
+    assert "NoneType" not in message
