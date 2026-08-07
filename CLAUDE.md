@@ -243,9 +243,33 @@ are submitted, and both are handed the same `bizon_config` / `config` objects.
   next watermark automatically.
 - **Crash safety** — every reset job has a consumed `stream_resets` row pointing at it
   (`bind_stream_reset_to_job`). That is how a retry knows the in-flight job is a reset instead of
-  degrading into an append. `BigQueryDestination._ensure_clean_temp_table()` only drops the stale temp
-  table when the job has written no destination cursor yet — otherwise it would discard iterations the
-  resuming producer will not re-fetch.
+  degrading into an append. Temp-table hygiene is *not* reset-specific — see
+  [Job recovery semantics](#job-recovery-semantics).
+
+### Job recovery semantics
+
+A process killed from outside (Kubernetes `activeDeadlineSeconds`, OOM, preemption) never runs its
+error path, so it always leaves its `stream_jobs` row in `running`. Every recovery decision hangs off
+that row, and the rules differ by sync mode. Changing any of this without reading all three points
+tends to reintroduce a silent data bug — see the `[0.5.2]` changelog entries.
+
+- **Resuming is per sync mode.** `get_or_create_job()` resumes a `running` job for `incremental`
+  (it appends, so completed work still counts) but cancels and recreates it for `full_refresh`
+  (which republishes the whole table, so a stale item list is worthless and, because the run never
+  reaches `finalize()`, keeps the job `running` for the *next* run to resume too). Resets are
+  incremental jobs and are exempt: `resolve_reset()` returns `False` for any non-incremental mode.
+- **Temp-table hygiene follows `WRITE_TRUNCATE`, not reset.** Loads always `WRITE_APPEND` into
+  `temp_table_id`, so any run that publishes with a `WRITE_TRUNCATE` copy must first drop rows left
+  by a crashed attempt. `BigQueryDestination._ensure_clean_temp_table()` therefore fires for
+  `sync_mode == FULL_REFRESH` — which covers resets, since `SyncMetadata.from_bizon_config()` maps
+  them onto `full_refresh`. It skips the drop when the job already wrote a destination cursor, since
+  the resuming producer will not re-fetch those iterations. Plain incremental stages into
+  `_incremental` and appends across runs, so it is left alone.
+- **An empty pagination is terminal, not "no state".** `create_destination_cursor()` stores a falsy
+  pagination as SQL `NULL` rather than `"{}"`, and `Cursor.update_state()` treats an empty pagination
+  as "the source is exhausted". Such a job cannot be resumed: handing the source an empty pagination
+  restarts it at page one and re-fetches the whole stream. The producer raises with the job id and
+  stream instead.
 
 ### Implementing Incremental Sync
 
@@ -330,6 +354,12 @@ def finalize(self) -> bool:
     elif self.sync_metadata.sync_mode == SourceSyncModes.STREAM.value:
         return True  # Direct writes, no finalization
 ```
+
+The DML above is illustrative. The `bigquery` destination itself publishes with a **copy job**
+(`copy_table`, `WRITE_TRUNCATE` for full refresh / `WRITE_APPEND` for incremental) — copy jobs are
+metadata-only and free, whereas `CREATE OR REPLACE TABLE ... AS SELECT` / `INSERT INTO ... SELECT`
+rescan and rewrite the temp table and are billed on bytes processed. Prefer the engine's native bulk
+copy over query DML when one exists.
 
 **Temp Table Naming Convention:**
 - Full refresh: `{table_id}_temp`
@@ -416,7 +446,13 @@ duplicate stream names and `table_id`s; `table_id` must be `project.dataset.tabl
 - `engine.queue` defaults to `python_queue`; `engine.runner` defaults to `thread`.
 - `source.sync_mode` defaults to `full_refresh`; `api_config.retry_limit` defaults to `10`.
 - `BizonConfig` and `EngineConfig` are `extra="forbid"` — unknown keys raise validation errors.
-- Python support is `>=3.9,<3.13`.
+- `pyproject.toml` declares `requires-python = ">=3.9,<3.13"`, but the code **does not actually run on
+  3.9**: PEP 604 unions (`X | None`) are used in `def` signatures without
+  `from __future__ import annotations`, and those are evaluated at import. The core SQLAlchemy backend
+  is affected (`adapters/sqlalchemy/backend.py`), as are 8 of the bundled sources, so this is not a
+  niche path. Nothing in CI runs 3.9 (`pytest.yml` and `kafka-e2e.yml` are 3.10, `publish.yml` is
+  3.11), which is why it goes unnoticed. Treat **3.10** as the real minimum until either the
+  annotations or the declared floor are fixed.
 
 ### Key Patterns
 

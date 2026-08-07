@@ -1,10 +1,12 @@
 import uuid
+from unittest.mock import patch
 
 import pytest
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
-from bizon.engine.backend.models import CursorStatus, JobStatus, SourceCursor
+from bizon.engine.backend.models import Base, CursorStatus, JobStatus, SourceCursor
 
 
 @pytest.mark.parametrize("backend", [pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("my_sqlite_backend")])
@@ -17,6 +19,33 @@ def test_create_all_then_check_prerequisites(backend: SQLAlchemyBackend):
     backend.create_all_tables()
     all_entities_exist = backend.check_prerequisites()
     assert all_entities_exist == True
+
+
+def test_create_all_tables_tolerates_losing_a_creation_race(my_sqlite_backend: SQLAlchemyBackend):
+    """Losing a concurrent CREATE TABLE race is not an error - the table exists, which is the goal.
+
+    `create_all` inspects before creating, but inspect-then-create is not atomic: pipelines sharing a
+    schema and starting on the same cron all see a table missing and all issue CREATE TABLE. All but
+    one used to crash ("409 Already Exists" on BigQuery, DuplicateTable on Postgres).
+    """
+    my_sqlite_backend.create_all_tables()  # the winner of the race
+
+    # The loser: its CREATE TABLE lands after the winner committed.
+    with patch.object(
+        Base.metadata, "create_all", side_effect=ProgrammingError("CREATE TABLE", {}, Exception("42P07"))
+    ):
+        my_sqlite_backend.create_all_tables()
+
+    assert my_sqlite_backend.check_prerequisites() is True
+
+
+def test_create_all_tables_still_raises_when_tables_are_missing(my_sqlite_backend: SQLAlchemyBackend):
+    """A genuine failure must not be swallowed by the race guard."""
+    with patch.object(
+        Base.metadata, "create_all", side_effect=OperationalError("CREATE TABLE", {}, Exception("disk I/O error"))
+    ):
+        with pytest.raises(OperationalError):
+            my_sqlite_backend.create_all_tables()
 
 
 @pytest.mark.parametrize(

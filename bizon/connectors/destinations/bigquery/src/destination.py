@@ -140,25 +140,27 @@ class BigQueryDestination(AbstractDestination):
         self._dataset_ensured = True
 
     def _ensure_clean_temp_table(self):
-        """Drop a stale temp table once per reset run, before the first load.
+        """Drop a stale temp table once per run, before the first load.
 
         Loads always WRITE_APPEND into the temp table, so rows left behind by an earlier crashed run
         would be published by finalize()'s WRITE_TRUNCATE copy and end up in a table the user asked to
-        be replaced. Only resets need this: a reset shares the `_temp` staging table with full refresh
-        and is the one incremental case that publishes with WRITE_TRUNCATE.
+        be replaced. This applies to every run that publishes with WRITE_TRUNCATE, which is exactly the
+        runs staging into `_temp`: a plain full refresh, and a reset (which from_bizon_config maps onto
+        full_refresh precisely so it reuses this path). A plain incremental stages into `_incremental`
+        and appends across runs, so it must be left alone.
         """
-        if self._temp_table_ensured or not self.sync_metadata.reset:
+        if self._temp_table_ensured or self.sync_metadata.sync_mode != SourceSyncModes.FULL_REFRESH:
             return
 
         self._temp_table_ensured = True
 
-        # A reset that already wrote cursors is being resumed after a crash: the producer restarts from
+        # A run that already wrote cursors is being resumed after a crash: the producer restarts from
         # the last destination cursor, so the temp table holds iterations it will not re-fetch.
         if self.backend.get_last_cursor_by_job_id(job_id=self.sync_metadata.job_id) is not None:
-            logger.info(f"Resuming stream reset, keeping temp table {self.temp_table_id} ...")
+            logger.info(f"Resuming an in-flight run, keeping temp table {self.temp_table_id} ...")
             return
 
-        logger.info(f"Stream reset: dropping stale temp table {self.temp_table_id} ...")
+        logger.info(f"Dropping stale temp table {self.temp_table_id} ...")
         self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
 
     def check_connection(self) -> bool:

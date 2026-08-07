@@ -203,11 +203,21 @@ class AbstractRunner(ABC):
             session=session,
         )
 
+        # A full refresh republishes the whole table from scratch, so a job left in `running` by a
+        # killed process has nothing worth resuming: picking it up continues a stale item list, never
+        # reaches the last iteration, and therefore never calls finalize(). Since the job stays
+        # `running`, the next run resumes it again - the table is never republished while `_temp`
+        # accumulates a copy of the data per attempt. Always start such a job fresh.
+        # Resets are unaffected: resolve_reset() returns False for any non-incremental sync mode, so
+        # a reset never reaches this branch and keeps its own stream_resets recovery contract.
+        is_full_refresh = bizon_config.source.sync_mode == SourceSyncModes.FULL_REFRESH
+
         if job:
             # If force_create and a job is already running, we cancel it and create a new one
-            if force_create:
-                logger.info("Found an existing job, cancelling it...")
-                backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.CANCELED)
+            if force_create or is_full_refresh:
+                reason = "it is a full refresh" if is_full_refresh and not force_create else "force_create is set"
+                logger.info(f"Found an existing job, cancelling it because {reason}...")
+                backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.CANCELED, session=session)
                 logger.info(f"Job {job.id} canceled. Creating a new one...")
             # Otherwise we return the existing job
             else:

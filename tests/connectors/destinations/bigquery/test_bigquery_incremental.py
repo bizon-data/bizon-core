@@ -329,3 +329,25 @@ class TestBigQueryStreamReset:
 
         assert destination.temp_table_id == f"{destination.table_id}_incremental"
         destination.bq_client.delete_table.assert_not_called()
+
+    def test_plain_full_refresh_drops_its_stale_temp_table(self, bigquery_config, mock_bq_client, mock_gcs_client):
+        """A full refresh publishes with WRITE_TRUNCATE too, so it needs the same guard as a reset.
+
+        Loads WRITE_APPEND into `_temp`, so rows left by a killed run would otherwise be published
+        alongside the new ones - the duplicate accumulation seen in production (132k rows piled into
+        `_temp` across seven killed attempts).
+        """
+        backend = MagicMock()
+        backend.get_last_cursor_by_job_id.return_value = None
+        destination = BigQueryDestination(
+            sync_metadata=create_sync_metadata(SourceSyncModes.FULL_REFRESH),
+            config=bigquery_config,
+            backend=backend,
+            source_callback=MagicMock(),
+            monitor=MagicMock(),
+        )
+        destination.bq_client.delete_table = MagicMock()
+
+        destination._ensure_clean_temp_table()
+
+        destination.bq_client.delete_table.assert_called_once_with(destination.temp_table_id, not_found_ok=True)

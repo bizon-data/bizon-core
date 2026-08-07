@@ -39,8 +39,9 @@ staying small enough to read end to end.
 
 ## Features
 
-- **Natively fault-tolerant** — a checkpointing mechanism tracks progress so a pipeline resumes
-  from its last committed cursor after a crash or restart.
+- **Natively fault-tolerant** — a checkpointing mechanism tracks progress so an `incremental` or
+  `stream` pipeline resumes from its last committed cursor after a crash or restart. A
+  `full_refresh` pipeline deliberately restarts instead, since it republishes the whole table.
 - **High throughput** — designed to process billions of records, using Polars DataFrames for
   memory-efficient, vectorized buffering and Parquet for batch loads.
 - **Queue-system agnostic** — run on an in-process Python queue, RabbitMQ, or Kafka/Redpanda
@@ -75,9 +76,14 @@ YAML Config → RunnerFactory → Producer → Queue → Consumer → Destinatio
 
 **Checkpointing & recovery.** The producer writes its source cursor to the backend every
 `syncCursorInDBEvery` iterations, and the consumer records a destination cursor after each
-successful write. On restart, the pipeline reads the last destination cursor and resumes from the
-next iteration. Bizon's delivery contract is **at-least-once** — on recovery a batch may be
-re-written, so destinations are designed to tolerate duplicate writes.
+successful write. On restart, an `incremental` or `stream` pipeline reads the last destination
+cursor and resumes from the next iteration. Bizon's delivery contract is **at-least-once** — on
+recovery a batch may be re-written, so destinations are designed to tolerate duplicate writes.
+
+A `full_refresh` run is not resumed. It republishes the whole table, so a partially-fetched run has
+nothing worth continuing: an interrupted job is retired and the next run starts a fresh one, staging
+into a clean temp table. (Resuming one would leave the published table stuck at its previous contents
+indefinitely, since the run never reaches the final iteration that swaps the table in.)
 
 | Abstraction | Base Class | Location |
 |-------------|-----------|----------|
@@ -89,7 +95,10 @@ re-written, so destinations are designed to tolerate duplicate writes.
 
 ## Installation
 
-Requires **Python ≥ 3.9, < 3.13**.
+Requires **Python ≥ 3.10, < 3.13**.
+
+> **Note:** package metadata currently declares `>=3.9`, but bizon does not import on 3.9 — parts of
+> the codebase use `X | None` annotations that Python 3.9 evaluates at import time. Use 3.10 or newer.
 
 ```bash
 pip install bizon
@@ -221,7 +230,7 @@ Common `SourceConfig` fields (`bizon/source/config.py`); each connector adds its
 | `sync_mode` | `full_refresh` | `full_refresh` \| `incremental` \| `stream` |
 | `cursor_field` | `None` | Timestamp field for incremental filtering (e.g. `updated_at`) |
 | `authentication` | `None` | Auth block (`type` + `params`); connector-specific |
-| `force_ignore_checkpoint` | `false` | Ignore existing checkpoints and restart from iteration 0 |
+| `force_ignore_checkpoint` | `false` | Ignore existing checkpoints and restart from iteration 0. Redundant for `full_refresh`, which always starts fresh |
 | `reset` | `false` | Re-fetch the whole stream and replace the destination table, then resume incremental ([details](#stream-reset)) |
 | `max_iterations` | `None` | Cap iterations per run (default: run until source is exhausted) |
 | `api_config.retry_limit` | `10` | Retries before giving up on an API call |

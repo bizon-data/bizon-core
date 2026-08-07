@@ -9,6 +9,7 @@ from bizon.engine.backend.models import JobStatus
 from bizon.engine.engine import RunnerFactory, replace_env_variables_in_config
 from bizon.engine.pipeline.producer import Producer
 from bizon.engine.runner.adapters.thread import ThreadRunner
+from bizon.source.config import SourceSyncModes
 
 
 def test_load_from_config():
@@ -87,7 +88,9 @@ def test_create_job(my_runner: ThreadRunner, sqlite_db_session):
     assert my_job.id == job.id
 
 
-def test_create_job_and_recover(my_runner: ThreadRunner, sqlite_db_session):
+def test_incremental_job_is_recovered(my_runner: ThreadRunner, sqlite_db_session):
+    """An incremental run resumes a `running` job: it appends, so the work already done still counts."""
+    my_runner.bizon_config.source.sync_mode = SourceSyncModes.INCREMENTAL
     source = my_runner.get_source(bizon_config=my_runner.bizon_config, config=my_runner.config)
 
     job = my_runner.get_or_create_job(
@@ -101,6 +104,33 @@ def test_create_job_and_recover(my_runner: ThreadRunner, sqlite_db_session):
         bizon_config=my_runner.bizon_config, backend=my_runner.backend, source=source, session=sqlite_db_session
     )
     assert recover_job.id == job.id
+
+
+def test_full_refresh_job_is_not_recovered(my_runner: ThreadRunner, sqlite_db_session):
+    """A full refresh must start fresh.
+
+    A job left in `running` by a killed process has no resumable value: resuming it continues a stale
+    item list, so it never reaches finalize() and the table is never republished - while the run keeps
+    the job `running`, making the next run resume it too. Regression test for a table that served
+    week-old data through seven consecutive "successful" runs.
+    """
+    assert my_runner.bizon_config.source.sync_mode == SourceSyncModes.FULL_REFRESH
+    source = my_runner.get_source(bizon_config=my_runner.bizon_config, config=my_runner.config)
+
+    job = my_runner.get_or_create_job(
+        bizon_config=my_runner.bizon_config, backend=my_runner.backend, source=source, session=sqlite_db_session
+    )
+    my_runner.backend.update_stream_job_status(job_id=job.id, job_status=JobStatus.RUNNING, session=sqlite_db_session)
+
+    new_job = my_runner.get_or_create_job(
+        bizon_config=my_runner.bizon_config, backend=my_runner.backend, source=source, session=sqlite_db_session
+    )
+
+    assert new_job.id != job.id, "a killed full-refresh job must not be resumed"
+
+    # The stale job is retired, so it can never be picked up as `running` again.
+    stale_job = my_runner.backend.get_stream_job_by_id(job_id=job.id, session=sqlite_db_session)
+    assert stale_job.status == JobStatus.CANCELED
 
 
 def test_source_thread(my_producer: Producer):

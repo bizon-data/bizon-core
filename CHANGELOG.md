@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-08-07
+
+### Fixed
+
+- **A `full_refresh` run resumed a job left `running` by a killed process, so the destination table was never republished.** An external kill (Kubernetes `activeDeadlineSeconds`, OOM, preemption) never gets to mark its job `failed`, so it always leaves a `running` row behind. Resuming is right for `incremental`, but a full refresh has nothing worth resuming: the run continued a stale item list, never reached the last iteration, and so never called `finalize()` — and because the job stayed `running`, the next run resumed it too. The table was served indefinitely at its last successfully published contents while every run reported success. Observed in production as a table stuck at week-old data through seven consecutive "successful" runs. `get_or_create_job()` now cancels a `running` job and starts a fresh one when the sync mode is `full_refresh`. Stream resets are unaffected: they are incremental jobs and keep their own `stream_resets` recovery contract.
+
+- **A `full_refresh` run did not clear its staging table, so a crashed attempt's rows were published alongside the next attempt's.** Loads always `WRITE_APPEND` into `{table}_temp` and `finalize()` publishes it with a `WRITE_TRUNCATE` copy, but `_ensure_clean_temp_table()` only dropped a stale temp table for *reset* runs — even though a plain full refresh stages into the same table and publishes the same way. Seen alongside the issue above: 132k rows accumulated in `_temp` across seven killed attempts, with overlapping and missing cursor ranges. The guard now covers every run that publishes with `WRITE_TRUNCATE`. A plain incremental stages into `{table}_incremental` and still appends across runs, unchanged.
+
+- **Concurrent pipelines sharing a schema crashed creating the state tables.** `create_all_tables()` inspects before creating, but inspect-then-create is not atomic: pipelines sharing a source (and so a dataset/schema) and starting on the same cron all saw a table missing, all issued `CREATE TABLE`, and every process but one died with `409 Already Exists` on BigQuery (`DuplicateTable` on Postgres). Losing that race is not an error, so it is now tolerated when the tables do exist afterwards, and still raised otherwise. This race was always present for every state table; it only became reachable when a table was missing, which is why it surfaced on the first run after 0.5.0 added `stream_resets`.
+
+- **Resuming a job whose last cursor had no pagination failed with an unattributable error.** `create_destination_cursor()` stores a falsy pagination as SQL `NULL` rather than `"{}"`, while the reader called `json.loads()` on it unconditionally, producing `the JSON object must be str, bytes or bytearray, not NoneType` — naming neither the job, the stream, nor a remedy, and sending at least one investigation down an API/auth dead end. Such a job genuinely cannot be resumed (an empty pagination means the source was already exhausted, and handing it back to the source would restart it from the first page and re-fetch the whole stream), so it now fails with a message naming the job id, the stream, and how to recover.
+
 ## [0.5.1] - 2026-08-06
 
 ### Fixed
