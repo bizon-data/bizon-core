@@ -13,6 +13,7 @@ from pytz import UTC
 from bizon.common.models import BizonConfig
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import CursorStatus
+from bizon.engine.queue.config import QUEUE_TERMINATION, QUEUE_TERMINATION_ERROR
 from bizon.engine.queue.queue import AbstractQueue
 from bizon.source.config import SourceSyncModes
 from bizon.source.cursor import Cursor
@@ -290,10 +291,20 @@ class Producer:
                 f"Iteration {cursor.iteration} finished in {datetime.now(tz=UTC) - timestamp_start_iteration}. {items_in_queue}"
             )
 
-        logger.info("Terminating destination ...")
+        # Encode WHY we are stopping in the termination signal. If the producer is
+        # aborting on an error, the consumer must not finalize the destination or
+        # mark the job SUCCEEDED -- otherwise a partial extract is published as if
+        # it were complete. See QUEUE_TERMINATION_ERROR in engine/queue/config.py.
+        is_error = return_value != PipelineReturnStatus.SUCCESS
+        termination_signal = QUEUE_TERMINATION_ERROR if is_error else QUEUE_TERMINATION
+
+        if is_error:
+            logger.error(f"Terminating destination WITHOUT finalizing, producer failed with: {return_value}")
+        else:
+            logger.info("Terminating destination ...")
 
         try:
-            self.queue.terminate(iteration=cursor.iteration)
+            self.queue.terminate(iteration=cursor.iteration, signal=termination_signal)
         except Exception as e:
             logger.error(traceback.format_exc())
             logger.error(

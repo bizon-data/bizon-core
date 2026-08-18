@@ -13,6 +13,7 @@ from bizon.source.models import SourceIteration, source_record_schema
 from bizon.transform.transform import Transform
 
 from .config import (
+    QUEUE_TERMINATION,
     AbastractQueueConfigDetails,
     AbstractQueueConfig,
     QueueMessage,
@@ -54,8 +55,12 @@ class AbstractQueue(ABC):
         pass
 
     @abstractmethod
-    def terminate(self, iteration: int) -> bool:
-        """Send a termination signal in the queue system"""
+    def terminate(self, iteration: int, signal: str = QUEUE_TERMINATION) -> bool:
+        """Send a termination signal in the queue system.
+
+        `signal` is QUEUE_TERMINATION for a normal end-of-stream and
+        QUEUE_TERMINATION_ERROR when the producer is aborting on an error.
+        """
         pass
 
     def put(

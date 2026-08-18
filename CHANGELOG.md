@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A run that died mid-stream still published its partial extract and recorded the job as `succeeded`.** The producer sent the same clean `QUEUE_TERMINATION` signal whether it exhausted the source or aborted on an error, so the consumer could not tell the two apart: it treated the abort as the last iteration, set the stream job to `SUCCEEDED`, and called `finalize()` — on BigQuery, the `WRITE_TRUNCATE` copy that swaps `{table}_temp` into the production table. A failed run therefore replaced a complete table with a truncated one and left no trace in the state tables; only the process exit code said anything was wrong. Observed in production on a `full_refresh` HubSpot stream that lost its OAuth token at iteration 3517 of 4400: the production table was republished at ~80% of its rows (≈88k records missing) on three separate days, each recorded as `succeeded`, and nothing downstream could detect it. The producer now sends `QUEUE_TERMINATION_ERROR` when it stops on an error, and the consumer aborts on that signal without writing a last iteration, without finalizing, and without marking the job succeeded — leaving it `running`, which `get_or_create_job()` already recovers from (0.5.2 cancels and restarts a leftover `running` full refresh).
+
+- **The runner never stopped the consumer when the producer failed.** `if result_producer.SUCCESS:` is an attribute access on the enum *class*, which resolves to the `PipelineReturnStatus.SUCCESS` member and is therefore always truthy — so the `else` branch that sets `consumer_stop_event` was unreachable, and the runner logged "Producer thread has finished successfully" for every failure. (The consumer branch three lines below always used the correct `== SUCCESS` comparison.) Now compares by value. This is the same defect as above approached from the runner side; the producer/consumer signalling is the load-bearing fix, since by the time the runner observes the result the consumer has usually already drained the termination message.
+
 ## [0.5.2] - 2026-08-07
 
 ### Fixed

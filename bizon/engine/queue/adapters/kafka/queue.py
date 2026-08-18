@@ -52,8 +52,8 @@ class KafkaQueue(AbstractQueue):
     def get(self) -> QueueMessage:
         raise NotImplementedError("Kafka does not support getting messages from here. Use KafkaConsumer instead.")
 
-    def terminate(self, iteration: int) -> bool:
-        self.put(source_records=[], iteration=iteration, signal=QUEUE_TERMINATION)
+    def terminate(self, iteration: int, signal: str = QUEUE_TERMINATION) -> bool:
+        self.put(source_records=[], iteration=iteration, signal=signal)
         self.producer.close()
         logger.debug("Terminating Kafka producer ...")
         return True

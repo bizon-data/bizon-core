@@ -78,7 +78,10 @@ class ThreadRunner(AbstractRunner):
                 result_producer: PipelineReturnStatus = future_producer.result()
                 logger.info(f"Producer thread stopped running with result: {result_producer}")
 
-                if result_producer.SUCCESS:
+                # NOT `result_producer.SUCCESS` -- that is an attribute access on the
+                # enum CLASS, which resolves to the SUCCESS member and is always truthy,
+                # so the consumer was never stopped on producer failure.
+                if result_producer == PipelineReturnStatus.SUCCESS:
                     logger.info("Producer thread has finished successfully, will wait for consumer to finish ...")
                 else:
                     logger.error("Producer thread failed, stopping consumer ...")

@@ -41,7 +41,7 @@ class RabbitMQ(AbstractQueue):
             "RabbitMQ does not support getting messages from the queue, directly use callback in consumer."
         )
 
-    def terminate(self, iteration: int) -> bool:
-        self.put(source_records=[], iteration=iteration, signal=QUEUE_TERMINATION)
-        logger.info("Sent termination signal to destination.")
+    def terminate(self, iteration: int, signal: str = QUEUE_TERMINATION) -> bool:
+        self.put(source_records=[], iteration=iteration, signal=signal)
+        logger.info(f"Sent termination signal to destination: {signal}")
         return True
