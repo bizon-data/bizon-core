@@ -10,6 +10,13 @@ from pytz import UTC
 
 QUEUE_TERMINATION = "TERMINATION"
 
+# Sent by the producer when it stops because of an ERROR rather than because the
+# source was exhausted. The consumer must NOT treat this as the last iteration:
+# doing so would finalize the destination (for BigQuery, a WRITE_TRUNCATE swap of
+# the temp table into the production table) and mark the stream job SUCCEEDED on
+# top of a partial extract.
+QUEUE_TERMINATION_ERROR = "TERMINATION_ERROR"
+
 
 @dataclass
 class QueueMessage:

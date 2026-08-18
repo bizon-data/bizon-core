@@ -11,6 +11,7 @@ from bizon.destination.destination import AbstractDestination
 from bizon.engine.pipeline.models import PipelineReturnStatus
 from bizon.engine.queue.config import (
     QUEUE_TERMINATION,
+    QUEUE_TERMINATION_ERROR,
     AbstractQueueConfig,
     QueueMessage,
 )
@@ -36,6 +37,22 @@ class AbstractQueueConsumer(ABC):
         pass
 
     def process_queue_message(self, queue_message: QueueMessage) -> PipelineReturnStatus:
+        # The producer aborted on an error. Stop WITHOUT finalizing: do not write a
+        # last iteration, which would run the destination's finalize() (for BigQuery,
+        # the WRITE_TRUNCATE swap of the temp table into the production table) and set
+        # the stream job to SUCCEEDED on top of a partial extract.
+        #
+        # Checked before the transform so a transform error cannot mask the producer's
+        # failure, and so we never touch the destination on this path.
+        #
+        # The job is deliberately left RUNNING. That is the state get_or_create_job()
+        # already knows how to recover from: a leftover running full_refresh job is
+        # cancelled and restarted from page 1 on the next run.
+        if queue_message.signal == QUEUE_TERMINATION_ERROR:
+            logger.error("Received error termination signal from producer, aborting without finalizing destination.")
+            self.monitor.track_pipeline_status(PipelineReturnStatus.SOURCE_ERROR)
+            return PipelineReturnStatus.SOURCE_ERROR
+
         # Apply the transformation
         try:
             df_source_records = self.transform.apply_transforms(df_source_records=queue_message.df_source_records)

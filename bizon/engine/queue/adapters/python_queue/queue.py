@@ -66,11 +66,11 @@ class PythonQueue(AbstractQueue):
             return self.queue.qsize()
         return None
 
-    def terminate(self, iteration: int) -> bool:
+    def terminate(self, iteration: int, signal: str = QUEUE_TERMINATION) -> bool:
         self.put(
             source_iteration=SourceIteration(next_pagination={}, records=[]),
             iteration=iteration,
-            signal=QUEUE_TERMINATION,
+            signal=signal,
         )
-        logger.info("Sent termination signal to destination.")
+        logger.info(f"Sent termination signal to destination: {signal}")
         return True
