@@ -1,7 +1,7 @@
 import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Tuple, Type
+from typing import List, Optional, Tuple, Type
 
 import orjson
 import polars as pl
@@ -35,6 +35,11 @@ from tenacity import (
 )
 
 from bizon.common.models import SyncMetadata
+from bizon.connectors.destinations.bigquery.src.partitioning import (
+    describe,
+    spec_from_config,
+    spec_from_table,
+)
 from bizon.connectors.destinations.bigquery.src.table_naming import resolve_default_table_id
 from bizon.destination.destination import AbstractDestination
 from bizon.engine.backend.backend import AbstractBackend
@@ -289,35 +294,53 @@ class BigQueryStreamingV2Destination(AbstractDestination):
             logger.error(f"Error processing batch: {str(e)}")
             raise
 
-    def load_to_bigquery_via_streaming(self, df_destination_records: pl.DataFrame) -> str:
-        # Ensure the staging table exists — but only once per (table, schema) in this process.
-        # Calling create_table on every flush otherwise hits BigQuery's per-table metadata
-        # quota (5 ops / 10s) and the API returns 403 rateLimitExceeded, which the google-cloud-bigquery
-        # SDK silently retries with exponential backoff.
+    def _clustering_fields(self) -> Optional[list]:
+        """Clustering keys configured for this destination, if any."""
+        if self.clustering_keys and self.clustering_keys.get(self.destination_id):
+            return self.clustering_keys[self.destination_id]
+        return None
+
+    def _ensure_table(self, table_id: str):
+        """Create `table_id` with the configured partitioning and clustering if it does not exist.
+
+        Only once per (table, schema) in this process: calling create_table on every flush otherwise
+        hits BigQuery's per-table metadata quota (5 ops / 10s) and the API returns 403
+        rateLimitExceeded, which the google-cloud-bigquery SDK silently retries with exponential
+        backoff. On Conflict the schema is reconciled additively; partitioning and clustering of an
+        existing table cannot be changed by BigQuery at all.
+        """
         schema = self.get_bigquery_schema()
         schema_fingerprint = hash(tuple((f.name, f.field_type, f.mode) for f in schema))
-        cache_key = (self.temp_table_id, schema_fingerprint)
+        cache_key = (table_id, schema_fingerprint)
 
-        if cache_key not in self._ensured_tables:
-            table = bigquery.Table(self.temp_table_id, schema=schema)
+        if cache_key in self._ensured_tables:
+            return
+
+        table = bigquery.Table(table_id, schema=schema)
+        if self.config.time_partitioning:
             table.time_partitioning = TimePartitioning(
                 field=self.config.time_partitioning.field, type_=self.config.time_partitioning.type
             )
-            if self.clustering_keys and self.clustering_keys[self.destination_id]:
-                table.clustering_fields = self.clustering_keys[self.destination_id]
-            try:
-                self.bq_client.create_table(table)
-            except Conflict:
-                existing_table = self.bq_client.get_table(self.temp_table_id)
-                existing_fields = {field.name: field for field in existing_table.schema}
-                new_fields = {field.name: field for field in schema}
-                fields_to_add = [field for name, field in new_fields.items() if name not in existing_fields]
+        clustering_fields = self._clustering_fields()
+        if clustering_fields:
+            table.clustering_fields = clustering_fields
+        try:
+            self.bq_client.create_table(table)
+        except Conflict:
+            existing_table = self.bq_client.get_table(table_id)
+            existing_fields = {field.name: field for field in existing_table.schema}
+            new_fields = {field.name: field for field in schema}
+            fields_to_add = [field for name, field in new_fields.items() if name not in existing_fields]
 
-                if fields_to_add:
-                    logger.warning(f"Adding new fields to table schema: {[field.name for field in fields_to_add]}")
-                    existing_table.schema = existing_table.schema + fields_to_add
-                    self.bq_client.update_table(existing_table, ["schema"])
-            self._ensured_tables.add(cache_key)
+            if fields_to_add:
+                logger.warning(f"Adding new fields to table schema: {[field.name for field in fields_to_add]}")
+                existing_table.schema = existing_table.schema + fields_to_add
+                self.bq_client.update_table(existing_table, ["schema"])
+        self._ensured_tables.add(cache_key)
+
+    def load_to_bigquery_via_streaming(self, df_destination_records: pl.DataFrame) -> str:
+        schema = self.get_bigquery_schema()
+        self._ensure_table(self.temp_table_id)
 
         # Create the stream (use temp_table_id for staging)
         temp_table_parts = self.temp_table_id.split(".")
@@ -446,25 +469,91 @@ class BigQueryStreamingV2Destination(AbstractDestination):
                 logger.warning(f"Yielding large rows batch of {len(large_rows)} rows")
             yield {"stream_batch": current_batch, "json_batch": large_rows}
 
+    def _partition_clause(self, spec=None) -> str:
+        """`PARTITION BY` matching the temp table, spelled out because CTAS does not inherit it.
+
+        The function is picked from the column's declared BigQuery type, so this can never emit an
+        arbitrary user expression.
+        """
+        window, field, _ = self._intended_spec() if spec is None else spec
+
+        if window is None:
+            return ""
+
+        if not field:
+            return "PARTITION BY _PARTITIONDATE"  # Ingestion-time partitioning.
+
+        quoted = f"`{field}`"
+        column_type = {f.name: (f.field_type or "").upper() for f in self.get_bigquery_schema()}.get(field)
+
+        if column_type == "TIMESTAMP":
+            return f"PARTITION BY TIMESTAMP_TRUNC({quoted}, {window})"
+        if column_type == "DATETIME":
+            return f"PARTITION BY DATETIME_TRUNC({quoted}, {window})"
+        if column_type == "DATE":
+            if window == "DAY":
+                return f"PARTITION BY {quoted}"
+            if window == "HOUR":
+                raise ValueError(
+                    f"HOUR partitioning is not supported on DATE column '{field}'. "
+                    f"Use DAY/MONTH/YEAR, or change the column to TIMESTAMP or DATETIME."
+                )
+            return f"PARTITION BY DATE_TRUNC({quoted}, {window})"
+
+        raise ValueError(
+            f"Cannot partition {self.table_id} on '{field}': it is "
+            f"{column_type or 'not in the schema'}, not TIMESTAMP/DATE/DATETIME. Fix "
+            f"`destination.config.time_partitioning.field`, or set it to null for ingestion-time partitioning."
+        )
+
+    def _clustering_clause(self, spec=None) -> str:
+        clustering_fields = spec[2] if spec is not None else self._clustering_fields()
+        if not clustering_fields:
+            return ""
+        return "CLUSTER BY " + ", ".join(f"`{key}`" for key in clustering_fields)
+
+    def _publish_clauses(self, spec=None) -> str:
+        return " ".join(clause for clause in (self._partition_clause(spec), self._clustering_clause(spec)) if clause)
+
     def finalize(self):
-        """Finalize the sync by moving data from temp table to main table based on sync mode."""
+        """Finalize the sync by moving data from temp table to main table based on sync mode.
+
+        Publishing stays query-based rather than moving to the free copy jobs the batch `bigquery`
+        destination uses. Rows written through the Storage Write API `_default` stream sit in
+        write-optimized storage, and BigQuery does not guarantee they are visible to copy and export
+        jobs for some time after the write, while `SELECT *` always sees them. finalize() runs
+        seconds after the last append, so a copy job here could silently publish a table missing the
+        tail of the run -- trading a partitioning bug for a data-loss bug. Do not "unify" the two
+        publish paths without solving that first.
+        """
         if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
-            # Replace main table with temp table data
+            # CTAS creates the main table, so the PARTITION BY / CLUSTER BY have to be spelled out:
+            # a plain `CREATE OR REPLACE TABLE ... AS SELECT` produces an unpartitioned, unclustered
+            # table. BigQuery refuses to replace a table with a different partitioning spec *in
+            # either direction*, so the DDL has to describe whatever spec the table will actually
+            # end up with -- see _publish_spec().
+            clauses = self._publish_clauses(self._publish_spec())
+
             logger.info(f"Loading temp table {self.temp_table_id} data into {self.table_id} ...")
-            self.bq_client.query(
-                f"CREATE OR REPLACE TABLE {self.table_id} AS SELECT * FROM {self.temp_table_id}"
-            ).result()
+            query = f"CREATE OR REPLACE TABLE `{self.table_id}` {clauses} AS SELECT * FROM `{self.temp_table_id}`"
+            self.bq_client.query(" ".join(query.split())).result()
             logger.info(f"Deleting temp table {self.temp_table_id} ...")
             self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
-            self._ensured_tables = {k for k in self._ensured_tables if k[0] != self.temp_table_id}
+            # The CTAS replaced the main table, so any cached entry for it is stale too.
+            self._ensured_tables = {k for k in self._ensured_tables if k[0] not in (self.temp_table_id, self.table_id)}
             return True
 
         elif self.sync_metadata.sync_mode == SourceSyncModes.INCREMENTAL:
-            # Append data from incremental temp table to main table
+            # Create the main table partitioned and clustered before the first INSERT: `INSERT INTO`
+            # fails with 404 when the table does not exist, and a table created any other way (or by
+            # an older bizon) carries no partitioning.
+            self._ensure_table(self.table_id)
+            self._warn_on_partitioning_mismatch()
             logger.info(f"Appending data from {self.temp_table_id} to {self.table_id} ...")
-            self.bq_client.query(f"INSERT INTO {self.table_id} SELECT * FROM {self.temp_table_id}").result()
+            self.bq_client.query(f"INSERT INTO `{self.table_id}` SELECT * FROM `{self.temp_table_id}`").result()
             logger.info(f"Deleting incremental temp table {self.temp_table_id} ...")
             self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
+            # Only the temp table is gone; the main table persists and stays validly cached.
             self._ensured_tables = {k for k in self._ensured_tables if k[0] != self.temp_table_id}
             return True
 
@@ -473,3 +562,75 @@ class BigQueryStreamingV2Destination(AbstractDestination):
             return True
 
         return True
+
+    def _intended_spec(self):
+        return spec_from_config(self.config.time_partitioning, self._clustering_fields())
+
+    def _warn_on_partitioning_mismatch(self) -> bool:
+        """Warn when the destination table's partitioning differs from the configured spec.
+
+        Returns True when it matches (or the table does not exist yet), False on a mismatch.
+        """
+        try:
+            destination_table = self.bq_client.get_table(self.table_id)
+        except NotFound:
+            return True  # Absent: it will be created with the configured spec.
+
+        current = spec_from_table(destination_table)
+        intended = self._intended_spec()
+
+        if current == intended:
+            return True
+
+        logger.warning(
+            f"Partitioning mismatch on {self.table_id}: the table is {describe(current)}, but the config asks "
+            f"for {describe(intended)}. BigQuery cannot change an existing table's partitioning, so it stays "
+            f"{describe(current)}."
+        )
+        return False
+
+    def _publish_spec(self):
+        """The partitioning spec the full-refresh CTAS should declare.
+
+        BigQuery rejects `CREATE OR REPLACE TABLE` whenever the declared spec differs from the
+        existing table's -- in *either* direction ("Cannot replace a table with a different
+        partitioning spec. Instead, DROP the table, and then recreate it."). So the DDL cannot simply
+        state the configured spec: against a legacy unpartitioned table, or a table partitioned on a
+        column the config has since changed, that would turn a silent problem into a failed run.
+
+        Absent or already matching -> the configured spec, and the table ends up right.
+        Mismatched -> keep the run working by declaring the table's *current* spec, and warn. Unless
+        enforce_partitioning is set, in which case drop the table so the configured spec applies.
+        """
+        intended = self._intended_spec()
+
+        try:
+            destination_table = self.bq_client.get_table(self.table_id)
+        except NotFound:
+            return intended  # Absent: created fresh with the configured layout.
+
+        current = spec_from_table(destination_table)
+        if current == intended:
+            return intended
+
+        logger.warning(
+            f"Partitioning mismatch on {self.table_id}: the table is {describe(current)}, but the config asks "
+            f"for {describe(intended)}. BigQuery cannot change an existing table's partitioning."
+        )
+
+        if not self.config.enforce_partitioning:
+            logger.warning(
+                f"Publishing {self.table_id} as {describe(current)} to keep the run working. Set "
+                f"`enforce_partitioning: true` on the destination config to have a full refresh drop and rebuild "
+                f"it with the configured partitioning instead."
+            )
+            return current
+
+        logger.warning(
+            f"enforce_partitioning: dropping {self.table_id} so it is recreated {describe(intended)}. "
+            f"The table is absent until the publish query lands, and table-level metadata (description, labels, "
+            f"ACLs, policy tags) is not recreated."
+        )
+        self.bq_client.delete_table(self.table_id, not_found_ok=True)
+        self._ensured_tables = {k for k in self._ensured_tables if k[0] != self.table_id}
+        return intended

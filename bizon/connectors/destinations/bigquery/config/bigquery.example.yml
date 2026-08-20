@@ -23,6 +23,19 @@ destination:
     project_id: my-gcp-project-id
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet
+    # Time partitioning. Also accepts the historical bare window (`time_partitioning: DAY`).
+    # `field` must exist in the destination schema -- with `unnest: true` that means a column from
+    # your record_schema, since the `_bizon_*` metadata columns are not written. Use `field: null`
+    # for ingestion-time partitioning.
+    time_partitioning:
+      type: DAY # DAY | HOUR | MONTH | YEAR
+      field: _bizon_loaded_at
+    # BigQuery cannot change an existing table's partitioning, so a table created by an older bizon
+    # stays unpartitioned however this is configured -- bizon warns when it detects that. Set this to
+    # true to let a full refresh DROP and rebuild the table with the configured partitioning. The
+    # table is briefly absent, and its description, labels, ACLs and policy tags are not recreated.
+    # For an incremental stream, run `bizon stream reset <config>` instead.
+    enforce_partitioning: false
     # Async batched load jobs (optional, default false). When enabled, buffer flushes upload
     # to GCS and submit load jobs without blocking, batching several files into one load job to
     # cut the per-table load-job quota (1,500/table/day). Cursors are only committed once a load

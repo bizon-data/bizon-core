@@ -146,7 +146,9 @@ class TestBigQueryFinalize:
         mock_copy = MagicMock()
         destination.bq_client.copy_table = mock_copy
         destination.bq_client.query = MagicMock()
-        destination.bq_client.get_table = MagicMock()
+        # Both the temp and destination tables report the same (absent) partitioning, so the
+        # legacy-table check in finalize() is a no-op here.
+        destination.bq_client.get_table = MagicMock(return_value=MagicMock(time_partitioning=None))
         destination.bq_client.delete_table = MagicMock()
 
         result = destination.finalize()
@@ -180,6 +182,9 @@ class TestBigQueryFinalize:
         destination.bq_client.copy_table = mock_copy
         destination.bq_client.query = MagicMock()
         destination.bq_client.delete_table = MagicMock()
+        # Both the temp and destination tables report the same (absent) partitioning, so the
+        # legacy-table check in finalize() is a no-op here.
+        destination.bq_client.get_table = MagicMock(return_value=MagicMock(time_partitioning=None))
 
         result = destination.finalize()
 
@@ -277,7 +282,9 @@ class TestBigQueryStreamReset:
         mock_copy = MagicMock()
         destination.bq_client.copy_table = mock_copy
         destination.bq_client.query = MagicMock()
-        destination.bq_client.get_table = MagicMock()
+        # Both the temp and destination tables report the same (absent) partitioning, so the
+        # legacy-table check in finalize() is a no-op here.
+        destination.bq_client.get_table = MagicMock(return_value=MagicMock(time_partitioning=None))
         destination.bq_client.delete_table = MagicMock()
 
         assert destination.finalize() is True

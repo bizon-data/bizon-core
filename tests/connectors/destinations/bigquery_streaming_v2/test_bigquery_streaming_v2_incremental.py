@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from google.api_core.exceptions import NotFound
 
 from bizon.common.models import SyncMetadata
 from bizon.connectors.destinations.bigquery_streaming_v2.src.config import (
@@ -116,14 +117,18 @@ class TestBigQueryStreamingV2Finalize:
         mock_query.return_value.result = MagicMock()
         destination.bq_client.query = mock_query
         destination.bq_client.delete_table = MagicMock()
+        # Destination table does not exist yet, so the DDL may carry the layout clauses.
+        destination.bq_client.get_table = MagicMock(side_effect=NotFound("missing"))
 
         result = destination.finalize()
 
         assert result is True
-        # Check that CREATE OR REPLACE was called
+        # Check that CREATE OR REPLACE was called, carrying the configured partitioning: a plain
+        # CTAS produces an unpartitioned table that BigQuery then refuses to ever repartition.
         mock_query.assert_called_once()
         query_call = mock_query.call_args[0][0]
         assert "CREATE OR REPLACE TABLE" in query_call
+        assert "PARTITION BY TIMESTAMP_TRUNC(`_bizon_loaded_at`, DAY)" in query_call
 
     def test_finalize_incremental(self, streaming_v2_config, mock_bq_client):
         """Test finalize() for INCREMENTAL mode appends data."""
@@ -142,10 +147,14 @@ class TestBigQueryStreamingV2Finalize:
         mock_query.return_value.result = MagicMock()
         destination.bq_client.query = mock_query
         destination.bq_client.delete_table = MagicMock()
+        destination.bq_client.create_table = MagicMock()
+        destination.bq_client.get_table = MagicMock(side_effect=NotFound("missing"))
 
         result = destination.finalize()
 
         assert result is True
+        # The main table is created first: INSERT INTO 404s against a missing table.
+        destination.bq_client.create_table.assert_called_once()
         # Check that INSERT INTO was called
         mock_query.assert_called_once()
         query_call = mock_query.call_args[0][0]
