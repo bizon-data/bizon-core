@@ -410,6 +410,36 @@ class BigQueryDestination(AbstractDestination):
         while self._inflight_loads:
             self._complete_load(self._inflight_loads.pop(0))
 
+    def _read_partitioning_specs(self):
+        """(staged, current) specs, or None when there is nothing to compare.
+
+        Never raises. This lookup exists to produce a warning, so it must not be able to fail a run
+        that would otherwise publish: a transient 5xx or a missing `tables.get` permission would
+        turn a diagnostic into an outage. `enforce_partitioning`'s drop is deliberately left outside
+        this guard -- if the user asked for a rebuild, a failure there should surface.
+        """
+        try:
+            try:
+                temp_table = self.bq_client.get_table(self.temp_table_id)
+            except NotFound:
+                # Nothing was staged (a run that produced no records never creates the temp table).
+                # Returning here is load-bearing: it is what makes it impossible for
+                # enforce_partitioning to drop the destination table on a run that has nothing to
+                # publish in its place.
+                return None
+
+            try:
+                destination_table = self.bq_client.get_table(self.table_id)
+            except NotFound:
+                return None  # First run: the copy job creates the table with the staged partitioning.
+        except Exception as e:
+            logger.warning(f"Could not check the partitioning of {self.table_id}, skipping the check: {e}")
+            return None
+
+        # Compare the two tables' actual specs rather than config against the table: the temp table's
+        # spec is precisely what a fresh copy would produce, and stays truthful if plumbing drifts.
+        return spec_from_table(temp_table), spec_from_table(destination_table)
+
     def _check_destination_partitioning(self):
         """Warn when publishing will not give the destination table the configured partitioning.
 
@@ -421,24 +451,11 @@ class BigQueryDestination(AbstractDestination):
         The only fix is to drop and recreate, which is what `enforce_partitioning` does — and only
         on a full refresh, where the temp table already holds every row that will exist.
         """
-        try:
-            temp_table = self.bq_client.get_table(self.temp_table_id)
-        except NotFound:
-            # Nothing was staged (a run that produced no records never creates the temp table).
-            # Returning here is load-bearing: it is what makes it impossible for enforce_partitioning
-            # to drop the destination table on a run that has nothing to publish in its place.
+        specs = self._read_partitioning_specs()
+        if specs is None:
             return
 
-        try:
-            destination_table = self.bq_client.get_table(self.table_id)
-        except NotFound:
-            return  # First run: the copy job creates the table with the temp table's partitioning.
-
-        # Compare the two tables' actual specs rather than config against the table: the temp table's
-        # spec is precisely what a fresh copy would produce, and stays truthful if plumbing drifts.
-        staged = spec_from_table(temp_table)
-        current = spec_from_table(destination_table)
-
+        staged, current = specs
         if staged == current:
             return
 

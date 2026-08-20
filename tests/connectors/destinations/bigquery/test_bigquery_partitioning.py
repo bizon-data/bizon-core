@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 import yaml
-from google.api_core.exceptions import BadRequest, NotFound
+from google.api_core.exceptions import BadRequest, Forbidden, NotFound, ServiceUnavailable
 from pydantic import ValidationError
 
 from bizon.common.models import BizonConfig
@@ -299,6 +299,26 @@ def test_clustering_difference_is_reported(build_bq_destination, bq_ids, loguru_
 
     warnings = "\n".join(str(message) for message in loguru_warnings)
     assert "clustered by (id)" in warnings
+
+
+def test_lookup_failure_does_not_fail_the_run(build_bq_destination, bq_ids, loguru_warnings):
+    """The check is diagnostic: a transient 5xx or a missing tables.get must not kill a publish."""
+    with build_bq_destination("bigquery", tables={}) as destination:
+        destination.bq_client.get_table.side_effect = ServiceUnavailable("backend error")
+
+        # finalize() still publishes; only the post-copy existence check sees the error.
+        destination._check_destination_partitioning()
+        destination.bq_client.delete_table.assert_not_called()
+
+    assert any("Could not check the partitioning" in str(m) for m in loguru_warnings)
+
+
+def test_lookup_failure_does_not_drop_when_enforcing(build_bq_destination, bq_ids):
+    """Above all, an unreadable spec must never be treated as a mismatch worth dropping over."""
+    with build_bq_destination("bigquery", tables={}, enforce_partitioning=True) as destination:
+        destination.bq_client.get_table.side_effect = Forbidden("no tables.get")
+        destination._check_destination_partitioning()
+        destination.bq_client.delete_table.assert_not_called()
 
 
 def test_copy_job_partitioning_error_is_rewrapped(build_bq_destination, bq_ids, make_bq_table, partitioned):
