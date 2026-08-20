@@ -469,24 +469,22 @@ class BigQueryStreamingV2Destination(AbstractDestination):
                 logger.warning(f"Yielding large rows batch of {len(large_rows)} rows")
             yield {"stream_batch": current_batch, "json_batch": large_rows}
 
-    def _partition_clause(self) -> str:
+    def _partition_clause(self, spec=None) -> str:
         """`PARTITION BY` matching the temp table, spelled out because CTAS does not inherit it.
 
         The function is picked from the column's declared BigQuery type, so this can never emit an
         arbitrary user expression.
         """
-        partitioning = self.config.time_partitioning
+        window, field, _ = self._intended_spec() if spec is None else spec
 
-        if partitioning is None:
+        if window is None:
             return ""
 
-        window = partitioning.type.value
-
-        if not partitioning.field:
+        if not field:
             return "PARTITION BY _PARTITIONDATE"  # Ingestion-time partitioning.
 
-        quoted = f"`{partitioning.field}`"
-        column_type = {f.name: (f.field_type or "").upper() for f in self.get_bigquery_schema()}.get(partitioning.field)
+        quoted = f"`{field}`"
+        column_type = {f.name: (f.field_type or "").upper() for f in self.get_bigquery_schema()}.get(field)
 
         if column_type == "TIMESTAMP":
             return f"PARTITION BY TIMESTAMP_TRUNC({quoted}, {window})"
@@ -497,22 +495,25 @@ class BigQueryStreamingV2Destination(AbstractDestination):
                 return f"PARTITION BY {quoted}"
             if window == "HOUR":
                 raise ValueError(
-                    f"HOUR partitioning is not supported on DATE column '{partitioning.field}'. "
+                    f"HOUR partitioning is not supported on DATE column '{field}'. "
                     f"Use DAY/MONTH/YEAR, or change the column to TIMESTAMP or DATETIME."
                 )
             return f"PARTITION BY DATE_TRUNC({quoted}, {window})"
 
         raise ValueError(
-            f"Cannot partition {self.table_id} on '{partitioning.field}': it is "
+            f"Cannot partition {self.table_id} on '{field}': it is "
             f"{column_type or 'not in the schema'}, not TIMESTAMP/DATE/DATETIME. Fix "
             f"`destination.config.time_partitioning.field`, or set it to null for ingestion-time partitioning."
         )
 
-    def _clustering_clause(self) -> str:
-        clustering_fields = self._clustering_fields()
+    def _clustering_clause(self, spec=None) -> str:
+        clustering_fields = spec[2] if spec is not None else self._clustering_fields()
         if not clustering_fields:
             return ""
         return "CLUSTER BY " + ", ".join(f"`{key}`" for key in clustering_fields)
+
+    def _publish_clauses(self, spec=None) -> str:
+        return " ".join(clause for clause in (self._partition_clause(spec), self._clustering_clause(spec)) if clause)
 
     def finalize(self):
         """Finalize the sync by moving data from temp table to main table based on sync mode.
@@ -528,14 +529,10 @@ class BigQueryStreamingV2Destination(AbstractDestination):
         if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
             # CTAS creates the main table, so the PARTITION BY / CLUSTER BY have to be spelled out:
             # a plain `CREATE OR REPLACE TABLE ... AS SELECT` produces an unpartitioned, unclustered
-            # table. BigQuery refuses to replace a table with a different partitioning spec, so the
-            # clauses can only be used when the table is absent or already matches -- otherwise the
-            # run would fail outright. Where it does not match, fall back to the historical plain
-            # CTAS (which keeps the existing spec) and warn, unless enforce_partitioning lets us drop.
-            clauses = " ".join(clause for clause in (self._partition_clause(), self._clustering_clause()) if clause)
-
-            if clauses and not self._destination_can_take_clauses():
-                clauses = ""
+            # table. BigQuery refuses to replace a table with a different partitioning spec *in
+            # either direction*, so the DDL has to describe whatever spec the table will actually
+            # end up with -- see _publish_spec().
+            clauses = self._publish_clauses(self._publish_spec())
 
             logger.info(f"Loading temp table {self.temp_table_id} data into {self.table_id} ...")
             query = f"CREATE OR REPLACE TABLE `{self.table_id}` {clauses} AS SELECT * FROM `{self.temp_table_id}`"
@@ -592,31 +589,48 @@ class BigQueryStreamingV2Destination(AbstractDestination):
         )
         return False
 
-    def _destination_can_take_clauses(self) -> bool:
-        """Whether the full-refresh CTAS may carry PARTITION BY / CLUSTER BY.
+    def _publish_spec(self):
+        """The partitioning spec the full-refresh CTAS should declare.
 
-        BigQuery rejects `CREATE OR REPLACE TABLE ... PARTITION BY ...` when the existing table has a
-        different spec ("Cannot replace a table with a different partitioning spec. Instead, DROP the
-        table, and then recreate it."), so emitting the clauses against a legacy unpartitioned table
-        would turn a silent problem into a failed run. Drop the table first when the user has opted
-        in; otherwise publish as before and warn.
+        BigQuery rejects `CREATE OR REPLACE TABLE` whenever the declared spec differs from the
+        existing table's -- in *either* direction ("Cannot replace a table with a different
+        partitioning spec. Instead, DROP the table, and then recreate it."). So the DDL cannot simply
+        state the configured spec: against a legacy unpartitioned table, or a table partitioned on a
+        column the config has since changed, that would turn a silent problem into a failed run.
+
+        Absent or already matching -> the configured spec, and the table ends up right.
+        Mismatched -> keep the run working by declaring the table's *current* spec, and warn. Unless
+        enforce_partitioning is set, in which case drop the table so the configured spec applies.
         """
-        if self._warn_on_partitioning_mismatch():
-            return True
+        intended = self._intended_spec()
+
+        try:
+            destination_table = self.bq_client.get_table(self.table_id)
+        except NotFound:
+            return intended  # Absent: created fresh with the configured layout.
+
+        current = spec_from_table(destination_table)
+        if current == intended:
+            return intended
+
+        logger.warning(
+            f"Partitioning mismatch on {self.table_id}: the table is {describe(current)}, but the config asks "
+            f"for {describe(intended)}. BigQuery cannot change an existing table's partitioning."
+        )
 
         if not self.config.enforce_partitioning:
             logger.warning(
-                f"Publishing {self.table_id} without the configured partitioning to keep the run working. Set "
+                f"Publishing {self.table_id} as {describe(current)} to keep the run working. Set "
                 f"`enforce_partitioning: true` on the destination config to have a full refresh drop and rebuild "
-                f"it instead."
+                f"it with the configured partitioning instead."
             )
-            return False
+            return current
 
         logger.warning(
-            f"enforce_partitioning: dropping {self.table_id} so it is recreated {describe(self._intended_spec())}. "
+            f"enforce_partitioning: dropping {self.table_id} so it is recreated {describe(intended)}. "
             f"The table is absent until the publish query lands, and table-level metadata (description, labels, "
             f"ACLs, policy tags) is not recreated."
         )
         self.bq_client.delete_table(self.table_id, not_found_ok=True)
         self._ensured_tables = {k for k in self._ensured_tables if k[0] != self.table_id}
-        return True
+        return intended

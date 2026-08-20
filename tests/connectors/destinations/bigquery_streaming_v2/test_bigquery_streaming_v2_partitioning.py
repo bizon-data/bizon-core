@@ -4,14 +4,15 @@
 unpartitioned, unclustered table. BigQuery then refuses to change that spec ever again, so the
 carefully partitioned staging table's layout never reached the published table.
 
-The clauses can only be emitted when the destination table is absent or already matches -- BigQuery
-rejects `CREATE OR REPLACE TABLE ... PARTITION BY` over a table with a different spec:
+BigQuery rejects `CREATE OR REPLACE TABLE` whenever the declared spec differs from the existing
+table's, in *either* direction:
 
     Cannot replace a table with a different partitioning spec. Instead, DROP the table,
     and then recreate it.
 
-so an existing legacy table falls back to the historical plain CTAS unless `enforce_partitioning`
-lets the destination drop it.
+so the DDL has to declare whatever spec the table will actually end up with: the configured one when
+the table is absent, already matches, or `enforce_partitioning` lets it be dropped -- otherwise the
+table's current spec, which keeps the run working and warns.
 """
 
 from unittest.mock import MagicMock
@@ -124,6 +125,51 @@ def test_legacy_table_is_dropped_when_enforcing(build_bq_destination, bq_ids, ma
 
         deleted = [c.args[0] for c in destination.bq_client.delete_table.call_args_list]
         assert bq_ids["table"] in deleted
+
+    assert "PARTITION BY TIMESTAMP_TRUNC(`_bizon_loaded_at`, DAY)" in query
+
+
+def test_differently_partitioned_table_declares_its_current_spec(
+    build_bq_destination, bq_ids, make_bq_table, partitioned, loguru_warnings
+):
+    """BigQuery rejects a differing spec in BOTH directions, so a plain CTAS would fail here too.
+
+    Reachable as soon as someone changes the now-configurable `time_partitioning.field`.
+    """
+    tables = {bq_ids["table"]: make_bq_table(time_partitioning=partitioned(field="_bizon_extracted_at"))}
+    with build_bq_destination(
+        "streaming_v2", tables=tables, time_partitioning={"type": "DAY", "field": "_bizon_loaded_at"}
+    ) as destination:
+        destination.finalize()
+        query = published_query(destination)
+
+    # Declares the table's current spec, not the configured one -- the run keeps working.
+    assert "PARTITION BY TIMESTAMP_TRUNC(`_bizon_extracted_at`, DAY)" in query
+    assert "_bizon_loaded_at" not in query.split("AS SELECT")[0]
+    assert "Partitioning mismatch" in "\n".join(str(message) for message in loguru_warnings)
+
+
+def test_config_without_partitioning_declares_existing_spec(build_bq_destination, bq_ids, make_bq_table, partitioned):
+    """`time_partitioning: null` against a partitioned table: a bare CTAS would be rejected."""
+    tables = {bq_ids["table"]: make_bq_table(time_partitioning=partitioned())}
+    with build_bq_destination("streaming_v2", tables=tables, time_partitioning=None) as destination:
+        destination.finalize()
+        assert "PARTITION BY TIMESTAMP_TRUNC(`_bizon_loaded_at`, DAY)" in published_query(destination)
+
+
+def test_differently_partitioned_table_is_rebuilt_when_enforcing(
+    build_bq_destination, bq_ids, make_bq_table, partitioned
+):
+    tables = {bq_ids["table"]: make_bq_table(time_partitioning=partitioned(field="_bizon_extracted_at"))}
+    with build_bq_destination(
+        "streaming_v2",
+        tables=tables,
+        enforce_partitioning=True,
+        time_partitioning={"type": "DAY", "field": "_bizon_loaded_at"},
+    ) as destination:
+        destination.finalize()
+        query = published_query(destination)
+        assert bq_ids["table"] in [c.args[0] for c in destination.bq_client.delete_table.call_args_list]
 
     assert "PARTITION BY TIMESTAMP_TRUNC(`_bizon_loaded_at`, DAY)" in query
 
