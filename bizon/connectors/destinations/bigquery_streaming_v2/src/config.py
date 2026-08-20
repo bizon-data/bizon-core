@@ -1,9 +1,12 @@
-from enum import Enum
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from bizon.connectors.destinations.bigquery.src.config import BigQueryRecordSchemaConfig
+from bizon.connectors.destinations.bigquery.src.config import (
+    BigQueryRecordSchemaConfig,
+    TimePartitioning,
+    TimePartitioningWindow,
+)
 from bizon.connectors.destinations.bigquery.src.table_naming import BIZON_TABLE_PREFIX
 from bizon.destination.config import (
     AbstractDestinationConfig,
@@ -11,19 +14,16 @@ from bizon.destination.config import (
     DestinationTypes,
 )
 
-
-class TimePartitioningWindow(str, Enum):
-    DAY = "DAY"
-    HOUR = "HOUR"
-    MONTH = "MONTH"
-    YEAR = "YEAR"
-
-
-class TimePartitioning(BaseModel):
-    type: TimePartitioningWindow = Field(default=TimePartitioningWindow.DAY, description="Time partitioning type")
-    field: Optional[str] = Field(
-        "_bizon_loaded_at", description="Field to partition by. You can use a transformation to create this field."
-    )
+# `TimePartitioning` and `TimePartitioningWindow` used to be declared here, byte-identically to the
+# copies in the batch and legacy-streaming configs. They now live in the batch config (already this
+# package's shared BigQuery module) and are re-exported so existing imports from here keep working.
+__all__ = [
+    "BigQueryAuthentication",
+    "BigQueryStreamingV2Config",
+    "BigQueryStreamingV2ConfigDetails",
+    "TimePartitioning",
+    "TimePartitioningWindow",
+]
 
 
 class BigQueryAuthentication(BaseModel):
@@ -40,6 +40,13 @@ class BigQueryStreamingV2ConfigDetails(AbstractDestinationDetailsConfig):
     time_partitioning: Optional[TimePartitioning] = Field(
         default=TimePartitioning(type=TimePartitioningWindow.DAY, field="_bizon_loaded_at"),
         description="BigQuery Time partitioning type",
+    )
+    enforce_partitioning: bool = Field(
+        default=False,
+        description="On a full refresh, drop the destination table when its partitioning does not match the "
+        "configured spec, so it is recreated partitioned. BigQuery cannot change an existing table's "
+        "partitioning in place, so this is the only way to fix a legacy table. Off by default: the table is "
+        "briefly absent, and dropping it discards table-level metadata (description, labels, ACLs, policy tags).",
     )
     authentication: Optional[BigQueryAuthentication] = None
     bq_max_rows_per_request: Optional[int] = Field(

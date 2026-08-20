@@ -1,8 +1,8 @@
 from enum import Enum
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 import polars as pl
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from bizon.destination.config import (
     AbstractDestinationConfig,
@@ -13,17 +13,64 @@ from bizon.destination.config import (
 
 from .table_naming import BIZON_TABLE_PREFIX
 
+# NOTE: this module is imported by `bizon.common.models` on every CLI invocation (pydantic needs the
+# destination config classes to build its discriminated union), so it must NOT import
+# `google.cloud.bigquery`. Importing it here is what made `pip install bizon` with no extras produce
+# an unusable CLI in 0.5.1. Anything needing the BigQuery client lives in `partitioning.py` instead.
+
+DEFAULT_PARTITION_FIELD = "_bizon_loaded_at"
+
+# The columns bizon writes when `unnest` is off, mirroring BigQueryDestination.get_bigquery_schema().
+# Declared as plain strings (not SchemaField) so config validation can check the partition column
+# without importing the BigQuery client. `test_metadata_columns_match_schema` keeps the two in sync.
+BIZON_METADATA_COLUMNS = frozenset(
+    {
+        "_source_record_id",
+        "_source_timestamp",
+        "_source_data",
+        "_bizon_extracted_at",
+        DEFAULT_PARTITION_FIELD,
+        "_bizon_id",
+    }
+)
+
 
 class GCSBufferFormat(str, Enum):
     PARQUET = "parquet"
     CSV = "csv"
 
 
-class TimePartitioning(str, Enum):
+class TimePartitioningWindow(str, Enum):
     DAY = "DAY"
     HOUR = "HOUR"
     MONTH = "MONTH"
     YEAR = "YEAR"
+
+
+class TimePartitioning(BaseModel):
+    """BigQuery time partitioning, shared by the three BigQuery destinations.
+
+    Accepts either the full mapping (`time_partitioning: {type: DAY, field: my_ts}`) or, for
+    backwards compatibility with the batch destination's original config, a bare window
+    (`time_partitioning: DAY`). `field: null` selects ingestion-time partitioning.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: TimePartitioningWindow = Field(default=TimePartitioningWindow.DAY, description="Partitioning window")
+    field: Optional[str] = Field(
+        default=DEFAULT_PARTITION_FIELD,
+        description="Column to partition on. Must exist in the destination schema. "
+        "Set to null for ingestion-time partitioning.",
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_bare_window(cls, data: Any) -> Any:
+        # Backwards compatibility: `time_partitioning: DAY` used to be the whole config.
+        if isinstance(data, str):
+            return {"type": data}
+        return data
 
 
 class BigQueryColumnType(str, Enum):
@@ -115,7 +162,17 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
 
     # Time partitioning
     time_partitioning: TimePartitioning = Field(
-        default=TimePartitioning.DAY, description="BigQuery Time partitioning type"
+        default_factory=TimePartitioning,
+        description="BigQuery time partitioning. Accepts `{type, field}` or a bare window (`DAY`).",
+    )
+
+    enforce_partitioning: bool = Field(
+        default=False,
+        description="On a full refresh, drop the destination table when its partitioning does not match the "
+        "configured spec, so the publish job recreates it partitioned. BigQuery cannot change an existing "
+        "table's partitioning in place, so this is the only way to fix a legacy table. Off by default: the "
+        "table is briefly absent, and dropping it discards table-level metadata (description, labels, "
+        "table ACLs, policy tags).",
     )
 
     # Async / batched load jobs (throughput + load-job quota optimization).
@@ -149,6 +206,42 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
     )
 
     authentication: Optional[BigQueryAuthentication] = None
+
+    @model_validator(mode="after")
+    def _validate_partition_field(self) -> "BigQueryConfigDetails":
+        """Reject a partition column that cannot exist in the table this destination writes.
+
+        Partitioning is materialized by the load job, so an unknown column otherwise only surfaces
+        mid-run as an opaque BigQuery error, after data has already been staged in GCS and the temp
+        table. This cannot be the only check: the stream runner assigns `record_schemas` after
+        validation (`bizon/engine/runner/adapters/streaming.py`), so the destination re-checks the
+        resolved schema at runtime. This layer exists for the error message.
+        """
+        field = self.time_partitioning.field
+
+        if field is None:
+            return self  # Ingestion-time partitioning needs no column.
+
+        if not self.unnest:
+            if field not in BIZON_METADATA_COLUMNS:
+                raise ValueError(
+                    f"`time_partitioning.field` is '{field}', which is not a column bizon writes "
+                    f"({sorted(BIZON_METADATA_COLUMNS)}). Pick one of those, or set "
+                    f"`time_partitioning.field: null` for ingestion-time partitioning."
+                )
+            return self
+
+        for record_schema in self.record_schemas or []:
+            column_names = {column.name for column in record_schema.record_schema}
+            if field not in column_names:
+                raise ValueError(
+                    f"`time_partitioning.field` is '{field}' but the record_schema for "
+                    f"'{record_schema.destination_id}' does not declare it (columns: {sorted(column_names)}). "
+                    f"With `unnest: true` the table holds only the columns in record_schema, so the "
+                    f"`_bizon_*` metadata columns are not available. Point the field at an existing "
+                    f"TIMESTAMP/DATE/DATETIME column, or set it to null for ingestion-time partitioning."
+                )
+        return self
 
 
 class BigQueryConfig(AbstractDestinationConfig):

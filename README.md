@@ -680,6 +680,48 @@ engine:
 
 See `bizon/connectors/sources/kafka/config/kafka_streams.example.yml` for a complete example.
 
+## BigQuery Partitioning
+
+All three BigQuery destinations take the same `time_partitioning` block. Tables bizon creates are
+partitioned on `_bizon_loaded_at` by day unless you say otherwise.
+
+```yaml
+destination:
+  name: bigquery
+  config:
+    project_id: my-gcp-project
+    dataset_id: bizon_test
+    gcs_buffer_bucket: bizon-buffer
+    time_partitioning:
+      type: DAY              # DAY | HOUR | MONTH | YEAR
+      field: _bizon_loaded_at
+    enforce_partitioning: false
+```
+
+- `time_partitioning: DAY` (a bare window) is still accepted and means the same as the block above.
+- `field` must exist in the destination schema. With `unnest: true` the table holds only the columns
+  from `record_schemas`, so the `_bizon_*` metadata columns are not available — point `field` at one
+  of your own `TIMESTAMP`/`DATE`/`DATETIME` columns. This is validated when the config loads.
+- `field: null` selects ingestion-time partitioning.
+
+### Repartitioning an existing table
+
+**BigQuery cannot change a table's partitioning after it is created.** A copy job into an existing
+table keeps that table's spec, and `CREATE OR REPLACE TABLE` is rejected outright when the spec
+differs. So a table created by an older bizon (or by hand) stays as it is, however you configure
+`time_partitioning`. Bizon detects this and warns at publish time, naming both specs.
+
+The only fix is to rebuild. Set `enforce_partitioning: true` and run a **full refresh**: the
+destination drops the table so it is recreated with the configured layout. Off by default because
+the table is briefly absent, and its description, labels, table ACLs and policy tags are not
+recreated.
+
+For an **incremental** stream, a run stages only its own delta, so it never rebuilds even with the
+flag on — rebuilding from a delta would discard history. Use [`bizon stream reset`](#stream-reset)
+with the flag enabled instead: the reset run re-fetches the stream, publishes as a full refresh
+(rebuilding the table), and leaves the job incremental so the next run resumes normally. This needs
+a source that can re-fetch the whole stream; otherwise repartition the table by hand.
+
 ## Documentation & Contributing
 
 - **Adding sources** — [`docs/contributing/adding-sources.md`](docs/contributing/adding-sources.md)

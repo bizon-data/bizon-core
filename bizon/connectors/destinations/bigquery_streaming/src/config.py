@@ -1,9 +1,12 @@
-from enum import Enum
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from bizon.connectors.destinations.bigquery.src.config import BigQueryRecordSchemaConfig
+from bizon.connectors.destinations.bigquery.src.config import (
+    BigQueryRecordSchemaConfig,
+    TimePartitioning,
+    TimePartitioningWindow,
+)
 from bizon.connectors.destinations.bigquery.src.table_naming import BIZON_TABLE_PREFIX
 from bizon.destination.config import (
     AbstractDestinationConfig,
@@ -11,19 +14,16 @@ from bizon.destination.config import (
     DestinationTypes,
 )
 
-
-class TimePartitioningWindow(str, Enum):
-    DAY = "DAY"
-    HOUR = "HOUR"
-    MONTH = "MONTH"
-    YEAR = "YEAR"
-
-
-class TimePartitioning(BaseModel):
-    type: TimePartitioningWindow = Field(default=TimePartitioningWindow.DAY, description="Time partitioning type")
-    field: Optional[str] = Field(
-        "_bizon_loaded_at", description="Field to partition by. You can use a transformation to create this field."
-    )
+# `TimePartitioning` and `TimePartitioningWindow` used to be declared here, byte-identically to the
+# copies in the batch and streaming-v2 configs. They now live in the batch config (already this
+# package's shared BigQuery module) and are re-exported so existing imports from here keep working.
+__all__ = [
+    "BigQueryAuthentication",
+    "BigQueryStreamingConfig",
+    "BigQueryStreamingConfigDetails",
+    "TimePartitioning",
+    "TimePartitioningWindow",
+]
 
 
 class BigQueryAuthentication(BaseModel):

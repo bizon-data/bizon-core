@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-08-20
+
+### Fixed
+
+- **Destination tables created before 0.4.0 are still unpartitioned, and every run since has silently kept them that way.** Publishing has used a copy job since 0.4.0 (`_copy_temp_to_main()`), and a copy job into a table that *already exists* keeps that table's own partitioning spec — verified against the API: `WRITE_TRUNCATE` from a `DAY`-partitioned staging table onto an unpartitioned table succeeds, reports success, and leaves the table unpartitioned. So a table first created by the pre-0.4.0 `CREATE TABLE AS SELECT` scans in full forever, no matter what `time_partitioning` says, with nothing in the logs to indicate it. `finalize()` now compares the staging table's actual spec against the destination table's before publishing and logs a warning naming both when they differ. Fixing it requires a rebuild, because BigQuery cannot change an existing table's partitioning at all — see `enforce_partitioning` below. Tables bizon creates itself are unaffected: a copy job into a table that does not exist does inherit the staging table's partitioning and clustering.
+
+- **The partition column was hardcoded to `_bizon_loaded_at` on the batch destination, so `unnest: true` pipelines could not load at all.** `BigQueryConfigDetails.time_partitioning` was a bare `DAY|HOUR|MONTH|YEAR` enum and `_build_load_job_config()` always passed `field="_bizon_loaded_at"` — but with `unnest: true` the table holds only the columns declared in `record_schemas`, where that column does not exist, so the load job failed mid-run on a column BigQuery could not find. `time_partitioning` now takes the `{type, field}` shape the streaming destinations already had, `field` is plumbed through to the load job, and `field: null` selects ingestion-time partitioning. Existing configs are unchanged: a bare `time_partitioning: DAY` still validates and still resolves to `_bizon_loaded_at`/`DAY`. The three BigQuery destinations now share one `TimePartitioning` model instead of three byte-identical copies that had drifted apart. Note for anyone already running `unnest: true` on the batch destination: that pipeline was failing inside the load job before, and now fails at config validation with a message naming the column and the available ones — a better error, not a new break.
+
+- **`bigquery_streaming_v2` published every full-refresh table unpartitioned and unclustered, and its first incremental run always 404'd.** The staging table was carefully created with `time_partitioning` and `clustering_fields`, then `finalize()` threw both away by publishing with `CREATE OR REPLACE TABLE main AS SELECT * FROM temp` — CTAS does not inherit either, so the configurable `time_partitioning.field` never reached a published table. BigQuery then pins that spec: it rejects any later attempt to replace the table with a different one. The publish DDL now spells out `PARTITION BY` / `CLUSTER BY`, so new tables are born with the configured layout. The incremental path now creates the main table (partitioned and clustered) before the `INSERT INTO`, which previously failed with a 404 whenever the table did not yet exist. `bigquery_streaming` (v1) is unaffected — it has no `finalize()` and no staging table, and already sets partitioning and clustering when it creates the table it appends to.
+
+### Added
+
+- **`enforce_partitioning` (default `false`) on the `bigquery` and `bigquery_streaming_v2` destinations** — opt in to having a **full refresh** drop and recreate a destination table whose partitioning does not match the config. Dropping is the only repartitioning mechanism BigQuery offers (`Cannot replace a table with a different partitioning spec. Instead, DROP the table, and then recreate it.`), and it is off by default because the table is briefly absent and its description, labels, table ACLs and policy tags are not recreated. It is restricted to full refreshes, where the staging table already holds every row that will exist, so the rebuild is lossless and free. An incremental run stages only its own delta and therefore never rebuilds, even with the flag on: it warns and points at `bizon stream reset <config>`, which re-fetches the stream, publishes as a full refresh, and leaves the job incremental so the next run resumes normally.
+
+  On `bigquery_streaming_v2` the flag also decides what the publish DDL may contain. Against a legacy table whose spec differs, emitting `PARTITION BY` would fail the run outright, so with the flag off the destination falls back to the historical plain CTAS and warns — existing pipelines keep running exactly as before.
+
+### Changed
+
+- The `time_partitioning` config block now rejects unknown keys (`extra="forbid"`, matching the rest of the destination config). A mistyped `filed:` used to be accepted and silently ignored, which is the same class of silent misconfiguration as the bugs above.
+
 ## [0.5.2] - 2026-08-07
 
 ### Fixed

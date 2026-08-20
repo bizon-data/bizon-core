@@ -25,6 +25,14 @@ destination:
     project_id: my-gcp-project-id
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet
+    # Time partitioning — see bigquery.example.yml for the full notes. Also accepts a bare `DAY`.
+    time_partitioning:
+      type: DAY # DAY | HOUR | MONTH | YEAR
+      field: _bizon_loaded_at
+    # An incremental run stages only its own delta, so it never rebuilds the table even with this
+    # on. To repartition a legacy incremental table, run `bizon stream reset <config>` with
+    # enforce_partitioning enabled: the reset run publishes as a full refresh and rebuilds it.
+    enforce_partitioning: false
     # Async batched load jobs (optional, default false) — see bigquery.example.yml for details.
     async_load: false
     load_files_per_job: 10

@@ -6,7 +6,7 @@ from typing import List, Tuple
 from uuid import uuid4
 
 import polars as pl
-from google.api_core.exceptions import NotFound
+from google.api_core.exceptions import BadRequest, NotFound
 from google.cloud import bigquery, storage
 from google.cloud.bigquery import DatasetReference, TimePartitioning
 from loguru import logger
@@ -19,6 +19,7 @@ from bizon.source.config import SourceSyncModes
 from bizon.source.source import AbstractSourceCallback
 
 from .config import BigQueryColumn, BigQueryConfigDetails
+from .partitioning import describe, spec_from_table
 from .table_naming import resolve_default_table_id
 
 
@@ -165,6 +166,11 @@ class BigQueryDestination(AbstractDestination):
 
     def check_connection(self) -> bool:
         self._ensure_dataset()
+        # Fail before uploading anything if the partition column cannot exist. Skipped when the
+        # unnest schema for this destination_id is not resolvable yet (the stream runner injects
+        # record_schemas after config validation), in which case the load path checks it instead.
+        if not self.config.unnest or (self.record_schemas and self.destination_id in self.record_schemas):
+            self._partition_field_or_raise()
         return True
 
     def cleanup(self, gcs_file: str):
@@ -229,8 +235,33 @@ class BigQueryDestination(AbstractDestination):
             },
         )
 
+    def _partition_field_or_raise(self) -> str:
+        """The configured partition column, checked against the schema this run actually writes.
+
+        `get_bigquery_schema()` returns the user's own columns in unnest mode, where the default
+        `_bizon_loaded_at` need not exist. Handing an unknown column to a load job fails with an
+        opaque BigQuery error part-way through a run, after data is already staged in GCS.
+
+        `BigQueryConfigDetails` validates the same thing at config load for the better message, but
+        cannot be the only check: the stream runner assigns `record_schemas` after validation.
+        """
+        field = self.config.time_partitioning.field
+
+        if field is None:
+            return None  # Ingestion-time partitioning.
+
+        column_names = {column.name for column in self.get_bigquery_schema()}
+        if field not in column_names:
+            raise ValueError(
+                f"Partition field '{field}' is not in the schema written to {self.temp_table_id} "
+                f"(columns: {sorted(column_names)}). Fix `destination.config.time_partitioning.field`, "
+                f"add the column to the record_schema, or set it to null for ingestion-time partitioning."
+            )
+        return field
+
     def _build_load_job_config(self) -> bigquery.LoadJobConfig:
-        # We always partition by the loaded_at field. The schema does not depend on the data.
+        # NB: `TimePartitioning` here is google.cloud.bigquery's (imported at the top of this module),
+        # not the pydantic model of the same name in .config, which is reached via self.config.
         return bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.PARQUET,
             write_disposition=bigquery.WriteDisposition.WRITE_APPEND,
@@ -242,7 +273,10 @@ class BigQueryDestination(AbstractDestination):
                 bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION,
                 bigquery.SchemaUpdateOption.ALLOW_FIELD_RELAXATION,
             ],
-            time_partitioning=TimePartitioning(field="_bizon_loaded_at", type_=self.config.time_partitioning),
+            time_partitioning=TimePartitioning(
+                field=self._partition_field_or_raise(),
+                type_=self.config.time_partitioning.type.value,
+            ),
         )
 
     def _gcs_uri(self, gcs_file: str) -> str:
@@ -376,23 +410,101 @@ class BigQueryDestination(AbstractDestination):
         while self._inflight_loads:
             self._complete_load(self._inflight_loads.pop(0))
 
+    def _check_destination_partitioning(self):
+        """Warn when publishing will not give the destination table the configured partitioning.
+
+        BigQuery cannot change an existing table's partitioning spec: a copy job into a table that
+        already exists silently keeps *that table's* spec. So a table created before 0.4.0 by
+        `CREATE TABLE AS SELECT` is unpartitioned and stays unpartitioned run after run, however
+        `time_partitioning` is configured, with nothing in the logs to say so.
+
+        The only fix is to drop and recreate, which is what `enforce_partitioning` does — and only
+        on a full refresh, where the temp table already holds every row that will exist.
+        """
+        try:
+            temp_table = self.bq_client.get_table(self.temp_table_id)
+        except NotFound:
+            # Nothing was staged (a run that produced no records never creates the temp table).
+            # Returning here is load-bearing: it is what makes it impossible for enforce_partitioning
+            # to drop the destination table on a run that has nothing to publish in its place.
+            return
+
+        try:
+            destination_table = self.bq_client.get_table(self.table_id)
+        except NotFound:
+            return  # First run: the copy job creates the table with the temp table's partitioning.
+
+        # Compare the two tables' actual specs rather than config against the table: the temp table's
+        # spec is precisely what a fresh copy would produce, and stays truthful if plumbing drifts.
+        staged = spec_from_table(temp_table)
+        current = spec_from_table(destination_table)
+
+        if staged == current:
+            return
+
+        logger.warning(
+            f"Partitioning mismatch on {self.table_id}: the table is {describe(current)}, but this run "
+            f"stages data {describe(staged)}. BigQuery cannot change an existing table's partitioning, "
+            f"so publishing leaves it {describe(current)}."
+        )
+
+        if not self.config.enforce_partitioning:
+            logger.warning(
+                f"Set `enforce_partitioning: true` on the destination config to have a full refresh drop and "
+                f"rebuild {self.table_id} with the configured partitioning."
+            )
+            return
+
+        if self.sync_metadata.sync_mode != SourceSyncModes.FULL_REFRESH:
+            logger.warning(
+                f"`enforce_partitioning` only rebuilds on a full refresh, which republishes every row. This run "
+                f"is {self.sync_metadata.sync_mode} and stages only its own delta, so rebuilding here would "
+                f"discard history. Run `bizon stream reset <config>` to rebuild {self.table_id} with the "
+                f"configured partitioning; incremental resumes from that run. This needs a source that can "
+                f"re-fetch the full stream -- otherwise repartition the table by hand."
+            )
+            return
+
+        logger.warning(
+            f"enforce_partitioning: dropping {self.table_id} so the publish copy job recreates it "
+            f"{describe(staged)}. The table is absent until the copy job lands, and table-level metadata "
+            f"(description, labels, ACLs, policy tags) is not recreated."
+        )
+        self.bq_client.delete_table(self.table_id, not_found_ok=True)
+
     def _copy_temp_to_main(self, write_disposition: str):
         """Materialize the temp table into the main table with a copy job.
 
         Copy jobs are free (metadata-only) and near-instant, unlike DML
         (CREATE OR REPLACE / INSERT INTO ... SELECT *) which scans + rewrites
         the whole temp table and is billed on bytes processed. A copy job also
-        preserves the temp table's partitioning/clustering on the main table.
+        gives a *newly created* main table the temp table's partitioning and clustering --
+        but it cannot change the spec of a main table that already exists, which is what
+        _check_destination_partitioning() reports on.
         """
         job_config = bigquery.CopyJobConfig(write_disposition=write_disposition)
         copy_job = self.bq_client.copy_table(self.temp_table_id, self.table_id, job_config=job_config)
-        result = copy_job.result()  # Waits for the job to complete
+        try:
+            result = copy_job.result()  # Waits for the job to complete
+        except BadRequest as e:
+            message = str(e)
+            if "artitioning" in message or "lustering" in message:
+                raise RuntimeError(
+                    f"BigQuery refused to publish {self.temp_table_id} into {self.table_id}: the two tables "
+                    f"have incompatible partitioning or clustering. Set `enforce_partitioning: true` and run a "
+                    f"full refresh (or `bizon stream reset <config>` for an incremental stream) to rebuild "
+                    f"{self.table_id}. Original error: {message}"
+                ) from e
+            raise
         logger.info(f"BigQuery copy job ({write_disposition}) {self.temp_table_id} -> {self.table_id}: {result}")
 
     def finalize(self):
         # Drain any async load jobs (and still-pending files) before publishing the table.
         if self.config.async_load:
             self._drain_all_loads()
+
+        if self.sync_metadata.sync_mode in (SourceSyncModes.FULL_REFRESH, SourceSyncModes.INCREMENTAL):
+            self._check_destination_partitioning()
 
         if self.sync_metadata.sync_mode == SourceSyncModes.FULL_REFRESH:
             logger.info(f"Replacing {self.table_id} with temp table {self.temp_table_id} via copy job ...")
