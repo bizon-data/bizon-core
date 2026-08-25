@@ -30,8 +30,16 @@ from tenacity import (
 
 from bizon.common.models import SyncMetadata
 from bizon.connectors.destinations.bigquery.src.config import (
+    UNNEST_HINT,
     BigQueryColumnMode,
     BigQueryColumnType,
+    describe_partition_problem,
+)
+from bizon.connectors.destinations.bigquery.src.partitioning import (
+    describe,
+    should_apply_partitioning,
+    spec_from_config,
+    spec_from_table,
 )
 from bizon.connectors.destinations.bigquery.src.table_naming import resolve_default_table_id
 from bizon.destination.destination import AbstractDestination
@@ -71,6 +79,10 @@ class BigQueryStreamingDestination(AbstractDestination):
         self.dataset_location = config.dataset_location
         self.bq_max_rows_per_request = config.bq_max_rows_per_request
         self._resolved_default_table_id: str | None = None
+        # Tables already warned about, so the per-flush create_table call does not repeat either
+        # warning (unusable partition field, and partitioning that drifted from the live table).
+        self._partition_warned: set[str] = set()
+        self._drift_warned: set[str] = set()
 
     @property
     def table_id(self) -> str:
@@ -228,14 +240,64 @@ class BigQueryStreamingDestination(AbstractDestination):
             logger.error(f"Error inserting batch: {str(e)}, type: {type(e)}")
             raise
 
+    def _partition_problem(self, schema) -> str:
+        """Why the configured partition field cannot partition this table, or None.
+
+        The config validator checks the same thing for the message, but cannot be the only check:
+        the stream runner assigns `record_schemas` after validation, so in a `streams:` run this is
+        the first look at the schema actually being written.
+        """
+        if not self.config.time_partitioning:
+            return None
+
+        return describe_partition_problem(
+            self.config.time_partitioning.field,
+            self.config.time_partitioning.type.value,
+            {field.name: field.field_type for field in schema},
+            f"the schema written to {self.table_id}",
+            hint=UNNEST_HINT if self.config.unnest else "",
+        )
+
+    def _warn_on_partitioning_drift(self, table) -> bool:
+        """Report a live table whose partitioning no longer matches the config. Returns True if it does.
+
+        This destination appends straight into the table and has no `finalize()`, so `create_table`
+        is the only thing that ever applies `time_partitioning` -- and it just raised `Conflict`,
+        which means BigQuery kept the table's own spec and ignored ours. BigQuery cannot repartition
+        in place, so there is nothing to do about it here, but silence is how a config partitioning
+        on one column and a table partitioned on another stay divergent indefinitely. Rebuilding the
+        table is the only fix.
+        """
+        intended = spec_from_config(
+            self.config.time_partitioning,
+            self.clustering_keys.get(self.destination_id) if self.clustering_keys else None,
+        )
+        actual = spec_from_table(table)
+
+        if intended == actual:
+            return True
+
+        if self.table_id not in self._drift_warned:
+            self._drift_warned.add(self.table_id)
+            logger.warning(
+                f"{self.table_id} is {describe(actual)}, but the config asks for {describe(intended)}. "
+                f"BigQuery cannot change an existing table's partitioning, so it stays as it is and "
+                f"the configured spec has no effect. Rebuild the table to change it."
+            )
+
+        return False
+
     def load_to_bigquery_via_legacy_streaming(self, df_destination_records: pl.DataFrame) -> str:
         # Create table if it does not exist
         schema = self.get_bigquery_schema()
         table = bigquery.Table(self.table_id, schema=schema)
-        time_partitioning = TimePartitioning(
-            field=self.config.time_partitioning.field, type_=self.config.time_partitioning.type
-        )
-        table.time_partitioning = time_partitioning
+
+        if self.config.time_partitioning and should_apply_partitioning(
+            self.bq_client, self.table_id, self._partition_problem(schema), self._partition_warned
+        ):
+            table.time_partitioning = TimePartitioning(
+                field=self.config.time_partitioning.field, type_=self.config.time_partitioning.type
+            )
 
         if self.clustering_keys and self.clustering_keys[self.destination_id]:
             table.clustering_fields = self.clustering_keys[self.destination_id]
@@ -243,6 +305,7 @@ class BigQueryStreamingDestination(AbstractDestination):
             table = self.bq_client.create_table(table)
         except Conflict:
             table = self.bq_client.get_table(self.table_id)
+            self._warn_on_partitioning_drift(table)
             # Compare and update schema if needed
             existing_fields = {field.name: field for field in table.schema}
             new_fields = {field.name: field for field in self.get_bigquery_schema()}

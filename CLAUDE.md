@@ -271,6 +271,34 @@ tends to reintroduce a silent data bug — see the `[0.5.2]` changelog entries.
   restarts it at page one and re-fetches the whole stream. The producer raises with the job id and
   stream instead.
 
+### BigQuery partitioning semantics
+
+**BigQuery cannot change an existing table's partitioning spec.** Everything below follows from that
+one fact; see `bizon/connectors/destinations/bigquery/src/partitioning.py` for the API behaviour it
+was verified against.
+
+- **One check, three severities.** `describe_partition_problem()` (`bigquery/src/config.py`) *returns*
+  a message rather than raising, because the same misconfiguration is fatal in one place and inert in
+  another. The rule is **raise only where the spec actually reaches a table**:
+  - batch `bigquery` — every load job stamps `time_partitioning` onto the temp table it creates, so a
+    bad field fails every run: **raise at config validation**;
+  - `bigquery_streaming` / `bigquery_streaming_v2` — the spec is only applied by `create_table`, and
+    once the table exists BigQuery answers `Conflict` and keeps the table's own spec. A wrong field
+    has then had no effect for the life of the table and the pipeline is working. **Warn at config
+    validation; raise at runtime only when the table is absent** (`should_apply_partitioning()`).
+    Do not "make it consistent" by raising at config load — that stops working pipelines on upgrade.
+- **`_partition_clause()` validates the spec being emitted, not the config.** `_publish_spec()`
+  returns the destination table's *current* spec on a mismatch with `enforce_partitioning` off, so a
+  bad configured field never reaches that DDL and must not block the publish.
+- **The `unnest: true` default is deliberately not `_bizon_loaded_at`.** With unnest the table holds
+  exactly the `record_schemas` columns, so the inherited default names a column that cannot exist. An
+  **unwritten** `field` falls back to ingestion-time partitioning; a field the user wrote is checked.
+  This is why `time_partitioning` uses `default_factory` — `model_fields_set` has to distinguish the
+  two, and pydantic v2 does not copy a `BaseModel` passed as `default=`.
+- **In `STREAM` sync mode `bigquery_streaming_v2.finalize()` is a no-op** and `bigquery_streaming` has
+  no `finalize()` at all, so neither reaches any publish-time validation. Runtime checks have to live
+  on the `create_table` path to run at all.
+
 ### Implementing Incremental Sync
 
 Incremental sync requires implementation in both **sources** and **destinations**.

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-08-20
+
+### Fixed
+
+- **0.5.3's partition-column check only ran on one of the three BigQuery destinations, and `bigquery_streaming` had none at all.** `BigQueryConfigDetails` got a `model_validator`; `BigQueryStreamingConfigDetails` and `BigQueryStreamingV2ConfigDetails` got nothing, so `unnest: true` pipelines on the streaming destinations were not covered by the guardrail the release note described. What they did instead: `bigquery_streaming_v2` failed mid-run in `_partition_clause()` — but only on a full refresh, because in `stream` sync mode `finalize()` returns immediately and never reaches it; `bigquery_streaming` never failed anywhere. All three destinations now run the same check, and it covers the column's **type** as well as its presence, so a `STRING` partition column or `HOUR` on a `DATE` column is caught rather than left to BigQuery.
+
+  The check is deliberately **not** equally fatal everywhere: it raises only where the spec actually reaches a table, and warns otherwise. On the batch destination every load job stamps `time_partitioning` onto the temp table it creates, so a bad field fails every run and is rejected at config validation, as in 0.5.3. On the two streaming destinations the only thing that ever applies partitioning is `create_table`, and once the table exists BigQuery answers `Conflict` and keeps the table's own spec — meaning a wrong field has had no effect for as long as the table has existed, and the pipeline has been running correctly the whole time. Raising there would have stopped working pipelines on upgrade over a setting that does nothing, so those cases warn (naming the field and the columns) and the run proceeds untouched. Creating a table that does not yet exist does raise, in place of BigQuery's opaque error.
+
+- **`unnest: true` with no `time_partitioning` at all resolved to a column that cannot exist.** `field` defaults to `_bizon_loaded_at`, but with `unnest: true` the table holds exactly the columns in `record_schemas`, so the default named a column bizon does not write. A config that never mentioned partitioning was therefore rejected outright by 0.5.3 on the batch destination, and failed at table creation on the streaming ones. An unwritten `field` now falls back to ingestion-time partitioning (`_PARTITIONDATE`) and logs the substitution; a `field` the user actually wrote is still checked. Nobody has to touch a config to upgrade.
+
+- **`bigquery_streaming` silently discarded a partitioning spec that had drifted from its live table.** It appends straight into the table and has no `finalize()`, so `create_table` is the only place partitioning is applied — and its `Conflict` handler reconciled the schema while ignoring partitioning entirely. A config asking for one partition column against a table partitioned on another (or on nothing) produced no signal in the logs, run after run. The `Conflict` path now compares both specs and warns, naming each. BigQuery still cannot repartition in place; rebuilding the table remains the only fix.
+
+- **Every streaming config in a process shared one `TimePartitioning` object.** Both streaming configs declared `time_partitioning` with `default=TimePartitioning(...)`, and pydantic v2 does not copy a `BaseModel` passed as `default`. Latent until something mutated it — which the new validator does. Both now use `default_factory`. The resolved default is unchanged.
+
 ## [0.5.3] - 2026-08-20
 
 ### Fixed

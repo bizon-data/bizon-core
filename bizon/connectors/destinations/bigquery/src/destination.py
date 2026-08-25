@@ -18,7 +18,7 @@ from bizon.monitoring.monitor import AbstractMonitor
 from bizon.source.config import SourceSyncModes
 from bizon.source.source import AbstractSourceCallback
 
-from .config import BigQueryColumn, BigQueryConfigDetails
+from .config import UNNEST_HINT, BigQueryColumn, BigQueryConfigDetails, describe_partition_problem
 from .partitioning import describe, spec_from_table
 from .table_naming import resolve_default_table_id
 
@@ -244,19 +244,26 @@ class BigQueryDestination(AbstractDestination):
 
         `BigQueryConfigDetails` validates the same thing at config load for the better message, but
         cannot be the only check: the stream runner assigns `record_schemas` after validation.
+
+        Raising is right here, unlike on the streaming destinations: every load job stamps this onto
+        the temp table it creates, so a bad field fails the run whatever state the destination table
+        is in.
         """
         field = self.config.time_partitioning.field
 
         if field is None:
             return None  # Ingestion-time partitioning.
 
-        column_names = {column.name for column in self.get_bigquery_schema()}
-        if field not in column_names:
-            raise ValueError(
-                f"Partition field '{field}' is not in the schema written to {self.temp_table_id} "
-                f"(columns: {sorted(column_names)}). Fix `destination.config.time_partitioning.field`, "
-                f"add the column to the record_schema, or set it to null for ingestion-time partitioning."
-            )
+        problem = describe_partition_problem(
+            field,
+            self.config.time_partitioning.type.value,
+            {column.name: column.field_type for column in self.get_bigquery_schema()},
+            f"the schema written to {self.temp_table_id}",
+            hint=UNNEST_HINT if self.config.unnest else "",
+        )
+        if problem:
+            raise ValueError(problem)
+
         return field
 
     def _build_load_job_config(self) -> bigquery.LoadJobConfig:

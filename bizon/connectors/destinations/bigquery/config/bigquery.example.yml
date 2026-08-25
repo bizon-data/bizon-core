@@ -24,9 +24,10 @@ destination:
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet
     # Time partitioning. Also accepts the historical bare window (`time_partitioning: DAY`).
-    # `field` must exist in the destination schema -- with `unnest: true` that means a column from
-    # your record_schema, since the `_bizon_*` metadata columns are not written. Use `field: null`
-    # for ingestion-time partitioning.
+    # `field` must exist in the destination schema and be TIMESTAMP, DATE or DATETIME -- with
+    # `unnest: true` that means a column from your record_schema, since the `_bizon_*` metadata
+    # columns are not written. Use `field: null` for ingestion-time partitioning; that is also what
+    # `unnest: true` falls back to when you leave `time_partitioning` out entirely.
     time_partitioning:
       type: DAY # DAY | HOUR | MONTH | YEAR
       field: _bizon_loaded_at

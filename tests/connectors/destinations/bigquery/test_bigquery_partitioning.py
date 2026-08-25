@@ -16,7 +16,9 @@ from pydantic import ValidationError
 
 from bizon.common.models import BizonConfig
 from bizon.connectors.destinations.bigquery.src.config import (
+    BIZON_METADATA_COLUMN_TYPES,
     BIZON_METADATA_COLUMNS,
+    PARTITIONABLE_COLUMN_TYPES,
     BigQueryConfigDetails,
     TimePartitioningWindow,
 )
@@ -103,14 +105,21 @@ def test_mistyped_key_is_rejected():
 
 
 def test_unknown_partition_field_rejected_without_unnest():
-    with pytest.raises(ValidationError, match="not a column bizon writes"):
+    with pytest.raises(ValidationError, match="does not declare it"):
         BigQueryConfigDetails(**BASE_CONFIG, time_partitioning={"field": "created_at"})
 
 
 def test_unknown_partition_field_rejected_for_unnest_record_schema():
-    """In unnest mode the table holds only record_schema columns, so `_bizon_loaded_at` is absent."""
+    """In unnest mode the table holds only record_schema columns, so an outside column is absent.
+
+    The *implicit* `_bizon_loaded_at` no longer raises -- it resolves to ingestion-time partitioning,
+    since the user never asked for it. See test_partition_field_validation.py. Writing a bad field
+    yourself still raises, on this destination, because every batch load job applies it.
+    """
     with pytest.raises(ValidationError, match="does not declare it"):
-        BigQueryConfigDetails(**BASE_CONFIG, unnest=True, record_schemas=UNNEST_RECORD_SCHEMAS)
+        BigQueryConfigDetails(
+            **BASE_CONFIG, unnest=True, record_schemas=UNNEST_RECORD_SCHEMAS, time_partitioning={"field": "created_at"}
+        )
 
 
 def test_unnest_partition_field_from_record_schema_is_accepted():
@@ -130,10 +139,25 @@ def test_unnest_accepts_ingestion_time_partitioning():
     assert config.time_partitioning.field is None
 
 
-def test_metadata_columns_match_schema(build_bq_destination):
-    """BIZON_METADATA_COLUMNS is duplicated in config.py to keep google.cloud out of that module."""
-    with build_bq_destination("bigquery") as destination:
-        assert {field.name for field in destination.get_bigquery_schema()} == BIZON_METADATA_COLUMNS
+@pytest.mark.parametrize("variant", ["bigquery", "streaming", "streaming_v2"])
+def test_metadata_columns_match_schema(build_bq_destination, variant):
+    """BIZON_METADATA_COLUMN_TYPES is duplicated in config.py to keep google.cloud out of that module.
+
+    Names, and the one property the copy exists to answer: which of those columns can be partitioned
+    on. The check rejects `_bizon_id` for being STRING, which is only correct while this agrees with
+    what the destinations actually declare.
+
+    Exact types are deliberately not asserted -- `_source_data` is JSON on the streaming destinations
+    and STRING on the batch one, which round-trips through Parquet. Both are unpartitionable, so the
+    divergence cannot affect the check.
+    """
+    with build_bq_destination(variant) as destination:
+        schema = destination.get_bigquery_schema()
+
+    assert {field.name for field in schema} == BIZON_METADATA_COLUMNS
+    assert {field.name for field in schema if field.field_type in PARTITIONABLE_COLUMN_TYPES} == {
+        name for name, type_ in BIZON_METADATA_COLUMN_TYPES.items() if type_ in PARTITIONABLE_COLUMN_TYPES
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -179,7 +203,7 @@ def test_load_job_raises_when_field_missing_from_resolved_schema(build_bq_destin
     ) as destination:
         # Simulate post-validation injection: a schema that does not contain the partition field.
         destination.config.time_partitioning.field = "_bizon_loaded_at"
-        with pytest.raises(ValueError, match="is not in the schema written to"):
+        with pytest.raises(ValueError, match="the schema written to .* does not declare it"):
             destination._build_load_job_config()
 
 
@@ -187,7 +211,7 @@ def test_check_connection_fails_fast_on_bad_partition_field(build_bq_destination
     with build_bq_destination("bigquery") as destination:
         destination.config.time_partitioning.field = "nope"
         destination._ensure_dataset = MagicMock()
-        with pytest.raises(ValueError, match="Partition field 'nope'"):
+        with pytest.raises(ValueError, match="'nope'"):
             destination.check_connection()
 
 

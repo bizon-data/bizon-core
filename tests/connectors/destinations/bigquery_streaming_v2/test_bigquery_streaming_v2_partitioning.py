@@ -277,7 +277,7 @@ def test_hour_partitioning_on_a_date_column_is_rejected(build_bq_destination):
         time_partitioning={"type": "HOUR", "field": "event_on"},
         tables={},
     ) as destination:
-        with pytest.raises(ValueError, match="HOUR partitioning is not supported on DATE column"):
+        with pytest.raises(ValueError, match="does not support HOUR partitioning on DATE"):
             destination._partition_clause()
 
 
@@ -290,7 +290,7 @@ def test_non_temporal_partition_column_is_rejected(build_bq_destination):
         time_partitioning={"field": "id"},
         tables={},
     ) as destination:
-        with pytest.raises(ValueError, match="not TIMESTAMP/DATE/DATETIME"):
+        with pytest.raises(ValueError, match="only time-partitions on"):
             destination._partition_clause()
 
 
