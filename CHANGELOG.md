@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.4] - 2026-09-03
 
+### Changed
+
+- **`AbstractQueue.terminate()` now takes `success` — a breaking change for custom queue adapters.**
+  The signature went from `terminate(self, iteration: int)` to
+  `terminate(self, iteration: int, success: bool = True)`, and the producer now always passes the
+  keyword. The default makes the *call* compatible, but an adapter that still declares the old
+  two-argument signature raises `TypeError: terminate() got an unexpected keyword argument 'success'`
+  on every run, at the very end of the stream. The three bundled adapters are updated; anyone who
+  has written their own against the documented `Queue` interface must add the parameter and send
+  `QUEUE_TERMINATION_ERROR` instead of `QUEUE_TERMINATION` when it is `False`.
+
+- **The `rabbitmq` and `kafka` *queue* adapters are now documented as unmaintained, because they do
+  not run.** Both were listed as production-ready in `README.md` and `CLAUDE.md`. In fact their
+  consumers call `write_records_and_update_cursor(source_records=...)` while that method takes
+  `df_source_records`, so they raise `TypeError` on the first message — broken since the connectors
+  move in `e183fa5`, long before this release. They also keep private copies of the termination
+  handling that still test `== QUEUE_TERMINATION` only, so they would not stop cleanly on the new
+  error signal either. Only `python_queue` routes through
+  `AbstractQueueConsumer.process_queue_message`. No code changed: this is a correction to the docs,
+  which promised support that has not existed for some time. Use `python_queue`. This concerns the
+  queue adapters only — the Kafka **source** is maintained and has its own e2e workflow.
+
 ### Fixed
 
 - **A failed run published its partial data and was recorded as successful.** The producer terminated the queue the same way whether it had finished the stream or died on a source error. The consumer reads that signal as "last iteration": it flushed, set the job to `SUCCEEDED`, and called `finalize()` — which on the BigQuery destination copies the staging table over the destination table with `WRITE_TRUNCATE`. A source error halfway through a full refresh therefore *replaced a complete table with a partial one*, and `stream_jobs` said the run succeeded; only the process exit code disagreed. Incremental streams appended their partial batch and moved the watermark past records they had never fetched.
