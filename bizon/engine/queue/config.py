@@ -10,6 +10,13 @@ from pytz import UTC
 
 QUEUE_TERMINATION = "TERMINATION"
 
+# Sent instead of QUEUE_TERMINATION when the producer stopped on an error. The consumer must
+# drain and stop as usual, but must NOT publish: see AbstractQueueConsumer.process_queue_message.
+QUEUE_TERMINATION_ERROR = "TERMINATION_ERROR"
+
+# Both signals end the consumer loop; only QUEUE_TERMINATION publishes.
+QUEUE_TERMINATION_SIGNALS = (QUEUE_TERMINATION, QUEUE_TERMINATION_ERROR)
+
 
 @dataclass
 class QueueMessage:

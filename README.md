@@ -44,8 +44,9 @@ staying small enough to read end to end.
   `full_refresh` pipeline deliberately restarts instead, since it republishes the whole table.
 - **High throughput** — designed to process billions of records, using Polars DataFrames for
   memory-efficient, vectorized buffering and Parquet for batch loads.
-- **Queue-system agnostic** — run on an in-process Python queue, RabbitMQ, or Kafka/Redpanda
-  behind a single `Queue` interface; adapters can be written for any broker.
+- **Queue-system agnostic** — a single `Queue` interface that any broker can be written against.
+  The in-process Python queue is the maintained implementation; the RabbitMQ and Kafka/Redpanda
+  adapters are currently **unmaintained** (see [Queue types](#queue-types)).
 - **Pluggable connectors** — 10 built-in sources and 5 destinations, all behind clean
   `AbstractSource` / `AbstractDestination` interfaces. Sources are **auto-discovered** — no
   registration needed.
@@ -110,8 +111,8 @@ Optional features are installed via extras:
 |-------|---------------|---------|
 | `postgres` | `bizon[postgres]` | PostgreSQL backend |
 | `bigquery` | `bizon[bigquery]` | BigQuery backend & destinations (incl. Storage Write API) |
-| `kafka` | `bizon[kafka]` | Kafka/Redpanda queue **and** Kafka source (Avro/Schema Registry) |
-| `rabbitmq` | `bizon[rabbitmq]` | RabbitMQ queue |
+| `kafka` | `bizon[kafka]` | Kafka source (Avro/Schema Registry). Also the Kafka *queue* adapter, which is unmaintained |
+| `rabbitmq` | `bizon[rabbitmq]` | RabbitMQ queue adapter (unmaintained) |
 | `gsheets` | `bizon[gsheets]` | Google Sheets source |
 | `datadog` | `bizon[datadog]` | Datadog metrics & tracing |
 | `secretmanager` | `bizon[secretmanager]` | `gsm://` Google Secret Manager references |
@@ -514,9 +515,19 @@ The queue carries records from the producer to the consumer. Configured under `e
 
 | Type | Use case |
 |------|----------|
-| `python_queue` | In-process — local development & testing (default) |
-| `rabbitmq` | RabbitMQ — production, high throughput (`bizon[rabbitmq]`) |
-| `kafka` | Kafka / Redpanda — production, high throughput, strong persistence (`bizon[kafka]`) |
+| `python_queue` | In-process — the default, and the only maintained queue |
+| `rabbitmq` | RabbitMQ — **unmaintained**, does not currently run (`bizon[rabbitmq]`) |
+| `kafka` | Kafka / Redpanda — **unmaintained**, does not currently run (`bizon[kafka]`) |
+
+> **The `rabbitmq` and `kafka` queue adapters are not supported and are known to be broken.**
+> Their consumers call `write_records_and_update_cursor(source_records=...)`, but that method takes
+> `df_source_records`, so they raise `TypeError` on the first message. They also predate the
+> `QUEUE_TERMINATION_ERROR` signal added in 0.5.4, so they would not stop cleanly on a producer
+> failure even once that is fixed. Use `python_queue`. The configuration below is retained for
+> whoever revives them.
+>
+> This is only about the queue **adapters**. The Kafka *source*
+> (`bizon/connectors/sources/kafka/`) is maintained and covered by its own e2e workflow.
 
 Spin up a broker locally with the provided compose files:
 

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-08-20
+
+### Fixed
+
+- **A failed run published its partial data and was recorded as successful.** The producer terminated the queue the same way whether it had finished the stream or died on a source error. The consumer reads that signal as "last iteration": it flushed, set the job to `SUCCEEDED`, and called `finalize()` — which on the BigQuery destination copies the staging table over the destination table with `WRITE_TRUNCATE`. A source error halfway through a full refresh therefore *replaced a complete table with a partial one*, and `stream_jobs` said the run succeeded; only the process exit code disagreed. Incremental streams appended their partial batch and moved the watermark past records they had never fetched.
+
+  `queue.terminate()` now takes `success`, and sends `QUEUE_TERMINATION_ERROR` instead of `QUEUE_TERMINATION` when the producer stopped on an error. On that signal the consumer still drains and flushes, then does **not** call `finalize()`, does **not** mark the job `SUCCEEDED`, and returns `SOURCE_ERROR`. The destination table is left exactly as it was.
+
+  What the flush buys differs by sync mode. An **incremental** job stays `RUNNING`, so the next run resumes it, the producer picks up from the destination cursors the failed run wrote, and the rows already staged in `{table}_incremental` are published by the next successful `finalize()` — nothing is re-fetched and nothing is duplicated. A **full refresh** does not resume: `get_or_create_job()` cancels a `RUNNING` full-refresh job and starts a new one (see 0.5.2), and the new `job_id` has no destination cursor, so `_ensure_clean_temp_table()` drops `_temp` and the run starts over. The flush is wasted work there; it is kept because the code path is shared and the cost is one load job, not because a full refresh resumes.
+
+  Nothing changes on a successful run: `publish` defaults to `True` on both destination entry points, and the existing termination signal is unchanged.
+
+- **"Source failed to fetch data from the first iteration" was logged for streams that were simply empty.** The destination could not tell a producer that died before yielding anything from a stream that genuinely has no rows, so it asserted failure for both. It now uses the producer's outcome, and only says "failed" when the producer actually failed.
+
+- **0.5.3's partition-column check only ran on one of the three BigQuery destinations, and `bigquery_streaming` had none at all.** `BigQueryConfigDetails` got a `model_validator`; `BigQueryStreamingConfigDetails` and `BigQueryStreamingV2ConfigDetails` got nothing, so `unnest: true` pipelines on the streaming destinations were not covered by the guardrail the release note described. What they did instead: `bigquery_streaming_v2` failed mid-run in `_partition_clause()` — but only on a full refresh, because in `stream` sync mode `finalize()` returns immediately and never reaches it; `bigquery_streaming` never failed anywhere. All three destinations now run the same check, and it covers the column's **type** as well as its presence, so a `STRING` partition column or `HOUR` on a `DATE` column is caught rather than left to BigQuery.
+
+  The check is deliberately **not** equally fatal everywhere: it raises only where the spec actually reaches a table, and warns otherwise. On the batch destination every load job stamps `time_partitioning` onto the temp table it creates, so a bad field fails every run and is rejected at config validation, as in 0.5.3. On the two streaming destinations the only thing that ever applies partitioning is `create_table`, and once the table exists BigQuery answers `Conflict` and keeps the table's own spec — meaning a wrong field has had no effect for as long as the table has existed, and the pipeline has been running correctly the whole time. Raising there would have stopped working pipelines on upgrade over a setting that does nothing, so those cases warn (naming the field and the columns) and the run proceeds untouched. Creating a table that does not yet exist does raise, in place of BigQuery's opaque error.
+
+- **`unnest: true` with no `time_partitioning` at all resolved to a column that cannot exist.** `field` defaults to `_bizon_loaded_at`, but with `unnest: true` the table holds exactly the columns in `record_schemas`, so the default named a column bizon does not write. A config that never mentioned partitioning was therefore rejected outright by 0.5.3 on the batch destination, and failed at table creation on the streaming ones. An unwritten `field` now falls back to ingestion-time partitioning (`_PARTITIONDATE`) and logs the substitution; a `field` the user actually wrote is still checked. Nobody has to touch a config to upgrade.
+
+- **`bigquery_streaming` silently discarded a partitioning spec that had drifted from its live table.** It appends straight into the table and has no `finalize()`, so `create_table` is the only place partitioning is applied — and its `Conflict` handler reconciled the schema while ignoring partitioning entirely. A config asking for one partition column against a table partitioned on another (or on nothing) produced no signal in the logs, run after run. The `Conflict` path now compares both specs and warns, naming each. BigQuery still cannot repartition in place; rebuilding the table remains the only fix.
+
+- **Every streaming config in a process shared one `TimePartitioning` object.** Both streaming configs declared `time_partitioning` with `default=TimePartitioning(...)`, and pydantic v2 does not copy a `BaseModel` passed as `default`. Latent until something mutated it — which the new validator does. Both now use `default_factory`. The resolved default is unchanged.
+
 ## [0.5.3] - 2026-08-20
 
 ### Fixed

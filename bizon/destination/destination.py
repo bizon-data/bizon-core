@@ -138,8 +138,14 @@ class AbstractDestination(ABC):
         last_iteration: bool = False,
         session=None,
         pagination: dict = None,
+        publish: bool = True,
     ) -> DestinationBufferStatus:
-        """Write records to destination or buffer them for the given iteration"""
+        """Write records to destination or buffer them for the given iteration.
+
+        `publish=False` means the producer stopped on an error. Everything already staged is
+        still flushed — the staging table and the destination cursors are the resume state —
+        but the sync is neither published nor marked successful.
+        """
 
         # Last iteration, write all records to destination
         if last_iteration:
@@ -151,7 +157,7 @@ class AbstractDestination(ABC):
             assert df_destination_records.height == 0, "Last iteration should not have any records"
             destination_iteration = self.buffer_flush_handler(session=session)
 
-            if destination_iteration.success:
+            if destination_iteration.success and publish:
                 # Update job status to success
 
                 # Set job status to SUCCEEDED
@@ -168,6 +174,25 @@ class AbstractDestination(ABC):
 
             # Flush buffer
             self.buffer.flush()
+
+            if not publish:
+                # Publishing here is what used to turn a failed run into a silently truncated
+                # destination table: finalize() copies the staging table over the destination
+                # with WRITE_TRUNCATE regardless of how the producer exited.
+                #
+                # The job is left RUNNING, which means different things per sync mode.
+                # Incremental resumes it: the producer restarts from the destination cursors this
+                # run wrote and the staged rows are published by the next successful finalize().
+                # A full refresh does NOT resume -- get_or_create_job() cancels a RUNNING
+                # full-refresh job and creates a new one, whose job_id has no cursor, so
+                # _ensure_clean_temp_table() drops the staging table and the run starts over.
+                # Do not rewrite this as "the staging table is the resume state" for both.
+                logger.warning(
+                    f"Producer failed: skipping publication for {self.destination_id}. "
+                    "The destination table is left untouched."
+                )
+                return DestinationBufferStatus.RECORDS_WRITTEN
+
             # Call the finalizing operations to wrap up sync
             self.finalize()
             return DestinationBufferStatus.RECORDS_WRITTEN
@@ -251,15 +276,22 @@ class AbstractDestination(ABC):
         iteration: int,
         last_iteration: bool = False,
         pagination: dict = None,
+        publish: bool = True,
     ) -> bool:
         """
         Write records to destination and update the cursor for the given iteration.
         Stores the source pagination for recovery purposes.
         """
 
-        # Case when producer failed to fetch data from first iteration
+        # Nothing to write on the first iteration: either the producer failed before yielding
+        # anything, or the stream is genuinely empty. `publish` is what tells the two apart --
+        # the message used to assert failure in both cases, which sent operators hunting for a
+        # source bug that was not there.
         if iteration == 0 and df_source_records.height == 0:
-            logger.warning("Source failed to fetch data from the first iteration, no records will be written.")
+            if publish:
+                logger.warning("Source returned no records on the first iteration, nothing will be written.")
+            else:
+                logger.warning("Source failed on the first iteration, no records will be written.")
             return False
 
         # Convert to df_destinaton_records
@@ -273,6 +305,7 @@ class AbstractDestination(ABC):
             iteration=iteration,
             last_iteration=last_iteration,
             pagination=pagination,
+            publish=publish,
         )
 
         return True

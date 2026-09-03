@@ -5,7 +5,11 @@ from loguru import logger
 
 from bizon.destination.destination import AbstractDestination
 from bizon.engine.pipeline.consumer import AbstractQueueConsumer
-from bizon.engine.queue.config import QUEUE_TERMINATION, QueueMessage
+from bizon.engine.queue.config import (
+    QUEUE_TERMINATION,
+    QUEUE_TERMINATION_ERROR,
+    QueueMessage,
+)
 from bizon.engine.queue.queue import AbstractQueue
 
 from .config import RabbitMQConfigDetails
@@ -41,7 +45,11 @@ class RabbitMQ(AbstractQueue):
             "RabbitMQ does not support getting messages from the queue, directly use callback in consumer."
         )
 
-    def terminate(self, iteration: int) -> bool:
-        self.put(source_records=[], iteration=iteration, signal=QUEUE_TERMINATION)
+    def terminate(self, iteration: int, success: bool = True) -> bool:
+        self.put(
+            source_records=[],
+            iteration=iteration,
+            signal=QUEUE_TERMINATION if success else QUEUE_TERMINATION_ERROR,
+        )
         logger.info("Sent termination signal to destination.")
         return True

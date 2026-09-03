@@ -6,7 +6,11 @@ from typing import Union
 from loguru import logger
 
 from bizon.destination.destination import AbstractDestination
-from bizon.engine.queue.config import QUEUE_TERMINATION, QueueMessage
+from bizon.engine.queue.config import (
+    QUEUE_TERMINATION,
+    QUEUE_TERMINATION_ERROR,
+    QueueMessage,
+)
 from bizon.engine.queue.queue import AbstractQueue, AbstractQueueConsumer
 from bizon.monitoring.monitor import AbstractMonitor
 from bizon.source.models import SourceIteration
@@ -66,11 +70,11 @@ class PythonQueue(AbstractQueue):
             return self.queue.qsize()
         return None
 
-    def terminate(self, iteration: int) -> bool:
+    def terminate(self, iteration: int, success: bool = True) -> bool:
         self.put(
             source_iteration=SourceIteration(next_pagination={}, records=[]),
             iteration=iteration,
-            signal=QUEUE_TERMINATION,
+            signal=QUEUE_TERMINATION if success else QUEUE_TERMINATION_ERROR,
         )
-        logger.info("Sent termination signal to destination.")
+        logger.info(f"Sent termination signal to destination (success={success}).")
         return True

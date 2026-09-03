@@ -35,8 +35,10 @@ from tenacity import (
 )
 
 from bizon.common.models import SyncMetadata
+from bizon.connectors.destinations.bigquery.src.config import UNNEST_HINT, describe_partition_problem
 from bizon.connectors.destinations.bigquery.src.partitioning import (
     describe,
+    should_apply_partitioning,
     spec_from_config,
     spec_from_table,
 )
@@ -86,6 +88,8 @@ class BigQueryStreamingV2Destination(AbstractDestination):
         # per-table metadata quota (5 ops / 10s) and returns 403 rateLimitExceeded.
         self._ensured_tables: set[tuple[str, int]] = set()
         self._resolved_default_table_id: str | None = None
+        # Tables already warned about for an unusable partition field (see should_apply_partitioning).
+        self._partition_warned: set[str] = set()
 
     @property
     def table_id(self) -> str:
@@ -300,6 +304,24 @@ class BigQueryStreamingV2Destination(AbstractDestination):
             return self.clustering_keys[self.destination_id]
         return None
 
+    def _partition_problem(self, schema, table_id: str) -> Optional[str]:
+        """Why the configured partition field cannot partition `table_id`, or None.
+
+        The config validator checks the same thing for the message, but cannot be the only check:
+        the stream runner assigns `record_schemas` after validation, so in a `streams:` run this is
+        the first look at the schema actually being written.
+        """
+        if not self.config.time_partitioning:
+            return None
+
+        return describe_partition_problem(
+            self.config.time_partitioning.field,
+            self.config.time_partitioning.type.value,
+            {field.name: field.field_type for field in schema},
+            f"the schema written to {table_id}",
+            hint=UNNEST_HINT if self.config.unnest else "",
+        )
+
     def _ensure_table(self, table_id: str):
         """Create `table_id` with the configured partitioning and clustering if it does not exist.
 
@@ -317,7 +339,9 @@ class BigQueryStreamingV2Destination(AbstractDestination):
             return
 
         table = bigquery.Table(table_id, schema=schema)
-        if self.config.time_partitioning:
+        if self.config.time_partitioning and should_apply_partitioning(
+            self.bq_client, table_id, self._partition_problem(schema, table_id), self._partition_warned
+        ):
             table.time_partitioning = TimePartitioning(
                 field=self.config.time_partitioning.field, type_=self.config.time_partitioning.type
             )
@@ -474,6 +498,12 @@ class BigQueryStreamingV2Destination(AbstractDestination):
 
         The function is picked from the column's declared BigQuery type, so this can never emit an
         arbitrary user expression.
+
+        Validation is against the spec being emitted, not against the config: `_publish_spec()`
+        returns the destination table's *current* spec whenever it differs and `enforce_partitioning`
+        is off, so a bad configured field never reaches this DDL in that case -- and must not stop a
+        publish it has no part in. When the configured spec is the one going out, BigQuery would
+        reject the statement, so raise.
         """
         window, field, _ = self._intended_spec() if spec is None else spec
 
@@ -483,28 +513,28 @@ class BigQueryStreamingV2Destination(AbstractDestination):
         if not field:
             return "PARTITION BY _PARTITIONDATE"  # Ingestion-time partitioning.
 
+        schema = self.get_bigquery_schema()
+        problem = describe_partition_problem(
+            field,
+            window,
+            {f.name: f.field_type for f in schema},
+            f"the schema written to {self.table_id}",
+            hint=UNNEST_HINT if self.config.unnest else "",
+        )
+        if problem:
+            raise ValueError(f"Cannot publish {self.table_id}. {problem}")
+
         quoted = f"`{field}`"
-        column_type = {f.name: (f.field_type or "").upper() for f in self.get_bigquery_schema()}.get(field)
+        column_type = {f.name: (f.field_type or "").upper() for f in schema}[field]
 
         if column_type == "TIMESTAMP":
             return f"PARTITION BY TIMESTAMP_TRUNC({quoted}, {window})"
         if column_type == "DATETIME":
             return f"PARTITION BY DATETIME_TRUNC({quoted}, {window})"
-        if column_type == "DATE":
-            if window == "DAY":
-                return f"PARTITION BY {quoted}"
-            if window == "HOUR":
-                raise ValueError(
-                    f"HOUR partitioning is not supported on DATE column '{field}'. "
-                    f"Use DAY/MONTH/YEAR, or change the column to TIMESTAMP or DATETIME."
-                )
-            return f"PARTITION BY DATE_TRUNC({quoted}, {window})"
-
-        raise ValueError(
-            f"Cannot partition {self.table_id} on '{field}': it is "
-            f"{column_type or 'not in the schema'}, not TIMESTAMP/DATE/DATETIME. Fix "
-            f"`destination.config.time_partitioning.field`, or set it to null for ingestion-time partitioning."
-        )
+        # DATE: describe_partition_problem already rejected HOUR, which BigQuery does not support here.
+        if window == "DAY":
+            return f"PARTITION BY {quoted}"
+        return f"PARTITION BY DATE_TRUNC({quoted}, {window})"
 
     def _clustering_clause(self, spec=None) -> str:
         clustering_fields = spec[2] if spec is not None else self._clustering_fields()

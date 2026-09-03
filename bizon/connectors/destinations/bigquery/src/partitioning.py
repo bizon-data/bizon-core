@@ -20,7 +20,10 @@ So the only way to repartition is to drop and recreate, which is why it is gated
 anyway).
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
+
+from google.api_core.exceptions import NotFound
+from loguru import logger
 
 # (window, field, clustering fields). `window is None` means the table is not time-partitioned;
 # `field is None` with a window means ingestion-time partitioning (_PARTITIONTIME).
@@ -51,6 +54,42 @@ def spec_from_config(time_partitioning, clustering_fields: Optional[List[str]] =
         return (None, None, clustering)
 
     return (time_partitioning.type.value, time_partitioning.field, clustering)
+
+
+def should_apply_partitioning(bq_client, table_id: str, problem: Optional[str], warned: Set[str]) -> bool:
+    """Decide what an unusable partition field means for `table_id`: fatal, or merely inert.
+
+    The streaming destinations only ever apply `time_partitioning` through `create_table`. If the
+    table is already there, BigQuery answers with `Conflict` and keeps the table's own spec -- the
+    configured field is never read, and the run succeeds exactly as it has on every previous run.
+    Raising in that case would stop pipelines that have been working for as long as their table has
+    existed, over a setting that has had no effect the whole time. So:
+
+    - table absent -> we are about to create it with this spec and BigQuery would reject it: raise,
+      naming the field, in place of the API's opaque error;
+    - table present -> warn once and return False, so the caller omits the partitioning it would
+      have discarded anyway.
+
+    The `get_table` probe only runs when there is a problem to adjudicate, and `warned` keeps it to
+    once per table per process.
+    """
+    if not problem:
+        return True
+
+    try:
+        bq_client.get_table(table_id)
+    except NotFound:
+        raise ValueError(f"Cannot create {table_id} with the configured partitioning. {problem}") from None
+
+    if table_id not in warned:
+        warned.add(table_id)
+        logger.warning(
+            f"{problem} {table_id} already exists, so BigQuery keeps that table's own partitioning "
+            f"and the configured field is not applied -- this run is unaffected. Fix the field, or "
+            f"the record_schema, so a table created from this config in future gets it right."
+        )
+
+    return False
 
 
 def describe(spec: PartitioningSpec) -> str:

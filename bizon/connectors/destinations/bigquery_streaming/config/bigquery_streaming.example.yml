@@ -32,7 +32,11 @@ destination:
     # Dataset location (US, EU, etc.)
     dataset_location: US
 
-    # Time partitioning (optional)
+    # Time partitioning (optional). `field` must be a TIMESTAMP/DATE/DATETIME column of the table
+    # this destination writes -- with `unnest: true` that means one from your record_schema, since
+    # the `_bizon_*` metadata columns are not written. `field: null` selects ingestion-time
+    # partitioning, and is what `unnest: true` falls back to if you omit `time_partitioning`.
+    # Only applied when bizon creates the table: BigQuery cannot repartition an existing one.
     time_partitioning:
       type: DAY  # Options: DAY, HOUR, MONTH, YEAR
       field: _bizon_loaded_at
