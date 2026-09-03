@@ -54,8 +54,12 @@ class AbstractQueue(ABC):
         pass
 
     @abstractmethod
-    def terminate(self, iteration: int) -> bool:
-        """Send a termination signal in the queue system"""
+    def terminate(self, iteration: int, success: bool = True) -> bool:
+        """Send a termination signal in the queue system.
+
+        `success=False` tells the consumer the producer stopped on an error, so it must stop
+        without publishing whatever it has already staged.
+        """
         pass
 
     def put(

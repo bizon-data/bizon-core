@@ -145,7 +145,7 @@ class Producer:
                 f"Check the backend error logs for more details."
             )
             logger.info("Terminating destination ...")
-            self.queue.terminate(iteration=0)
+            self.queue.terminate(iteration=0, success=False)
             return PipelineReturnStatus.BACKEND_ERROR
 
         # Handle incremental sync mode
@@ -290,10 +290,14 @@ class Producer:
                 f"Iteration {cursor.iteration} finished in {datetime.now(tz=UTC) - timestamp_start_iteration}. {items_in_queue}"
             )
 
-        logger.info("Terminating destination ...")
+        # The consumer publishes on this signal, so it has to carry how the producer exited.
+        # Terminating unconditionally with "success" is what let a source error still copy the
+        # partial staging table over the destination with WRITE_TRUNCATE.
+        success = return_value == PipelineReturnStatus.SUCCESS
+        logger.info(f"Terminating destination (success={success}) ...")
 
         try:
-            self.queue.terminate(iteration=cursor.iteration)
+            self.queue.terminate(iteration=cursor.iteration, success=success)
         except Exception as e:
             logger.error(traceback.format_exc())
             logger.error(

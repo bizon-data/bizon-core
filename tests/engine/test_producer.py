@@ -8,7 +8,9 @@ import pytest
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.engine.backend.models import JobStatus, StreamJob
 from bizon.engine.engine import RunnerFactory
+from bizon.engine.pipeline.models import PipelineReturnStatus
 from bizon.engine.pipeline.producer import Producer
+from bizon.engine.queue.config import QUEUE_TERMINATION, QUEUE_TERMINATION_ERROR
 from bizon.source.models import SourceIteration, SourceRecord
 
 
@@ -112,3 +114,48 @@ def test_queue_is_full(my_producer: Producer, sqlite_db_session, my_job: StreamJ
     assert is_queue_full is True
     assert queue_size == 1001
     assert approximate_nb_records_in_queue == 1_001_000
+
+
+def test_producer_terminates_cleanly_on_success(my_producer: Producer, sqlite_db_session, my_job: StreamJob):
+    """A finished producer signals QUEUE_TERMINATION, which is what lets the consumer publish."""
+    stop_event = threading.Event()
+    my_producer.run(job_id=my_job.id, stop_event=stop_event)
+
+    signals = _drain_signals(my_producer.queue)
+    assert signals[-1] == QUEUE_TERMINATION
+
+
+def test_producer_terminates_with_error_when_the_source_raises(
+    my_producer: Producer, sqlite_db_session, my_job: StreamJob
+):
+    """A source error must reach the consumer as "do not publish".
+
+    Terminating unconditionally with QUEUE_TERMINATION is what let a failed run copy its
+    partial staging table over the destination table and still be marked SUCCEEDED.
+    """
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("upstream API is down")
+
+    my_producer.source.get = boom
+
+    stop_event = threading.Event()
+    status = my_producer.run(job_id=my_job.id, stop_event=stop_event)
+
+    assert status == PipelineReturnStatus.SOURCE_ERROR
+
+    signals = _drain_signals(my_producer.queue)
+    assert signals[-1] == QUEUE_TERMINATION_ERROR
+
+
+def _drain_signals(queue) -> list:
+    """Return every signal put on the queue, in order."""
+    signals = []
+    while True:
+        try:
+            message = queue.queue.get_nowait()
+        except Exception:
+            break
+        signals.append(message.signal)
+        queue.queue.task_done()
+    return signals

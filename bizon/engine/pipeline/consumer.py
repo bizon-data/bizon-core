@@ -11,6 +11,7 @@ from bizon.destination.destination import AbstractDestination
 from bizon.engine.pipeline.models import PipelineReturnStatus
 from bizon.engine.queue.config import (
     QUEUE_TERMINATION,
+    QUEUE_TERMINATION_SIGNALS,
     AbstractQueueConfig,
     QueueMessage,
 )
@@ -47,15 +48,25 @@ class AbstractQueueConsumer(ABC):
 
         # Handle last iteration
         try:
-            if queue_message.signal == QUEUE_TERMINATION:
-                logger.info("Received termination signal, waiting for destination to close gracefully ...")
+            if queue_message.signal in QUEUE_TERMINATION_SIGNALS:
+                publish = queue_message.signal == QUEUE_TERMINATION
+                if publish:
+                    logger.info("Received termination signal, waiting for destination to close gracefully ...")
+                else:
+                    logger.warning(
+                        "Received termination signal from a failed producer: draining without publishing ..."
+                    )
                 self.destination.write_records_and_update_cursor(
                     df_source_records=df_source_records,
                     iteration=queue_message.iteration,
                     extracted_at=queue_message.extracted_at,
                     pagination=queue_message.pagination,
                     last_iteration=True,
+                    publish=publish,
                 )
+                if not publish:
+                    self.monitor.track_pipeline_status(PipelineReturnStatus.SOURCE_ERROR)
+                    return PipelineReturnStatus.SOURCE_ERROR
                 self.monitor.track_pipeline_status(PipelineReturnStatus.SUCCESS)
                 return PipelineReturnStatus.SUCCESS
 
