@@ -178,9 +178,15 @@ class AbstractDestination(ABC):
             if not publish:
                 # Publishing here is what used to turn a failed run into a silently truncated
                 # destination table: finalize() copies the staging table over the destination
-                # with WRITE_TRUNCATE regardless of how the producer exited. Leave the staging
-                # table in place — a full refresh resumes from it, an incremental appends it on
-                # the next successful run — and leave the job RUNNING so the next run reclaims it.
+                # with WRITE_TRUNCATE regardless of how the producer exited.
+                #
+                # The job is left RUNNING, which means different things per sync mode.
+                # Incremental resumes it: the producer restarts from the destination cursors this
+                # run wrote and the staged rows are published by the next successful finalize().
+                # A full refresh does NOT resume -- get_or_create_job() cancels a RUNNING
+                # full-refresh job and creates a new one, whose job_id has no cursor, so
+                # _ensure_clean_temp_table() drops the staging table and the run starts over.
+                # Do not rewrite this as "the staging table is the resume state" for both.
                 logger.warning(
                     f"Producer failed: skipping publication for {self.destination_id}. "
                     "The destination table is left untouched."

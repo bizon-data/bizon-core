@@ -403,9 +403,20 @@ See `bizon/connectors/sources/notion/src/source.py` for a complete incremental i
 
 ### Queue Types
 
-- `python_queue` - In-memory (dev/test)
-- `kafka` - Apache Kafka/Redpanda (production)
-- `rabbitmq` - RabbitMQ (production)
+- `python_queue` - In-memory. The default, and **the only working queue**.
+- `kafka` - Apache Kafka/Redpanda. **Unmaintained and currently broken.**
+- `rabbitmq` - RabbitMQ. **Unmaintained and currently broken.**
+
+Both broker adapters raise `TypeError` on their first message: their consumers pass
+`source_records=` to `write_records_and_update_cursor()`, which takes `df_source_records` (broken
+since the connectors move in `e183fa5`). They also carry their own copies of the termination
+handling — `kafka/consumer.py` and `rabbitmq/consumer.py` still test `== QUEUE_TERMINATION` and so
+never see `QUEUE_TERMINATION_ERROR` (0.5.4), which would leave them looping instead of stopping.
+Only `python_queue` routes through `AbstractQueueConsumer.process_queue_message`. Reviving either
+means fixing all three things; do not assume a change to the shared consumer reaches them.
+
+Note this is the queue adapter only. The Kafka **source** (`connectors/sources/kafka/`) is
+maintained and has its own e2e workflow.
 
 ### Backend Types (state storage)
 
