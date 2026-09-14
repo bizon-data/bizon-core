@@ -20,6 +20,8 @@ destination:
     dataset_id: bizon_test
     dataset_location: US
     create_dataset: false # create the dataset if it doesn't exist (default false)
+    # If the backend uses this same dataset, it also needs engine.backend.config.create_schema:
+    # the backend checks the dataset before any destination code runs.
     project_id: my-gcp-project-id
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet

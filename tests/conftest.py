@@ -41,7 +41,7 @@ def my_pg_backend_config():
             schema="public",
             syncCursorInDBEvery=2,
             host=os.environ.get("POSTGRES_HOST", "localhost"),
-            port=5432,
+            port=int(os.environ.get("POSTGRES_PORT", 5432)),
             username="postgres",
             password="bizon",
         ),

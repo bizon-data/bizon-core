@@ -14,8 +14,9 @@ destination:
 engine:
   backend:
     type: bigquery
-    database: <MY_GCP_PROJECT>
-    schema: bizon_test
-    syncCursorInDBEvery: 2
+    config:
+      database: <MY_GCP_PROJECT>
+      schema: bizon_test
+      syncCursorInDBEvery: 2
   runner:
     log_level: DEBUG

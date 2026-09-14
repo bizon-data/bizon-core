@@ -424,6 +424,25 @@ maintained and has its own e2e workflow.
 - `postgres` - PostgreSQL (production)
 - `bigquery` - Google BigQuery (production)
 
+**The backend touches its schema before anything else does.** `init_job()` runs
+`backend.check_prerequisites()` before the source's `check_connection()` and long before any
+destination code, so the destination's `create_dataset` cannot bootstrap a dataset the backend also
+needs - and it usually does, because the four state tables are typically created in the same dataset
+as the data. That is what `engine.backend.config.create_schema` is for.
+
+- **BigQuery only.** `bizon/engine/backend/models.py` binds no `__table_args__` schema, so on
+  Postgres the state tables land in the connection's `search_path`, not in `schema_name`. Creating
+  that schema would not be where they go, so Postgres keeps raising.
+- **`schema_location` is permanent.** BigQuery cannot move a dataset. The value pins both the
+  `OPTIONS(location=...)` of the DDL and the location of the backend's query jobs, so the creating
+  job runs where the dataset is meant to live. Unset inherits `destination.dataset_location` when
+  the two share a dataset, and BigQuery's own default otherwise.
+- **`service_account_key` is parsed but deliberately ignored.** Its config class was mis-annotated
+  for a long time, so the field never reached the engine and every BigQuery backend has in fact been
+  running on ADC. Honouring it would change who the backend authenticates as on upgrade.
+- Creation tolerates losing a race the same way `create_all_tables()` does: `IF NOT EXISTS` does not
+  make inspect-then-create atomic, and pipelines sharing a dataset start on the same cron.
+
 ### Runner Types
 
 - `thread` - ThreadPoolExecutor (default)

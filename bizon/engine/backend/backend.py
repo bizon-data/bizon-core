@@ -14,6 +14,10 @@ from .models import (
 )
 
 
+class BackendSchemaMissingError(Exception):
+    """The backend's schema/dataset does not exist and the config does not allow creating it."""
+
+
 class AbstractBackend(ABC):
     def __init__(self, config: AbstractBackendConfigDetails, type: BackendTypes, **kwargs):
         self.type = type
@@ -31,8 +35,10 @@ class AbstractBackend(ABC):
 
     @abstractmethod
     def check_prerequisites(self) -> bool:
-        """Check if the database contains the necessary tables, return True if entities are present
-        Return False if entities are not present, they will be created
+        """Make sure the backend is usable, and report whether its tables already exist.
+
+        Raises if the schema is missing and the config does not allow creating it. Returns True when
+        every state table is present, False when some are missing - they will be created next.
         """
         pass
 

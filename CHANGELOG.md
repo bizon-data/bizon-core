@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The BigQuery backend can create its own dataset: `create_schema` (+ `schema_location`) under `engine.backend.config`.** A pipeline pointed at a dataset that does not exist could not bootstrap itself at all, even with `create_dataset: true` on the destination. `AbstractRunner.init_job` runs `backend.check_prerequisites()` first, and its schema check hard-raised; the destination code that honours `create_dataset` only runs later, inside the consumer, so on a missing dataset it was unreachable. This matters because the backend and the destination routinely share one dataset — the four state tables live alongside the data — which is exactly the case `create_dataset` looked like it covered and did not.
+
+  `create_schema` defaults to `false`, so nothing changes for an existing config; a missing dataset still raises, now with a message that names the flag. The flag is BigQuery-only: on Postgres the state tables are created in the connection's `search_path`, not in `schema_name`, so creating that schema would not be where they land.
+
+  `schema_location` sets the location of the dataset being created **and** of the backend's query jobs. BigQuery cannot move a dataset afterwards, so the run that creates one logs a warning naming the location. Left unset it keeps BigQuery's own default — and when the backend and destination share a dataset and both create flags are on, it is inherited from `destination.dataset_location`.
+
+  A config that asks for `create_dataset: true` on a dataset the backend also uses, without `create_schema`, is now rejected at validation rather than at minute zero of the run. Conflicting locations only warn: the dataset is usually already there, in which case both settings are inert.
+
+### Fixed
+
+- **The BigQuery backend config silently discarded every BigQuery-only field.** `BigQuerySQLAlchemyConfig` declared `config: SQLAlchemyConfigDetails` instead of `BigQueryConfigDetails`, so pydantic validated `service_account_key` away without an error and `_get_engine_bigquery` guarded it behind a `hasattr` that was always false. Nothing authenticated with it, ever.
+
+  The annotation is fixed, but **`service_account_key` is still ignored** — honouring it now would move pipelines off the Application Default Credentials they have actually been running on, in a patch release, and the field is a JSON string where `credentials_info` wants a mapping. It logs a warning when set instead of vanishing. Making it work is a follow-up.
+
+- **The backend block in README and six shipped example configs did not parse.** `README.md` used `schema_name:` where the field's alias is `schema` (`Field required [schema]`), and put `syncCursorInDBEvery` next to `config:` rather than inside it, where it is silently ignored; six `*.example.yml` files and two blocks in `docs/ai-connector-guide.md` omitted the `config:` level entirely. README also documented `syncCursorInDBEvery`'s default as `2`; it is `10`.
+
 ## [0.5.4] - 2026-09-03
 
 ### Changed

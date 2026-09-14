@@ -268,8 +268,8 @@ engine:
     type: bigquery
     config:
       database: my-gcp-project
-      schema_name: bizon_backend
-    syncCursorInDBEvery: 10
+      schema: bizon_backend
+      syncCursorInDBEvery: 10
 ```
 
 Full, copy-pasteable examples live next to each connector under
@@ -418,8 +418,8 @@ engine:
     type: bigquery
     config:
       database: my-gcp-project
-      schema_name: bizon_backend
-    syncCursorInDBEvery: 2
+      schema: bizon_backend
+      syncCursorInDBEvery: 2
 ```
 
 #### First Run Behavior
@@ -492,7 +492,7 @@ The backend stores Bizon's state (jobs and cursors). Configured under `engine.ba
 | `postgres` | PostgreSQL — production, frequent cursor updates (`bizon[postgres]`) |
 | `bigquery` | BigQuery — lightweight production state storage (`bizon[bigquery]`) |
 
-`syncCursorInDBEvery` (default `2`) controls how often the source cursor is flushed to the
+`syncCursorInDBEvery` (default `10`) controls how often the source cursor is flushed to the
 backend — lower values mean finer-grained recovery, higher values mean less write overhead.
 
 ```yaml
@@ -503,11 +503,30 @@ engine:
       host: localhost
       port: 5432
       database: bizon
-      schema_name: bizon
+      schema: bizon
       username: ${env://PG_USER}
       password: ${env://PG_PASSWORD}
-    syncCursorInDBEvery: 10
+      syncCursorInDBEvery: 10
 ```
+
+On BigQuery the backend dataset must exist before the run starts — `check_prerequisites()` runs in
+`init_job`, before any destination code. The destination's `create_dataset` therefore cannot
+bootstrap it, even when both point at the same dataset. Set `create_schema` on the backend instead:
+
+```yaml
+engine:
+  backend:
+    type: bigquery
+    config:
+      database: my-gcp-project
+      schema: bizon_backend
+      create_schema: true      # create the dataset if it is missing (default false)
+      schema_location: EU      # permanent: BigQuery cannot move a dataset after creation
+```
+
+`schema_location` also pins the location of the backend's query jobs. Leave it unset to keep
+BigQuery's own default. When the backend and the destination share one dataset and both create
+flags are on, an unset `schema_location` is inherited from `destination.dataset_location`.
 
 ### Queues
 

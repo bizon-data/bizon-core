@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import Field
 
@@ -54,6 +54,10 @@ class SQLiteInMemoryConfig(AbstractBackendConfig):
 
 
 ## BIGQUERY ##
+# Interpolated into CREATE SCHEMA DDL, so it is constrained here as well as at the call site.
+BIGQUERY_LOCATION_PATTERN = r"[A-Za-z0-9][A-Za-z0-9-]*"
+
+
 class BigQueryConfigDetails(SQLAlchemyConfigDetails):
     database: str = Field(
         description="GCP Project name",
@@ -71,7 +75,21 @@ class BigQueryConfigDetails(SQLAlchemyConfigDetails):
         default="",
     )
 
+    create_schema: bool = Field(
+        default=False,
+        description="Create the backend dataset if it does not exist. When False, a missing dataset "
+        "raises an error naming this flag.",
+    )
+
+    schema_location: Optional[str] = Field(
+        default=None,
+        pattern=rf"^{BIGQUERY_LOCATION_PATTERN}$",
+        description="BigQuery location of the backend dataset (e.g. 'US', 'EU', 'europe-west1'). Used "
+        "when creating it and as the location of the backend's query jobs. A dataset's location cannot "
+        "be changed after creation. Unset leaves BigQuery's own default.",
+    )
+
 
 class BigQuerySQLAlchemyConfig(AbstractBackendConfig):
     type: Literal[BackendTypes.BIGQUERY]
-    config: SQLAlchemyConfigDetails
+    config: BigQueryConfigDetails

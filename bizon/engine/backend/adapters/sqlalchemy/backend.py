@@ -1,15 +1,16 @@
 import json
+import re
 from datetime import datetime
 from typing import Optional, Union
 
 from loguru import logger
 from pytz import UTC
-from sqlalchemy import Result, Select, create_engine, func, inspect, select, update
+from sqlalchemy import Result, Select, create_engine, func, inspect, select, text, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
-from bizon.engine.backend.backend import AbstractBackend
+from bizon.engine.backend.backend import AbstractBackend, BackendSchemaMissingError
 from bizon.engine.backend.config import BackendTypes
 from bizon.engine.backend.models import (
     TABLE_DESTINATION_CURSOR,
@@ -25,7 +26,36 @@ from bizon.engine.backend.models import (
     StreamReset,
 )
 
-from .config import BigQueryConfigDetails, PostgresConfigDetails, SQLiteConfigDetails
+from .config import (
+    BIGQUERY_LOCATION_PATTERN,
+    BigQueryConfigDetails,
+    PostgresConfigDetails,
+    SQLiteConfigDetails,
+)
+
+_BIGQUERY_IDENTIFIER_PATTERN = r"[A-Za-z0-9_-]+"
+
+
+def build_bigquery_create_schema_sql(project: str, dataset: str, location: Optional[str], preparer) -> str:
+    """Build BigQuery's CREATE SCHEMA DDL.
+
+    Hand-built rather than `sqlalchemy.schema.CreateSchema`, which cannot carry OPTIONS(location=...)
+    - and a dataset's location is fixed at creation. Identifiers are re-validated here because the
+    generic preparer escapes by doubling quotes, which is not BigQuery's rule.
+    """
+    for identifier in (project, dataset):
+        if not re.fullmatch(_BIGQUERY_IDENTIFIER_PATTERN, identifier):
+            raise ValueError(f"Invalid BigQuery identifier {identifier!r} in the backend config")
+
+    qualified = f"{preparer.quote_identifier(project)}.{preparer.quote_identifier(dataset)}"
+
+    if not location:
+        return f"CREATE SCHEMA IF NOT EXISTS {qualified}"
+
+    if not re.fullmatch(BIGQUERY_LOCATION_PATTERN, location):
+        raise ValueError(f"Invalid BigQuery location {location!r}")
+
+    return f"CREATE SCHEMA IF NOT EXISTS {qualified} OPTIONS(location='{location}')"
 
 
 class SQLAlchemyBackend(AbstractBackend):
@@ -56,16 +86,24 @@ class SQLAlchemyBackend(AbstractBackend):
         return session_
 
     def _get_engine_bigquery(self) -> Engine:
-        # If service account key is provided, use it
-        if hasattr(self.config, "service_account_key") and self.config.service_account_key:
-            return create_engine(
-                f"bigquery://{self.config.database}/{self.config.schema_name}",
-                echo=self.config.echoEngine,
-                credentials_info=self.config.service_account_key,
+        # Dropped during validation until the config annotation was fixed, so it has never
+        # authenticated anything; honouring it now would move pipelines off the ADC they run on today.
+        if self.config.service_account_key:
+            logger.warning(
+                "engine.backend.config.service_account_key is ignored: the BigQuery backend "
+                "authenticates with Application Default Credentials."
             )
-        # Otherwise we will rely on the default Google Authentication mechanism (e.g. GOOGLE_APPLICATION_CREDENTIALS)
+
+        kwargs = {}
+
+        # Pin the job location only when asked for: unset keeps the client's own inference.
+        if self.config.schema_location:
+            kwargs["location"] = self.config.schema_location
+
         return create_engine(
-            f"bigquery://{self.config.database}/{self.config.schema_name}", echo=self.config.echoEngine
+            f"bigquery://{self.config.database}/{self.config.schema_name}",
+            echo=self.config.echoEngine,
+            **kwargs,
         )
 
     def _get_engine_postgres(self) -> Engine:
@@ -104,21 +142,75 @@ class SQLAlchemyBackend(AbstractBackend):
 
         raise Exception(f"Unsupported database type {self.type}")
 
-    def _check_schema_exist(self):
+    def _schema_exists(self) -> bool:
+        with self.get_engine().connect() as connection:
+            return inspect(connection).has_schema(self.config.schema_name)
+
+    def _schema_missing_message(self) -> str:
+        if self.type == BackendTypes.BIGQUERY:
+            return (
+                f"BigQuery dataset {self.config.database}.{self.config.schema_name} does not exist. "
+                f"Create it manually, or set `create_schema: true` (and `schema_location`) on the "
+                f"engine.backend config. The destination's `create_dataset` does not cover it: the "
+                f"backend runs before any destination code."
+            )
+        return (
+            f"Schema or dataset {self.config.schema_name} does not exist in the database, you need to create it first."
+        )
+
+    def _execute_create_schema(self, statement):
+        # begin(), not connect(): SQLAlchemy 2.0 is commit-as-you-go, so DDL on a bare connection is
+        # rolled back when the block exits.
+        with self.get_engine().begin() as connection:
+            connection.execute(statement)
+
+    def _create_bigquery_dataset(self):
+        logger.warning(
+            f"Creating BigQuery dataset {self.config.database}.{self.config.schema_name} in "
+            f"{self.config.schema_location or 'BigQuery default location'}. A dataset's location cannot "
+            f"be changed afterwards - set `schema_location` if this is not where it belongs."
+        )
+
+        statement = text(
+            build_bigquery_create_schema_sql(
+                project=self.config.database,
+                dataset=self.config.schema_name,
+                location=self.config.schema_location,
+                preparer=self.get_engine().dialect.identifier_preparer,
+            )
+        )
+
+        # Same race as create_all_tables: IF NOT EXISTS does not make inspect-then-create atomic, and
+        # pipelines sharing a dataset start on the same cron. Losing is the outcome we wanted.
+        try:
+            self._execute_create_schema(statement)
+        except SQLAlchemyError:
+            if not self._schema_exists():
+                raise
+            logger.debug("Lost a concurrent dataset creation race; the dataset exists, continuing.")
+
+    def _ensure_schema_exists(self):
+        """Make sure the backend's schema exists, creating it when the config allows it."""
         if self.type in [BackendTypes.SQLITE, BackendTypes.SQLITE_IN_MEMORY]:
             logger.warning("SQLite does not support schemas")
-            return True
+            return
 
-        engine = self.get_engine()
+        if self._schema_exists():
+            return
 
-        with engine.connect() as connection:
-            if not inspect(connection).has_schema(self.config.schema_name):
-                logger.error(
-                    f"Schema or dataset {self.config.schema_name} does not exist in the database, you need to create it first."
-                )
-                raise Exception(
-                    f"Schema or dataset {self.config.schema_name} does not exist in the database, you need to create it first."
-                )
+        # BigQuery only: on Postgres the state tables are created in the connection's search_path, not
+        # in `schema_name`, so creating that schema would not be where they land.
+        if self.type == BackendTypes.BIGQUERY and self.config.create_schema:
+            self._create_bigquery_dataset()
+            return
+
+        message = self._schema_missing_message()
+        logger.error(message)
+        raise BackendSchemaMissingError(message)
+
+    def _check_schema_exist(self):
+        """Deprecated alias for `_ensure_schema_exists`."""
+        self._ensure_schema_exists()
 
     def get_engine(self) -> Engine:
         """Return the SQLAlchemy engine"""
@@ -161,13 +253,13 @@ class SQLAlchemyBackend(AbstractBackend):
         Base.metadata.drop_all(engine)
 
     def check_prerequisites(self) -> bool:
-        """Check if the database contains the necessary tables, return True if entities are present
-        Return False if entities are not present, they will be created
+        """Make sure the backend is usable, and report whether its tables already exist.
+
+        Raises if the schema is missing and the config does not allow creating it. Returns True when
+        every state table is present, False when some are missing - they will be created next.
         """
 
-        # Check if schema exists
-        if self.type != BackendTypes.SQLITE:
-            self._check_schema_exist()
+        self._ensure_schema_exists()
 
         missing = self._missing_tables()
 
