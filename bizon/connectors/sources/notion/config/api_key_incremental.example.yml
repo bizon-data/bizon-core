@@ -29,9 +29,10 @@ destination:
 engine:
   backend:
     type: bigquery
-    database: <MY_GCP_PROJECT>
-    schema: bizon_backend
-    syncCursorInDBEvery: 2
+    config:
+      database: <MY_GCP_PROJECT>
+      schema: bizon_backend
+      syncCursorInDBEvery: 2
 
 # Incremental sync for Notion:
 # - First run: Fetches all pages/databases (full refresh behavior)

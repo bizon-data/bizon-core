@@ -644,9 +644,10 @@ destination:
 engine:
   backend:
     type: bigquery
-    database: <YOUR_GCP_PROJECT>
-    schema: bizon_state
-    syncCursorInDBEvery: 10
+    config:
+      database: <YOUR_GCP_PROJECT>
+      schema: bizon_state
+      syncCursorInDBEvery: 10
 ```
 
 ### Config Placeholders Reference
@@ -873,9 +874,10 @@ destination:
 engine:
   backend:
     type: bigquery
-    database: <YOUR_GCP_PROJECT>
-    schema: bizon_backend
-    syncCursorInDBEvery: 2
+    config:
+      database: <YOUR_GCP_PROJECT>
+      schema: bizon_backend
+      syncCursorInDBEvery: 2
 ```
 
 ### 6.6 Incremental Sync Validation Checklist

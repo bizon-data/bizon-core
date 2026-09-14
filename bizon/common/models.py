@@ -1,5 +1,6 @@
 from typing import Any, Optional, Union
 
+from loguru import logger
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from bizon.alerting.models import AlertingConfig
@@ -16,6 +17,7 @@ from bizon.connectors.destinations.bigquery_streaming_v2.src.config import (
 from bizon.connectors.destinations.file.src.config import FileDestinationConfig
 from bizon.connectors.destinations.logger.src.config import LoggerConfig
 from bizon.destination.config import DestinationTypes
+from bizon.engine.backend.config import BackendTypes
 from bizon.engine.config import EngineConfig
 from bizon.engine.resolvers.config import SecretsConfig
 from bizon.monitoring.config import MonitoringConfig
@@ -27,6 +29,12 @@ from bizon.transform.config import TransformModel
 # exception: it has no `finalize()` and no staging table, so even a plain full refresh appends to the
 # final table instead of replacing it.
 RESET_UNSUPPORTED_DESTINATIONS = {DestinationTypes.BIGQUERY_STREAMING}
+
+BIGQUERY_DESTINATIONS = {
+    DestinationTypes.BIGQUERY,
+    DestinationTypes.BIGQUERY_STREAMING,
+    DestinationTypes.BIGQUERY_STREAMING_V2,
+}
 
 
 class StreamSourceConfig(BaseModel):
@@ -199,6 +207,53 @@ class BizonConfig(BaseModel):
             raise ValueError(
                 f"Configuration Error: source.reset is not supported by destination "
                 f"'{self.destination.name}', which appends to its table instead of replacing it."
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_backend_can_create_its_dataset(self) -> "BizonConfig":
+        """Reconcile the two flags that govern one shared BigQuery dataset.
+
+        The backend and the destination routinely point at the same dataset - the four state tables
+        live alongside the data - and the backend touches it first, from init_job(), before any
+        destination code runs. So the destination's `create_dataset` cannot bootstrap a dataset the
+        backend also needs.
+        """
+        if self.engine.backend.type != BackendTypes.BIGQUERY or self.destination.name not in BIGQUERY_DESTINATIONS:
+            return self
+
+        backend = self.engine.backend.config
+        destination = self.destination.config
+
+        if (backend.database, backend.schema_name) != (destination.project_id, destination.dataset_id):
+            return self
+
+        # Only the batch destination has the flag; the streaming pair's dataset code is unreachable.
+        if getattr(destination, "create_dataset", False) and not backend.create_schema:
+            raise ValueError(
+                f"Configuration Error: destination.create_dataset is set for "
+                f"{destination.project_id}.{destination.dataset_id}, but engine.backend points at that "
+                f"same dataset with create_schema unset. The backend checks the dataset before the "
+                f"destination ever runs, so the first run would fail. Set "
+                f"`engine.backend.config.create_schema: true` as well."
+            )
+
+        if not backend.create_schema:
+            return self
+
+        if backend.schema_location is None:
+            # One dataset, one location - and this only ever applies to a dataset that does not exist
+            # yet, so it cannot move an existing one.
+            backend.schema_location = destination.dataset_location
+        elif backend.schema_location != destination.dataset_location:
+            # Warn rather than raise: the dataset is usually already there, in which case both
+            # settings are inert and the pipeline has been working.
+            logger.warning(
+                f"engine.backend.config.schema_location ({backend.schema_location}) and "
+                f"destination.dataset_location ({destination.dataset_location}) disagree about "
+                f"{destination.project_id}.{destination.dataset_id}. Whichever path creates it wins, "
+                f"permanently."
             )
 
         return self

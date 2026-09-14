@@ -79,6 +79,7 @@ destination:
 engine:
   backend:
     type: bigquery
-    database: <YOUR_GCP_PROJECT>
-    schema: bizon_state
-    syncCursorInDBEvery: 10
+    config:
+      database: <YOUR_GCP_PROJECT>
+      schema: bizon_state
+      syncCursorInDBEvery: 10
