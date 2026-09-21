@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.5] - 2026-09-21
+
 ### Added
 
 - **The BigQuery backend can create its own dataset: `create_schema` (+ `schema_location`) under `engine.backend.config`.** A pipeline pointed at a dataset that does not exist could not bootstrap itself at all, even with `create_dataset: true` on the destination. `AbstractRunner.init_job` runs `backend.check_prerequisites()` first, and its schema check hard-raised; the destination code that honours `create_dataset` only runs later, inside the consumer, so on a missing dataset it was unreachable. This matters because the backend and the destination routinely share one dataset — the four state tables live alongside the data — which is exactly the case `create_dataset` looked like it covered and did not.
