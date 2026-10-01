@@ -92,3 +92,26 @@ def test_batch_respects_max_rows_per_request(build_bq_destination):
     with build_bq_destination("streaming_v2", bq_max_rows_per_request=2) as destination:
         batches = list(destination.batch([b"a", b"b", b"c"]))
     assert [len(b["stream_batch"]) for b in batches] == [2, 1]
+
+
+def test_large_rows_land_json_columns_as_json_not_strings(build_bq_destination, bq_ids, make_bq_table):
+    """The load-job path rebuilds rows with MessageToDict, whose JSON-typed columns come back as the
+    JSON *string* the proto carried. Loaded as-is into a JSON column, BigQuery stores a string scalar."""
+    from unittest.mock import MagicMock
+
+    schema = [
+        SchemaField(name="_source_record_id", field_type="STRING", mode="REQUIRED"),
+        SchemaField(name="_source_data", field_type="JSON", mode="NULLABLE"),
+    ]
+    proto_schema, table_row_class = get_proto_schema_and_class(schema)
+    serialized = BigQueryStreamingV2Destination.to_protobuf_serialization(
+        table_row_class, {"_source_record_id": "r1", "_source_data": {"a": [1, 2], "b": "x" * 100}}
+    )
+    with build_bq_destination("streaming_v2", tables={bq_ids["temp"]: make_bq_table(schema=schema)}) as destination:
+        load_job = MagicMock(state="DONE")
+        destination.bq_client.load_table_from_json = MagicMock(return_value=load_job)
+
+        destination.process_streaming_batch("stream", proto_schema, {"json_batch": [serialized]}, table_row_class)
+
+        rows = destination.bq_client.load_table_from_json.call_args.args[0]
+        assert rows == [{"_source_record_id": "r1", "_source_data": {"a": [1, 2], "b": "x" * 100}}]

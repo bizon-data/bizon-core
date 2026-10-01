@@ -34,6 +34,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   serialization (1,600 to ~10 us/row at 50 KB). Verified on a live setup against BigQuery with
   `bigquery`, `bigquery_streaming_v2` and `bigquery_streaming_v2` + `unnest`.
 
+### Fixed
+
+- **`bigquery_streaming_v2` could not publish a table partitioned by ingestion time.** With `unnest: true`
+  and no `time_partitioning.field` (the documented fallback), a `full_refresh` finalize ran
+  `CREATE OR REPLACE TABLE ... PARTITION BY _PARTITIONDATE AS SELECT *`, which BigQuery rejects with
+  `Unrecognized name: _PARTITIONDATE`, and an `incremental` finalize ran `INSERT INTO ... SELECT *`, which
+  BigQuery refuses on ingestion-time partitioned tables ("Omitting INSERT target column list is
+  unsupported"). Neither can be expressed in a CTAS, so an ingestion-time full refresh now ensures the
+  main table, `TRUNCATE`s it and `INSERT`s from the staging table by column name; the table is empty
+  between the two statements rather than swapped atomically. The incremental append names its columns in
+  every case. Column-partitioned tables keep the atomic CTAS path. `stream` mode, which never finalizes,
+  is unaffected.
+- **`bigquery_streaming_v2` stored large rows' JSON columns as JSON strings.** Rows over 8 MB bypass the
+  Storage Write API and go through a load job after `MessageToDict`, which hands back JSON-typed columns
+  (`_source_data` without `unnest`, any `JSON` column with it) as the string the proto carried. Loaded into
+  a `JSON` column, BigQuery kept the string scalar, so `JSON_VALUE(_source_data, '$.x')` returned NULL for
+  exactly those rows. JSON columns are parsed back before the load.
+
 ## [0.5.5] - 2026-09-21
 
 ### Added
