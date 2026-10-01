@@ -1,6 +1,8 @@
+import json
 from datetime import datetime
 from typing import List, Optional, Union
 
+import orjson
 import polars as pl
 from pydantic import BaseModel, Field, field_validator
 from pytz import UTC
@@ -14,6 +16,27 @@ source_record_schema = pl.Schema(
         ("destination_id", str),
     ]
 )
+
+
+def _dump_data(data: dict) -> bytes:
+    try:
+        return orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS)
+    except TypeError:
+        # orjson refuses integers outside 64 bits; the stdlib encoder does not.
+        return json.dumps(data, ensure_ascii=False).encode("utf-8")
+
+
+def source_records_to_df(records: List["SourceRecord"]) -> pl.DataFrame:
+    """Build the `source_record_schema` frame the queue carries from a list of records."""
+    return pl.DataFrame(
+        {
+            "id": [record.id for record in records],
+            "data": pl.Series([_dump_data(record.data) for record in records], dtype=pl.Binary).cast(pl.String),
+            "timestamp": [record.timestamp for record in records],
+            "destination_id": [record.destination_id for record in records],
+        },
+        schema=source_record_schema,
+    )
 
 
 ### /!\ These models Source* will be used in all sources so we better never have to change them !!!

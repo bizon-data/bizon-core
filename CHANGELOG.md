@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Per-record hot path: ~2x engine throughput, ~20x faster Storage Write API serialization.** Profiling the
+  pipeline end to end showed that most per-record CPU was Python glue rather than I/O: `uuid4()` per row
+  (a `urandom` syscall and GIL re-acquire each), `json.dumps` per record in `queue.put`, and the pure-Python
+  `ParseDict` the `bigquery_streaming_v2` destination ran on every row (six regex searches per field).
+  - `transform_to_df_destination_records` draws one `token_hex` for the whole frame and broadcasts the two
+    timestamps with `pl.lit`. `_bizon_id` stays a 32-char hex string; `_bizon_loaded_at` is now the same
+    instant for every row of a flush instead of drifting by microseconds across it. An empty frame now keeps
+    the destination schema instead of `Null` dtypes.
+  - `queue.put` and the stream runner share one `source_records_to_df()` that serializes with `orjson`
+    straight into a polars `Binary` column. `_source_data` is therefore compact JSON (`{"a":1}` rather than
+    `{"a": 1}`); consumers parsing it are unaffected. Payloads containing `datetime` values are now
+    serialized as RFC 3339 strings instead of raising `TypeError`; non-string dict keys are still
+    stringified. `simplejson` is no longer a dependency.
+  - `bigquery_streaming_v2.to_protobuf_serialization` builds the row message with keyword arguments and
+    only falls back to `ParseDict` when that fails (numeric strings, unknown fields), so the bytes sent and
+    the errors raised are unchanged.
+  - `bigquery_streaming_v2.batch()` sizes rows by their serialized length rather than
+    `len(str(bytes))`, which inflated every non-printable byte to four characters: append requests were
+    closing 18-28% early and rows between 2 MB and 8 MB were misrouted through the large-row load job. A
+    large row no longer forces the streaming batch before it to flush.
+
+  Measured on 1 KB records: 26.9 to 12.1 us/record through the engine, 51.5 to ~2 us/row for v2
+  serialization (1,600 to ~10 us/row at 50 KB). Verified on a live setup against BigQuery with
+  `bigquery`, `bigquery_streaming_v2` and `bigquery_streaming_v2` + `unnest`.
+
 ## [0.5.5] - 2026-09-21
 
 ### Added

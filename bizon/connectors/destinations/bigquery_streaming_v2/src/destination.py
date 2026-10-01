@@ -204,12 +204,21 @@ class BigQueryStreamingV2Destination(AbstractDestination):
     def to_protobuf_serialization(TableRowClass: Type[Message], row: dict) -> bytes:
         """Convert a row to a Protobuf serialization."""
         # Proto schema only has scalar types — convert any dict/list values to JSON strings
-        row = {k: orjson.dumps(v).decode("utf-8") if isinstance(v, (dict, list)) else v for k, v in row.items()}
+        row = {
+            k: orjson.dumps(v).decode("utf-8") if isinstance(v, (dict, list)) else v
+            for k, v in row.items()
+            if v is not None
+        }
         try:
-            record = ParseDict(row, TableRowClass())
-        except ParseError as e:
-            logger.error(f"Error serializing record: {e} for row: {row}.")
-            raise e
+            record = TableRowClass(**row)
+        except (TypeError, ValueError):
+            # ParseDict is ~20x slower (pure Python, regex per field) but coerces "30" into an INT64
+            # and reports an unknown field as ParseError, so it stays as the fallback for those rows.
+            try:
+                record = ParseDict(row, TableRowClass())
+            except ParseError as e:
+                logger.error(f"Error serializing record: {e} for row: {row}.")
+                raise e
 
         try:
             serialized_record = record.SerializeToString()
@@ -461,8 +470,13 @@ class BigQueryStreamingV2Destination(AbstractDestination):
         large_rows = []
 
         for item in iterable:
-            # Estimate the size of the item (as JSON)
-            item_size = len(str(item).encode("utf-8"))
+            item_size = len(item)
+
+            # Large rows go through a load job, so they never count against the append request size.
+            if item_size > self.MAX_ROW_SIZE_BYTES:
+                large_rows.append(item)
+                logger.warning(f"Large row detected: {item_size} bytes")
+                continue
 
             # If adding this item would exceed either limit, yield current batch and start new one
             if (
@@ -477,12 +491,8 @@ class BigQueryStreamingV2Destination(AbstractDestination):
                 current_batch_size = 0
                 large_rows = []
 
-            if item_size > self.MAX_ROW_SIZE_BYTES:
-                large_rows.append(item)
-                logger.warning(f"Large row detected: {item_size} bytes")
-            else:
-                current_batch.append(item)
-                current_batch_size += item_size
+            current_batch.append(item)
+            current_batch_size += item_size
 
         # Yield the last batch
         if current_batch or large_rows:
