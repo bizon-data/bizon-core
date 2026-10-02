@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-02
+
 ### Changed
 
 - **Per-record hot path: ~2x engine throughput, ~20x faster Storage Write API serialization.** Profiling the
