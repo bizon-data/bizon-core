@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from decimal import Decimal
 from typing import List, Optional, Union
 
 import orjson
@@ -18,9 +19,16 @@ source_record_schema = pl.Schema(
 )
 
 
+def _json_default(value):
+    # Avro decimals decode to Decimal; emit the exact number, as simplejson did.
+    if isinstance(value, Decimal) and value.is_finite():
+        return orjson.Fragment(str(value))
+    raise TypeError(f"Type is not JSON serializable: {type(value).__name__}")
+
+
 def _dump_data(data: dict) -> bytes:
     try:
-        return orjson.dumps(data, option=orjson.OPT_NON_STR_KEYS)
+        return orjson.dumps(data, default=_json_default, option=orjson.OPT_NON_STR_KEYS)
     except TypeError:
         # orjson refuses integers outside 64 bits; the stdlib encoder does not.
         return json.dumps(data, ensure_ascii=False).encode("utf-8")

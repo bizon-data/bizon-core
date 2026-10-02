@@ -21,7 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     straight into a polars `Binary` column. `_source_data` is therefore compact JSON (`{"a":1}` rather than
     `{"a": 1}`); consumers parsing it are unaffected. Payloads containing `datetime` values are now
     serialized as RFC 3339 strings instead of raising `TypeError`; non-string dict keys are still
-    stringified. `simplejson` is no longer a dependency.
+    stringified, and `Decimal` values (Avro decimals) are still written as exact JSON numbers.
+    `simplejson` is no longer a dependency.
   - `bigquery_streaming_v2.to_protobuf_serialization` builds the row message with keyword arguments and
     only falls back to `ParseDict` when that fails (numeric strings, unknown fields), so the bytes sent and
     the errors raised are unchanged.

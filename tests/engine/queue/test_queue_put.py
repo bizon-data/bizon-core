@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from queue import Queue
 
 import orjson
@@ -47,6 +48,18 @@ def test_datetime_values_are_serialized_as_iso8601(convert):
     else:
         df = StreamingRunner.convert_source_records(records)
     assert orjson.loads(df["data"][0]) == {"at": "2024-12-05T11:30:00+00:00"}
+
+
+@pytest.mark.parametrize("convert", ["queue", "streaming_runner"])
+def test_decimal_values_are_serialized_as_exact_numbers(convert):
+    records = [
+        SourceRecord(id="r1", data={"amt": Decimal("12.30"), "big": Decimal("123456789012345678901.5")}, timestamp=TS)
+    ]
+    if convert == "queue":
+        df = put_and_get(records).df_source_records
+    else:
+        df = StreamingRunner.convert_source_records(records)
+    assert df["data"][0] == '{"amt":12.30,"big":123456789012345678901.5}'
 
 
 def test_queue_message_carries_iteration_and_pagination():
