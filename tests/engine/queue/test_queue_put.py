@@ -62,6 +62,16 @@ def test_decimal_values_are_serialized_as_exact_numbers(convert):
     assert df["data"][0] == '{"amt":12.30,"big":123456789012345678901.5}'
 
 
+@pytest.mark.parametrize("convert", ["queue", "streaming_runner"])
+def test_bytes_values_are_decoded_as_utf8(convert):
+    records = [SourceRecord(id="r1", data={"v": b"\t", "b": bytearray(b"ok")}, timestamp=TS)]
+    if convert == "queue":
+        df = put_and_get(records).df_source_records
+    else:
+        df = StreamingRunner.convert_source_records(records)
+    assert orjson.loads(df["data"][0]) == {"v": "\t", "b": "ok"}
+
+
 def test_queue_message_carries_iteration_and_pagination():
     message = put_and_get([SourceRecord(id="r1", data={}, timestamp=TS)])
     assert message.iteration == 3

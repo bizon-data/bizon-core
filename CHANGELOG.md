@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-02
+
+### Fixed
+
+- **Records carrying `bytes` values raised `TypeError: Object of type bytes is not JSON serializable`.** Since
+  0.6.0 serializes with `orjson`, a raw `bytes`/`bytearray` value (e.g. an Avro `bytes` field such as
+  Debezium's `VariableScaleDecimal.value`) failed `source_records_to_df()`. In `stream` mode nothing caught
+  it, so the pipeline crashed and restarted on the same uncommitted message. Such values are decoded as
+  UTF-8 again, as `simplejson` did up to 0.5.5; bytes that are not valid UTF-8 still raise, as before.
+
 ## [0.6.0] - 2026-10-02
 
 ### Changed

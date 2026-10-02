@@ -23,6 +23,9 @@ def _json_default(value):
     # Avro decimals decode to Decimal; emit the exact number, as simplejson did.
     if isinstance(value, Decimal) and value.is_finite():
         return orjson.Fragment(str(value))
+    # Avro `bytes` fields; simplejson decoded these as strict UTF-8.
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("utf-8")
     raise TypeError(f"Type is not JSON serializable: {type(value).__name__}")
 
 
