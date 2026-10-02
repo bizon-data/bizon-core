@@ -4,7 +4,6 @@ from datetime import datetime
 from typing import List
 
 import polars as pl
-import simplejson as json
 from loguru import logger
 from pytz import UTC
 
@@ -14,7 +13,7 @@ from bizon.destination.models import transform_to_df_destination_records
 from bizon.engine.pipeline.models import PipelineReturnStatus
 from bizon.engine.runner.config import RunnerStatus
 from bizon.engine.runner.runner import AbstractRunner
-from bizon.source.models import SourceRecord, source_record_schema
+from bizon.source.models import SourceRecord, source_records_to_df
 from bizon.source.source import AbstractSource
 
 
@@ -24,15 +23,7 @@ class StreamingRunner(AbstractRunner):
 
     @staticmethod
     def convert_source_records(records: List[SourceRecord]) -> pl.DataFrame:
-        return pl.DataFrame(
-            {
-                "id": [record.id for record in records],
-                "data": [json.dumps(record.data, ensure_ascii=False) for record in records],
-                "timestamp": [record.timestamp for record in records],
-                "destination_id": [record.destination_id for record in records],
-            },
-            schema=source_record_schema,
-        )
+        return source_records_to_df(records)
 
     @staticmethod
     def convert_to_destination_records(df_source_records: pl.DataFrame, extracted_at: datetime) -> pl.DataFrame:

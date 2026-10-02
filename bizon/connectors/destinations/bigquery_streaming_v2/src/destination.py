@@ -204,12 +204,21 @@ class BigQueryStreamingV2Destination(AbstractDestination):
     def to_protobuf_serialization(TableRowClass: Type[Message], row: dict) -> bytes:
         """Convert a row to a Protobuf serialization."""
         # Proto schema only has scalar types — convert any dict/list values to JSON strings
-        row = {k: orjson.dumps(v).decode("utf-8") if isinstance(v, (dict, list)) else v for k, v in row.items()}
+        row = {
+            k: orjson.dumps(v).decode("utf-8") if isinstance(v, (dict, list)) else v
+            for k, v in row.items()
+            if v is not None
+        }
         try:
-            record = ParseDict(row, TableRowClass())
-        except ParseError as e:
-            logger.error(f"Error serializing record: {e} for row: {row}.")
-            raise e
+            record = TableRowClass(**row)
+        except (TypeError, ValueError):
+            # ParseDict is ~20x slower (pure Python, regex per field) but coerces "30" into an INT64
+            # and reports an unknown field as ParseError, so it stays as the fallback for those rows.
+            try:
+                record = ParseDict(row, TableRowClass())
+            except ParseError as e:
+                logger.error(f"Error serializing record: {e} for row: {row}.")
+                raise e
 
         try:
             serialized_record = record.SerializeToString()
@@ -264,16 +273,24 @@ class BigQueryStreamingV2Destination(AbstractDestination):
 
             # Handle large rows batch
             if batch.get("json_batch") and len(batch["json_batch"]) > 0:
+                table_schema = self.bq_client.get_table(self.temp_table_id).schema
+                # The proto carries JSON columns as strings; loaded as-is, BigQuery would store a
+                # JSON string scalar rather than the document.
+                json_columns = [f.name for f in table_schema if (f.field_type or "").upper() == "JSON"]
+
                 # Deserialize protobuf bytes back to JSON for the load job
                 deserialized_rows = []
                 for serialized_row in batch["json_batch"]:
                     deserialized_row = self.from_protobuf_serialization(table_row_class, serialized_row)
+                    for column in json_columns:
+                        if isinstance(deserialized_row.get(column), str):
+                            deserialized_row[column] = orjson.loads(deserialized_row[column])
                     deserialized_rows.append(deserialized_row)
 
                 # For large rows, we need to use the main client (write to temp_table_id)
                 job_config = bigquery.LoadJobConfig(
                     source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
-                    schema=self.bq_client.get_table(self.temp_table_id).schema,
+                    schema=table_schema,
                     ignore_unknown_values=True,
                 )
                 load_job = self.bq_client.load_table_from_json(
@@ -461,8 +478,13 @@ class BigQueryStreamingV2Destination(AbstractDestination):
         large_rows = []
 
         for item in iterable:
-            # Estimate the size of the item (as JSON)
-            item_size = len(str(item).encode("utf-8"))
+            item_size = len(item)
+
+            # Large rows go through a load job, so they never count against the append request size.
+            if item_size > self.MAX_ROW_SIZE_BYTES:
+                large_rows.append(item)
+                logger.warning(f"Large row detected: {item_size} bytes")
+                continue
 
             # If adding this item would exceed either limit, yield current batch and start new one
             if (
@@ -477,12 +499,8 @@ class BigQueryStreamingV2Destination(AbstractDestination):
                 current_batch_size = 0
                 large_rows = []
 
-            if item_size > self.MAX_ROW_SIZE_BYTES:
-                large_rows.append(item)
-                logger.warning(f"Large row detected: {item_size} bytes")
-            else:
-                current_batch.append(item)
-                current_batch_size += item_size
+            current_batch.append(item)
+            current_batch_size += item_size
 
         # Yield the last batch
         if current_batch or large_rows:
@@ -545,6 +563,17 @@ class BigQueryStreamingV2Destination(AbstractDestination):
     def _publish_clauses(self, spec=None) -> str:
         return " ".join(clause for clause in (self._partition_clause(spec), self._clustering_clause(spec)) if clause)
 
+    def _column_list(self) -> str:
+        return ", ".join(f"`{field.name}`" for field in self.get_bigquery_schema())
+
+    def _insert_from_temp(self) -> None:
+        # Always by name: `INSERT ... SELECT *` is refused outright on ingestion-time partitioned
+        # tables and binds by position everywhere else.
+        columns = self._column_list()
+        self.bq_client.query(
+            f"INSERT INTO `{self.table_id}` ({columns}) SELECT {columns} FROM `{self.temp_table_id}`"
+        ).result()
+
     def finalize(self):
         """Finalize the sync by moving data from temp table to main table based on sync mode.
 
@@ -562,7 +591,24 @@ class BigQueryStreamingV2Destination(AbstractDestination):
             # table. BigQuery refuses to replace a table with a different partitioning spec *in
             # either direction*, so the DDL has to describe whatever spec the table will actually
             # end up with -- see _publish_spec().
-            clauses = self._publish_clauses(self._publish_spec())
+            spec = self._publish_spec()
+            window, field, _ = spec
+
+            if window is not None and not field:
+                # Ingestion-time partitioning cannot be expressed in a CTAS (`PARTITION BY
+                # _PARTITIONDATE` is "Unrecognized name" there), so the table is kept and refilled.
+                # Not atomic: the table is empty between the two statements.
+                logger.info(f"Loading temp table {self.temp_table_id} data into {self.table_id} (ingestion-time) ...")
+                self._ensured_tables = {k for k in self._ensured_tables if k[0] != self.table_id}
+                self._ensure_table(self.table_id)
+                self.bq_client.query(f"TRUNCATE TABLE `{self.table_id}`").result()
+                self._insert_from_temp()
+                logger.info(f"Deleting temp table {self.temp_table_id} ...")
+                self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
+                self._ensured_tables = {k for k in self._ensured_tables if k[0] != self.temp_table_id}
+                return True
+
+            clauses = self._publish_clauses(spec)
 
             logger.info(f"Loading temp table {self.temp_table_id} data into {self.table_id} ...")
             query = f"CREATE OR REPLACE TABLE `{self.table_id}` {clauses} AS SELECT * FROM `{self.temp_table_id}`"
@@ -580,7 +626,7 @@ class BigQueryStreamingV2Destination(AbstractDestination):
             self._ensure_table(self.table_id)
             self._warn_on_partitioning_mismatch()
             logger.info(f"Appending data from {self.temp_table_id} to {self.table_id} ...")
-            self.bq_client.query(f"INSERT INTO `{self.table_id}` SELECT * FROM `{self.temp_table_id}`").result()
+            self._insert_from_temp()
             logger.info(f"Deleting incremental temp table {self.temp_table_id} ...")
             self.bq_client.delete_table(self.temp_table_id, not_found_ok=True)
             # Only the temp table is gone; the main table persists and stays validly cached.

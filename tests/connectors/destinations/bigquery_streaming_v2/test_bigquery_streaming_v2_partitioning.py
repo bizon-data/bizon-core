@@ -83,10 +83,58 @@ def test_full_refresh_ddl_custom_field_and_window(build_bq_destination):
         assert "PARTITION BY TIMESTAMP_TRUNC(`_bizon_extracted_at`, HOUR)" in published_query(destination)
 
 
-def test_full_refresh_ingestion_time_partitioning(build_bq_destination):
+NON_UNNEST_COLUMNS = (
+    "`_source_record_id`, `_source_timestamp`, `_source_data`, `_bizon_extracted_at`, `_bizon_loaded_at`, `_bizon_id`"
+)
+
+
+def queries(destination) -> list:
+    return [" ".join(c.args[0].split()) for c in destination.bq_client.query.call_args_list]
+
+
+def test_full_refresh_ingestion_time_partitioning(build_bq_destination, bq_ids):
+    """BigQuery rejects `PARTITION BY _PARTITIONDATE` in CTAS and `INSERT ... SELECT *` into an
+    ingestion-time partitioned table, so this publish has to go: ensure, truncate, insert by name."""
     with build_bq_destination("streaming_v2", time_partitioning={"field": None}, tables={}) as destination:
         destination.finalize()
-        assert "PARTITION BY _PARTITIONDATE" in published_query(destination)
+
+        created = [full_id(c.args[0]) for c in destination.bq_client.create_table.call_args_list]
+        assert bq_ids["table"] in created
+        assert queries(destination) == [
+            f"TRUNCATE TABLE `{bq_ids['table']}`",
+            f"INSERT INTO `{bq_ids['table']}` ({NON_UNNEST_COLUMNS}) SELECT {NON_UNNEST_COLUMNS} FROM `{bq_ids['temp']}`",
+        ]
+        assert not any("_PARTITIONDATE" in q for q in queries(destination))
+
+
+def test_full_refresh_ingestion_time_keeps_existing_table(build_bq_destination, bq_ids, make_bq_table):
+    """An existing ingestion-time table is truncated in place, never dropped or recreated."""
+    from google.cloud import bigquery
+
+    existing = make_bq_table(time_partitioning=bigquery.TimePartitioning(type_="DAY"))
+    with build_bq_destination(
+        "streaming_v2", time_partitioning={"field": None}, tables={bq_ids["table"]: existing}
+    ) as destination:
+        destination.finalize()
+
+        deleted = [c.args[0] for c in destination.bq_client.delete_table.call_args_list]
+        assert deleted == [bq_ids["temp"]]
+        assert queries(destination)[0] == f"TRUNCATE TABLE `{bq_ids['table']}`"
+
+
+def test_legacy_ingestion_time_table_is_truncated_not_replaced(
+    build_bq_destination, bq_ids, make_bq_table, loguru_warnings
+):
+    """Config asks for a column, the table is ingestion-time partitioned: the table's own spec wins
+    (no enforce), and that spec needs the truncate-and-insert path, not a CTAS."""
+    from google.cloud import bigquery
+
+    existing = make_bq_table(time_partitioning=bigquery.TimePartitioning(type_="DAY"))
+    with build_bq_destination("streaming_v2", tables={bq_ids["table"]: existing}) as destination:
+        destination.finalize()
+
+        assert queries(destination)[0] == f"TRUNCATE TABLE `{bq_ids['table']}`"
+        assert any("Partitioning mismatch" in m for m in loguru_warnings)
 
 
 def test_full_refresh_keeps_clauses_when_spec_already_matches(build_bq_destination, bq_ids, make_bq_table, partitioned):
@@ -200,6 +248,16 @@ def test_incremental_creates_main_table_with_partitioning(build_bq_destination, 
         assert table.time_partitioning.type_ == "DAY"
 
         assert "INSERT INTO" in published_query(destination)
+
+
+def test_incremental_insert_names_its_columns(build_bq_destination, bq_ids):
+    """`INSERT ... SELECT *` is refused on ingestion-time partitioned tables, and binds by position
+    everywhere else, so the append always spells out the columns."""
+    with build_bq_destination("streaming_v2", sync_mode="incremental", tables={}) as destination:
+        destination.finalize()
+        assert queries(destination) == [
+            f"INSERT INTO `{bq_ids['table']}` ({NON_UNNEST_COLUMNS}) SELECT {NON_UNNEST_COLUMNS} FROM `{bq_ids['incremental']}`"
+        ]
 
 
 def test_incremental_creates_main_table_with_clustering(build_bq_destination):

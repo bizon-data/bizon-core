@@ -1,15 +1,13 @@
-import json
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Union
 
-import polars as pl
 from pytz import UTC
 
 from bizon.destination.destination import AbstractDestination
 from bizon.engine.pipeline.consumer import AbstractQueueConsumer
 from bizon.monitoring.monitor import AbstractMonitor
-from bizon.source.models import SourceIteration, source_record_schema
+from bizon.source.models import SourceIteration, source_records_to_df
 from bizon.transform.transform import Transform
 
 from .config import (
@@ -69,16 +67,7 @@ class AbstractQueue(ABC):
         signal: str = None,
         extracted_at: datetime = None,
     ):
-        # Create a DataFrame from the SourceIteration records
-        df_source_records = pl.DataFrame(
-            {
-                "id": [record.id for record in source_iteration.records],
-                "data": [json.dumps(record.data, ensure_ascii=False) for record in source_iteration.records],
-                "timestamp": [record.timestamp for record in source_iteration.records],
-                "destination_id": [record.destination_id for record in source_iteration.records],
-            },
-            schema=source_record_schema,
-        )
+        df_source_records = source_records_to_df(source_iteration.records)
 
         queue_message = QueueMessage(
             iteration=iteration,
