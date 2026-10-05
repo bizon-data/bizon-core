@@ -72,6 +72,7 @@ class AbstractQueueConsumer(ABC):
 
         except Exception as e:
             logger.error(f"Error writing records to destination: {e}")
+            logger.error(traceback.format_exc())
             self.monitor.track_pipeline_status(PipelineReturnStatus.DESTINATION_ERROR)
             return PipelineReturnStatus.DESTINATION_ERROR
 
@@ -87,6 +88,7 @@ class AbstractQueueConsumer(ABC):
 
         except Exception as e:
             logger.error(f"Error writing records to destination: {e}")
+            logger.error(traceback.format_exc())
             self.monitor.track_pipeline_status(PipelineReturnStatus.DESTINATION_ERROR)
             return PipelineReturnStatus.DESTINATION_ERROR
 

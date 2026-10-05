@@ -32,6 +32,10 @@ class DestinationBufferStatus(str, Enum):
     NO_RECORDS = "NO_RECORDS"
 
 
+class DestinationWriteError(Exception):
+    pass
+
+
 class DestinationIteration(BaseModel):
     success: bool = Field(..., description="Success status of the iteration")
     error_message: Optional[str] = Field(None, description="Error message if iteration failed")
@@ -128,6 +132,13 @@ class AbstractDestination(ABC):
 
         # Update destination cursor
         self.create_cursors(destination_iteration=destination_iteration)
+
+        # Carrying on past a failed write would let later success cursors skip the lost iterations on resume.
+        if not success:
+            raise DestinationWriteError(
+                f"Failed to write source iterations {destination_iteration.from_source_iteration} to "
+                f"{destination_iteration.to_source_iteration} to destination {self.destination_id}: {error_msg}"
+            )
 
         return destination_iteration
 

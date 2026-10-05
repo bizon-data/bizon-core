@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A failed buffer flush was dropped silently and the run carried on.** The batch `bigquery` destination
+  returns `(False, error)` when a load job fails. The engine wrote a failed cursor, emptied the buffer anyway
+  and kept going. Later flushes then wrote success cursors past the lost iterations, so a resumed run never
+  re-fetched them. On the last flush, `finalize()` still published, so a full refresh replaced the table
+  with a partial one. A failed `write_records()` now raises `DestinationWriteError`, so the run fails and
+  does not publish.
+- **A GCS buffer file that failed to delete failed the flush after its rows had landed.** The rows were
+  already in BigQuery, so a resumed run loaded them a second time. A failed delete is now logged as a
+  warning.
+- **Default timestamps were frozen at import time.** These now default to the time each object is created:
+  - `SourceRecord.timestamp` (when the source sets none)
+  - `QueueMessage.extracted_at`
+  - the backend's `created_at` columns
+
+  Before, every record and cursor in a long-lived process shared one timestamp. That included `stream_jobs.created_at`, which incremental syncs use as their watermark.
+- Destination write errors in the consumer are now logged with their traceback.
+
 ## [0.6.1] - 2026-10-02
 
 ### Fixed

@@ -12,7 +12,7 @@ from google.cloud.bigquery import DatasetReference, TimePartitioning
 from loguru import logger
 
 from bizon.common.models import SyncMetadata
-from bizon.destination.destination import AbstractDestination, DestinationIteration
+from bizon.destination.destination import AbstractDestination, DestinationIteration, DestinationWriteError
 from bizon.engine.backend.backend import AbstractBackend
 from bizon.monitoring.monitor import AbstractMonitor
 from bizon.source.config import SourceSyncModes
@@ -305,13 +305,21 @@ class BigQueryDestination(AbstractDestination):
 
         try:
             self.load_to_bigquery(gcs_file=gs_file_name)
-            self.cleanup(gs_file_name)
         except Exception as e:
-            self.cleanup(gs_file_name)
             logger.error(f"Error loading data to BigQuery: {e}")
             logger.error(traceback.format_exc())
+            self._cleanup_quietly(gs_file_name)
             return False, str(e)
+
+        # The rows have landed: a failed delete must not turn this flush into a failure and a re-fetch.
+        self._cleanup_quietly(gs_file_name)
         return True, ""
+
+    def _cleanup_quietly(self, gcs_file: str):
+        try:
+            self.cleanup(gcs_file)
+        except Exception as e:
+            logger.warning(f"Could not delete buffer file gs://{self.buffer_bucket_name}/{gcs_file}: {e}")
 
     # ------------------------------------------------------------------
     # Async / batched load-job path (config.async_load)
@@ -351,7 +359,9 @@ class BigQueryDestination(AbstractDestination):
 
         # Optimistically successful unless an already-reaped load failed. The last flush's
         # own load is drained in finalize() — the same failure window as the existing copy.
-        destination_iteration.success = not self._any_load_failed
+        if self._any_load_failed:
+            raise DestinationWriteError(f"A previous load job into {self.temp_table_id} failed")
+        destination_iteration.success = True
         return destination_iteration
 
     def _submit_pending_load(self):
