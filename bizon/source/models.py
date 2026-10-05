@@ -57,7 +57,7 @@ class SourceRecord(BaseModel):
     data: dict = Field(..., description="JSON payload of the record")
 
     timestamp: datetime = Field(
-        default=datetime.now(tz=UTC),
+        default_factory=lambda: datetime.now(tz=UTC),
         description="Timestamp of the record as defined by the source. Default is the time of extraction",
     )
 

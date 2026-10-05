@@ -49,7 +49,7 @@ class StreamJob(Base):
         Integer, nullable=True, default=None, doc="Total number of records present in the source"
     )
     created_at = Column(
-        DateTime, nullable=False, default=datetime.now(tz=UTC), doc="Timestamp when the job was created"
+        DateTime, nullable=False, default=lambda: datetime.now(tz=UTC), doc="Timestamp when the job was created"
     )
     updated_at = Column(DateTime, nullable=True, default=None, doc="Timestamp when the job was last updated")
     incremental_state = Column(
@@ -81,7 +81,7 @@ class SourceCursor(Base):
     error_message = Column(
         String(500), nullable=True, doc="Error message if pulling failed for this cursor", default=None
     )
-    created_at = Column(DateTime, default=datetime.now(tz=UTC))
+    created_at = Column(DateTime, default=lambda: datetime.now(tz=UTC))
     updated_at = Column(DateTime, nullable=True, default=None, doc="Timestamp when the job was last updated")
 
     def __repr__(self):
@@ -105,7 +105,7 @@ class DestinationCursor(Base):
     error_message = Column(
         String(500), nullable=True, doc="Error message if pulling failed for this cursor", default=None
     )
-    created_at = Column(DateTime, default=datetime.now(tz=UTC))
+    created_at = Column(DateTime, default=lambda: datetime.now(tz=UTC))
     updated_at = Column(DateTime, nullable=True, default=None, doc="Timestamp when the job was last updated")
     pagination = Column(
         String, nullable=True, default=None, doc="Pagination source information from latest written buffer"

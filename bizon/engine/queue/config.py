@@ -1,5 +1,5 @@
 from abc import ABC
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Optional
@@ -22,7 +22,7 @@ QUEUE_TERMINATION_SIGNALS = (QUEUE_TERMINATION, QUEUE_TERMINATION_ERROR)
 class QueueMessage:
     iteration: int
     df_source_records: pl.DataFrame
-    extracted_at: datetime = datetime.now(tz=UTC)
+    extracted_at: datetime = field(default_factory=lambda: datetime.now(tz=UTC))
     pagination: Optional[dict] = None
     signal: Optional[str] = None
 
