@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--runner process` did not run at all.** The producer and consumer were submitted without their stop
+  events, so both workers died with a `TypeError`. The runner returned `True` instead of a `RunnerStatus`,
+  so `bizon run` then crashed on `result.is_success`. It now matches the thread runner:
+  - it returns a `RunnerStatus` with the job id, so `--result-json` works;
+  - a consumer that fails stops the producer, and a producer that raises stops the consumer;
+  - it uses at least two workers, so the consumer cannot queue behind a producer blocked on a full queue;
+  - worker processes log at the configured level;
+  - workers start with `spawn` on every platform, because forking a process that runs other threads
+    can deadlock the child (which is why Python 3.14 stopped defaulting to fork on Linux).
+
 ## [0.6.3] - 2026-10-08
 
 ### Added

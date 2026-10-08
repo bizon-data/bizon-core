@@ -1,86 +1,101 @@
 import concurrent.futures
+import multiprocessing
+import sys
 import time
-import traceback
 
 from loguru import logger
 
+from bizon.engine.runner.config import RunnerStatus
 from bizon.engine.runner.runner import AbstractRunner
+
+
+def _configure_worker_logging(log_level: str):
+    # Workers do not inherit the parent's sinks under the spawn start method.
+    logger.remove()
+    logger.add(sys.stderr, level=log_level)
 
 
 class ProcessRunner(AbstractRunner):
     def __init__(self, config: dict):
         super().__init__(config)
 
-    # TODO: refacto this
-    def get_kwargs(self):
-        if self.bizon_config.engine.queue.type == "python_queue":
-            from multiprocessing import Manager
+    def run(self) -> RunnerStatus:
+        """Run the pipeline with the producer and the consumer in separate processes"""
 
-            manager = Manager()
-            queue = manager.Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
-            return {"queue": queue}
+        # Forking a process that runs other threads (loguru, the pool's own manager thread, a caller's
+        # threads) can copy a held lock into the child and deadlock it, which is why Python 3.14 stopped
+        # defaulting to fork on Linux. Spawn behaves the same on every platform.
+        context = multiprocessing.get_context("spawn")
 
-        return {}
+        # Queues and events handed to pool workers must be manager proxies: plain multiprocessing
+        # primitives can only be shared through inheritance and fail to pickle.
+        with context.Manager() as manager:
+            extra_kwargs = {}
+            if self.bizon_config.engine.queue.type == "python_queue":
+                extra_kwargs["queue"] = manager.Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
 
-    def run(self):
-        """Run the pipeline with dedicated threads for source and destination"""
+            job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config, **extra_kwargs)
 
-        extra_kwargs = self.get_kwargs()
-        job = AbstractRunner.init_job(bizon_config=self.bizon_config, config=self.config, **extra_kwargs)
+            producer_stop_event = manager.Event()
+            consumer_stop_event = manager.Event()
+            runner_config = self.bizon_config.engine.runner.config
 
-        # Store the future results
-        result_producer = None
-        result_consumer = None
+            # Producer and consumer must run at the same time: with one worker the consumer would wait
+            # behind a producer blocked on a full queue.
+            with concurrent.futures.ProcessPoolExecutor(
+                max_workers=max(2, runner_config.max_workers or 2),
+                mp_context=context,
+                initializer=_configure_worker_logging,
+                initargs=(self.bizon_config.engine.runner.log_level.value,),
+            ) as executor:
+                future_producer = executor.submit(
+                    AbstractRunner.instanciate_and_run_producer,
+                    self.bizon_config,
+                    self.config,
+                    job.id,
+                    producer_stop_event,
+                    **extra_kwargs,
+                )
+                logger.info("Producer process has started ...")
 
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=self.bizon_config.engine.runner.config.max_workers
-        ) as executor:
-            future_producer = executor.submit(
-                AbstractRunner.instanciate_and_run_producer,
-                self.bizon_config,
-                self.config,
-                job.id,
-                **extra_kwargs,
-            )
-            logger.info("Producer process has started ...")
+                time.sleep(runner_config.consumer_start_delay)
 
-            time.sleep(self.bizon_config.engine.runner.config.consumer_start_delay)
+                future_consumer = executor.submit(
+                    AbstractRunner.instanciate_and_run_consumer,
+                    self.bizon_config,
+                    self.config,
+                    job.id,
+                    consumer_stop_event,
+                    **extra_kwargs,
+                )
+                logger.info("Consumer process has started ...")
 
-            future_consumer = executor.submit(
-                AbstractRunner.instanciate_and_run_consumer,
-                self.bizon_config,
-                self.config,
-                job.id,
-                **extra_kwargs,
-            )
-            logger.info("Consumer process has started ...")
-
-            self._is_running = True
-
-            while future_producer.running() and future_consumer.running():
-                logger.debug("Producer and consumer are still running ...")
                 self._is_running = True
-                time.sleep(self.bizon_config.engine.runner.config.is_alive_check_interval)
+                concurrent.futures.wait(
+                    [future_producer, future_consumer], return_when=concurrent.futures.FIRST_COMPLETED
+                )
 
-            self._is_running = False
+                # A producer that returns a status has already sent the termination signal, so the
+                # consumer stops on its own. One that raised never sent it, and a consumer that stopped
+                # leaves the producer blocked on a full queue: stop the other side in both cases.
+                if future_producer.done() and future_producer.exception() is not None:
+                    logger.error("Producer process failed, stopping consumer ...")
+                    consumer_stop_event.set()
+                if future_consumer.done() and not future_producer.done():
+                    logger.error("Consumer process stopped before the producer, stopping producer ...")
+                    producer_stop_event.set()
 
-            if not future_producer.running():
-                result_producer = future_producer.result()
-                logger.info(f"Producer process stopped running with result: {result_producer}")
+                concurrent.futures.wait([future_producer, future_consumer])
+                self._is_running = False
 
-                if result_producer.SUCCESS:
-                    logger.info("Producer thread has finished successfully, will wait for consumer to finish ...")
-                else:
-                    logger.error("Producer thread failed, stopping consumer ...")
-                    executor.shutdown(wait=False)
+                # Like the thread runner, an exception raised in a worker propagates to the caller.
+                runner_status = RunnerStatus(
+                    producer=future_producer.result(), consumer=future_consumer.result(), job_id=job.id
+                )
 
-            if not future_consumer.running():
-                try:
-                    future_consumer.result()
-                except Exception as e:
-                    logger.error(f"Consumer thread stopped running with error {e}")
-                    logger.error(traceback.format_exc())
-                finally:
-                    executor.shutdown(wait=False)
+        logger.info(f"Producer process stopped running with result: {runner_status.producer}")
+        logger.info(f"Consumer process stopped running with result: {runner_status.consumer}")
+        if not runner_status.is_success:
+            logger.error(runner_status.to_string())
 
-        return True
+        return runner_status
