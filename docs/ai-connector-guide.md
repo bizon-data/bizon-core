@@ -204,11 +204,13 @@ class {{SOURCE_NAME}}Source(AbstractSource):
         # OPTION 1: No authentication (public API)
         # return None
 
-        # OPTION 2: API Key / Bearer token
+        # OPTION 2: API Key / Bearer token. Sends `Authorization: Bearer <token>` by default; for a
+        # bare key in a custom header, use TokenAuthParams(token=..., auth_header="x-api-key", auth_method="")
         if self.config.authentication.type in [AuthType.API_KEY, AuthType.BEARER]:
             return AuthBuilder.token(params=self.config.authentication.params)
 
-        # OPTION 3: OAuth 2.0
+        # OPTION 3: OAuth 2.0. Tokens are refreshed shortly before they expire (10% of their
+        # lifetime, at most 60s; set `expiry_skew_seconds` to change it).
         # if self.config.authentication.type == AuthType.OAUTH:
         #     return AuthBuilder.oauth2(params=self.config.authentication.params)
 

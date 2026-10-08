@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **OAuth2 tokens are refreshed shortly before they expire, not after.** A request sent in the last
+  moments of a token's lifetime could reach the API after the token expired and get a 401. The default
+  margin is 10% of the token's lifetime, at most 60 seconds. Set it with `expiry_skew_seconds` on
+  `Oauth2AuthParams`, or override `get_expiry_skew_seconds()`.
+
+### Fixed
+
+- **Token auth with an empty `auth_method` sent the token with a leading space**, which `requests`
+  rejects with `InvalidHeader`. Bare keys in a custom header (`auth_header: x-api-key`, `auth_method: ""`)
+  now work.
+
 ### Added
 
 - **Incremental sources can persist their own state.** `SourceIteration.next_state` is saved to
