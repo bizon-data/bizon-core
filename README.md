@@ -338,7 +338,7 @@ destination:
     create_dataset: false
     gcs_buffer_bucket: bizon-buffer
     gcs_buffer_format: parquet
-    buffer_size: 10            # in MB
+    buffer_size: 10            # in MB; an iteration larger than this is written in buffer-sized chunks
     buffer_flush_timeout: 300  # in seconds
 
 engine:
@@ -625,6 +625,19 @@ The queue carries records from the producer to the consumer. Configured under `e
 | `python_queue` | In-process — the default, and the only maintained queue |
 | `rabbitmq` | RabbitMQ — **unmaintained**, does not currently run (`bizon[rabbitmq]`) |
 | `kafka` | Kafka / Redpanda — **unmaintained**, does not currently run (`bizon[kafka]`) |
+
+The producer pauses when the queue is full. By default "full" means about `max_nb_messages`
+records (1,000,000). To bound memory instead, set `max_bytes`: the producer then also pauses once
+the queued iterations take roughly that many bytes. The size is estimated from the average size of
+the iterations produced so far.
+
+```yaml
+engine:
+  queue:
+    type: python_queue
+    config:
+      max_bytes: 500000000   # ~500 MB
+```
 
 > **The `rabbitmq` and `kafka` queue adapters are not supported and are known to be broken.**
 > Their consumers call `write_records_and_update_cursor(source_records=...)`, but that method takes

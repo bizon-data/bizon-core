@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`engine.queue.config.max_bytes` bounds the queue by memory, not only by record count.** The
+  producer pauses once the queued iterations take about that many bytes, estimated from the average
+  size of the iterations produced so far. Unset by default.
+
+### Changed
+
+- **An iteration larger than the destination's `buffer_size` is written in buffer-sized chunks**
+  instead of failing the run with `Records size ... is greater than buffer size`.
+  - The iteration gets a single destination cursor, written only once every chunk has landed. A crash
+    midway therefore resumes from the previous iteration and re-writes the chunks, which is
+    at-least-once. It does not skip the rest of the iteration.
+
+### Added
+
 - **Incremental sources can persist their own state.** `SourceIteration.next_state` is saved to
   `stream_jobs.incremental_state`, a column that has always existed but was never written, so no
   migration is needed. The next run receives it as `source_state.state`. The last non-None value of a run

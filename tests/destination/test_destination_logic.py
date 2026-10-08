@@ -89,13 +89,12 @@ def test_write_or_buffer_records_too_large(logger_destination: LoggerDestination
     # Reset buffer
     logger_destination.buffer.buffer_size = df_big_size.estimated_size(unit="b")
 
-    # Write twice
-    with pytest.raises(
-        ValueError, match="Please increase destination buffer_size or reduce batch_size from the source"
-    ):
-        buffer_status = logger_destination.write_or_buffer_records(
-            df_destination_records=df_big_size.vstack(df_destination_records), iteration=1
-        )
+    # An iteration larger than the buffer is written in chunks rather than rejected
+    buffer_status = logger_destination.write_or_buffer_records(
+        df_destination_records=df_big_size.vstack(df_destination_records), iteration=1
+    )
+    assert buffer_status == DestinationBufferStatus.RECORDS_WRITTEN
+    assert logger_destination.buffer.is_empty
 
 
 def test_write_last_iteration(logger_destination: LoggerDestination, sqlite_db_session):

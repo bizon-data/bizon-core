@@ -30,6 +30,8 @@ class Producer:
         self.queue = queue
         self.source = source
         self.backend = backend
+        self._bytes_put = 0
+        self._iterations_put = 0
 
     @property
     def name(self) -> str:
@@ -116,6 +118,10 @@ class Producer:
         approximate_nb_records_in_queue = queue_size * cursor.avg_records_per_iteration
 
         if approximate_nb_records_in_queue >= self.queue.config.max_nb_messages:
+            return True, queue_size, approximate_nb_records_in_queue
+
+        max_bytes = self.queue.config.max_bytes
+        if max_bytes and self._iterations_put and queue_size * self._bytes_put / self._iterations_put >= max_bytes:
             return True, queue_size, approximate_nb_records_in_queue
 
         return False, queue_size, approximate_nb_records_in_queue
@@ -263,11 +269,12 @@ class Producer:
 
             # Put the data in the queue
             try:
-                self.queue.put(
+                self._bytes_put += self.queue.put(
                     source_iteration=source_iteration,
                     iteration=cursor.iteration,
                     extracted_at=extracted_at,
                 )
+                self._iterations_put += 1
             except Exception as e:
                 logger.error(traceback.format_exc())
                 logger.error(
