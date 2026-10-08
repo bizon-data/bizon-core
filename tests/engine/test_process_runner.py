@@ -1,6 +1,7 @@
-import concurrent.futures
 import textwrap
+import threading
 
+import pytest
 import yaml
 
 from bizon.engine.engine import RunnerFactory
@@ -78,9 +79,15 @@ def run_pipeline(tmp_path, behaviour: str, transforms=None, max_workers: int = 2
         config["transforms"] = transforms
     runner = RunnerFactory.create_from_config_dict(config)
 
-    # A runner that fails to stop one side hangs instead of returning: fail the test instead.
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-        return pool.submit(runner.run).result(timeout=120)
+    # A runner that fails to stop one side hangs instead of returning. Run it in a daemon thread so
+    # a hang fails this test instead of blocking the whole session.
+    result = {}
+    thread = threading.Thread(target=lambda: result.update(status=runner.run()), daemon=True)
+    thread.start()
+    thread.join(timeout=120)
+    if thread.is_alive():
+        pytest.fail("the process runner did not return within 120s")
+    return result["status"]
 
 
 def test_process_runner_runs_a_pipeline(tmp_path):

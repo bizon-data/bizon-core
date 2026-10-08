@@ -1,7 +1,7 @@
 import concurrent.futures
+import multiprocessing
 import sys
 import time
-from multiprocessing import Manager
 
 from loguru import logger
 
@@ -22,9 +22,14 @@ class ProcessRunner(AbstractRunner):
     def run(self) -> RunnerStatus:
         """Run the pipeline with the producer and the consumer in separate processes"""
 
+        # Forking a process that runs other threads (loguru, the pool's own manager thread, a caller's
+        # threads) can copy a held lock into the child and deadlock it, which is why Python 3.14 stopped
+        # defaulting to fork on Linux. Spawn behaves the same on every platform.
+        context = multiprocessing.get_context("spawn")
+
         # Queues and events handed to pool workers must be manager proxies: plain multiprocessing
         # primitives can only be shared through inheritance and fail to pickle.
-        with Manager() as manager:
+        with context.Manager() as manager:
             extra_kwargs = {}
             if self.bizon_config.engine.queue.type == "python_queue":
                 extra_kwargs["queue"] = manager.Queue(maxsize=self.bizon_config.engine.queue.config.queue.max_size)
@@ -39,6 +44,7 @@ class ProcessRunner(AbstractRunner):
             # behind a producer blocked on a full queue.
             with concurrent.futures.ProcessPoolExecutor(
                 max_workers=max(2, runner_config.max_workers or 2),
+                mp_context=context,
                 initializer=_configure_worker_logging,
                 initargs=(self.bizon_config.engine.runner.log_level.value,),
             ) as executor:
