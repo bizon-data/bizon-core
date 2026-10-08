@@ -5,7 +5,7 @@ from .abstract_token import AbstractHeaderAuthenticator
 
 class TokenAuthParams(BaseModel):
     token: str = Field(..., description="Token to be attached to the request")
-    auth_method: str = Field("Bearer", description="Auth method for token auth")
+    auth_method: str = Field("Bearer", description="Prefix of the header value. Empty sends the bare token.")
     auth_header: str = Field("Authorization", description="Auth header for token auth")
 
 
@@ -21,6 +21,8 @@ class TokenAuthenticator(AbstractHeaderAuthenticator):
 
     @property
     def token(self) -> str:
+        if not self._auth_method:
+            return self._token
         return f"{self._auth_method} {self._token}"
 
     def __init__(

@@ -38,8 +38,13 @@ class AbstractOauth2Authenticator(AuthBase):
         return self.access_token
 
     def token_has_expired(self) -> bool:
-        """Returns True if the token is expired"""
-        return pendulum.now() > self.get_token_expiry_date()
+        """Returns True if the token is expired, or will be within the expiry skew"""
+        return pendulum.now().add(seconds=self.get_expiry_skew_seconds()) > self.get_token_expiry_date()
+
+    def get_expiry_skew_seconds(self) -> float:
+        """How long before its expiry a token is refreshed, so a request sent just before expiry does not
+        reach the API after it. Override to change it."""
+        return 0
 
     def build_refresh_request_body(self) -> Mapping[str, Any]:
         """
