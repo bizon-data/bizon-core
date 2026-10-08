@@ -64,6 +64,11 @@ class AbstractBackend(ABC):
         pass
 
     @abstractmethod
+    def update_stream_job_incremental_state(self, job_id: str, state: dict, session: Optional[Session] = None):
+        """Persist the source state the next incremental run will receive"""
+        pass
+
+    @abstractmethod
     def get_stream_job_by_id(self, job_id: str, session: Optional[Session] = None) -> Optional[StreamJob]:
         """Get the job by its ID"""
         pass

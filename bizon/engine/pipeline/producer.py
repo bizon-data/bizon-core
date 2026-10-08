@@ -150,6 +150,8 @@ class Producer:
 
         # Handle incremental sync mode
         source_incremental_state = None
+        previous_state = {}
+        next_state = None
         is_incremental = self.bizon_config.source.sync_mode == SourceSyncModes.INCREMENTAL
 
         if is_incremental and self.bizon_config.source.reset:
@@ -167,11 +169,14 @@ class Producer:
             )
 
             if last_successful_job:
-                # Create incremental state with last_run from previous job
+                if last_successful_job.incremental_state:
+                    previous_state = json.loads(last_successful_job.incremental_state)
+
                 source_incremental_state = SourceIncrementalState(
                     last_run=last_successful_job.created_at,
-                    state={},
+                    state=previous_state,
                     cursor_field=self.bizon_config.source.cursor_field,
+                    run_started_at=self.backend.get_stream_job_by_id(job_id=job_id).created_at,
                 )
                 logger.info(
                     f"Incremental sync: fetching records after {source_incremental_state.last_run} "
@@ -253,6 +258,9 @@ class Producer:
                 return_value = PipelineReturnStatus.SOURCE_ERROR
                 break
 
+            if source_iteration.next_state is not None:
+                next_state = source_iteration.next_state
+
             # Put the data in the queue
             try:
                 self.queue.put(
@@ -289,6 +297,18 @@ class Producer:
             logger.info(
                 f"Iteration {cursor.iteration} finished in {datetime.now(tz=UTC) - timestamp_start_iteration}. {items_in_queue}"
             )
+
+        # Must land before terminate(): the consumer marks the job SUCCEEDED on that signal, and from then
+        # on the next run reads this row's state. Carrying the previous state forward keeps a run that
+        # emitted none from wiping it.
+        state_to_persist = next_state if next_state is not None else previous_state
+        if return_value == PipelineReturnStatus.SUCCESS and state_to_persist:
+            try:
+                self.backend.update_stream_job_incremental_state(job_id=job_id, state=state_to_persist)
+            except Exception as e:
+                logger.error(traceback.format_exc())
+                logger.error(f"Error while persisting the incremental state: {e} for job_id {job_id}")
+                return_value = PipelineReturnStatus.BACKEND_ERROR
 
         # The consumer publishes on this signal, so it has to carry how the producer exited.
         # Terminating unconditionally with "success" is what let a source error still copy the

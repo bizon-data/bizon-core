@@ -74,9 +74,36 @@ class SourceRecord(BaseModel):
 class SourceIteration(BaseModel):
     next_pagination: dict = Field(..., description="Next pagination to be used in the next iteration")
     records: List[SourceRecord] = Field(..., description="List of records retrieved in the current iteration")
+    next_state: Optional[dict] = Field(
+        default=None,
+        description="State to hand the next incremental run as `source_state.state`. The last non-None value "
+        "of a run is persisted when the job succeeds; a run that emits none keeps the previous state.",
+    )
+
+    # Fail on the iteration that emits it rather than when the state is persisted at the end of the run.
+    @field_validator("next_state", mode="after")
+    def check_json_serializable(value: Optional[dict]) -> Optional[dict]:
+        if value is not None:
+            try:
+                json.dumps(value)
+            except TypeError as e:
+                raise ValueError(f"next_state must be JSON-serializable: {e}") from e
+        return value
 
 
 class SourceIncrementalState(BaseModel):
-    last_run: datetime = Field(..., description="Timestamp of the last successful run")
-    state: dict = Field(default_factory=dict, description="Incremental state information from the latest sync")
+    last_run: datetime = Field(..., description="Start time (`created_at`) of the last successful job, in UTC")
+    state: dict = Field(default_factory=dict, description="The `next_state` persisted by the last successful job")
     cursor_field: Optional[str] = Field(default=None, description="The field name to filter records by timestamp")
+    run_started_at: Optional[datetime] = Field(
+        default=None,
+        description="Start time of the current job, in UTC and stable across resumes. It is the `last_run` the "
+        "next run will receive, so using it as this run's upper bound makes consecutive windows tile.",
+    )
+
+    # Job timestamps come back naive from the backend's DateTime columns, but are always written in UTC.
+    @field_validator("last_run", "run_started_at", mode="after")
+    def assume_utc(value: Optional[datetime]) -> Optional[datetime]:
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value

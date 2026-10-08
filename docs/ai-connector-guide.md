@@ -753,7 +753,9 @@ def get_records_after(
     a previous successful job exists.
 
     Args:
-        source_state.last_run: datetime of previous job's created_at
+        source_state.last_run: previous successful job's created_at (tz-aware UTC)
+        source_state.run_started_at: this job's created_at, use it as the window's upper bound
+        source_state.state: the previous successful run's SourceIteration.next_state
         source_state.cursor_field: field name from config (e.g., "updated_at")
         pagination: pagination state for multi-page results
     """
