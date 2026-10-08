@@ -111,6 +111,13 @@ class BizonConfig(BaseModel):
     # Unique name to identify the sync configuration
     name: str = Field(..., description="Unique name for this sync configuration")
 
+    id: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Stable identity under which the backend keys this stream's jobs, cursors and resets. "
+        "Defaults to `name`: set it to the current name before renaming a pipeline to keep its state.",
+    )
+
     source: SourceConfig = Field(
         description="Source configuration",
         default=...,
@@ -158,6 +165,11 @@ class BizonConfig(BaseModel):
         description="Stream routing configuration (opt-in for multi-table streaming). "
         "Consolidates source stream definitions with destination tables and schemas.",
     )
+
+    @property
+    def job_name(self) -> str:
+        """The name the backend keys this stream's state under. Changing it starts the stream from scratch."""
+        return self.id or self.name
 
     @field_validator("streams")
     @classmethod
@@ -337,6 +349,7 @@ class SyncMetadata(BaseModel):
 
     name: str
     job_id: str
+    job_name: Optional[str] = None
     source_name: str
     stream_name: str
     sync_mode: SourceSyncModes
@@ -359,6 +372,7 @@ class SyncMetadata(BaseModel):
         return cls(
             name=config.name,
             job_id=job_id,
+            job_name=config.job_name,
             source_name=config.source.name,
             stream_name=config.source.stream,
             sync_mode=sync_mode,

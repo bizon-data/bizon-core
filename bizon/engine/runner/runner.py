@@ -154,7 +154,7 @@ class AbstractRunner(ABC):
             return True
 
         if backend.get_pending_stream_reset(
-            name=bizon_config.name,
+            name=bizon_config.job_name,
             source_name=bizon_config.source.name,
             stream_name=bizon_config.source.stream,
         ):
@@ -175,11 +175,11 @@ class AbstractRunner(ABC):
             return
 
         stream_reset = backend.get_pending_stream_reset(
-            name=bizon_config.name,
+            name=bizon_config.job_name,
             source_name=bizon_config.source.name,
             stream_name=bizon_config.source.stream,
         ) or backend.create_stream_reset(
-            name=bizon_config.name,
+            name=bizon_config.job_name,
             source_name=bizon_config.source.name,
             stream_name=bizon_config.source.stream,
         )
@@ -197,7 +197,7 @@ class AbstractRunner(ABC):
         """Get or create a job for the current stream, return its ID"""
         # Retrieve the last job for this stream
         job = backend.get_running_stream_job(
-            name=bizon_config.name,
+            name=bizon_config.job_name,
             source_name=bizon_config.source.name,
             stream_name=bizon_config.source.stream,
             session=session,
@@ -233,7 +233,7 @@ class AbstractRunner(ABC):
 
         # Create a new job
         job = backend.create_stream_job(
-            name=bizon_config.name,
+            name=bizon_config.job_name,
             source_name=bizon_config.source.name,
             stream_name=bizon_config.source.stream,
             sync_mode=bizon_config.source.sync_mode,
@@ -267,7 +267,7 @@ class AbstractRunner(ABC):
         # Resolve the reset before touching the job: a reset that is not already in flight must start
         # from iteration 0, so it needs a fresh job rather than the running one.
         running_job = backend.get_running_stream_job(
-            name=bizon_config.name,
+            name=bizon_config.job_name,
             source_name=bizon_config.source.name,
             stream_name=bizon_config.source.stream,
         )
