@@ -1,4 +1,4 @@
-import os
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -11,12 +11,14 @@ from bizon.connectors.destinations.bigquery.src.config import (
 from bizon.connectors.destinations.bigquery.src.destination import BigQueryDestination
 from bizon.destination.config import DestinationTypes
 from bizon.destination.destination import DestinationFactory
-from bizon.monitoring.noop.monitor import NoOpMonitor
+
+MODULE = "bizon.connectors.destinations.bigquery.src.destination"
 
 
 @pytest.fixture(scope="function")
 def sync_metadata() -> SyncMetadata:
     return SyncMetadata(
+        name="factory_test",
         job_id="rfou98C9DJH",
         source_name="cookie",
         stream_name="test",
@@ -26,58 +28,38 @@ def sync_metadata() -> SyncMetadata:
     )
 
 
-@pytest.mark.skipif(
-    os.getenv("POETRY_ENV_TEST") == "CI",
-    reason="Skipping tests that require a BigQuery database",
-)
-def test_bigquery_factory(sync_metadata, my_backend):
+def _get_destination(sync_metadata: SyncMetadata, **config_overrides) -> BigQueryDestination:
     config = BigQueryConfig(
         name=DestinationTypes.BIGQUERY,
         config=BigQueryConfigDetails(
             project_id="project_id",
             dataset_id="dataset_id",
-            table_id="table_id",
-            credentials_path="credentials_path",
             gcs_buffer_bucket="gcs_buffer_bucket",
             gcs_buffer_format=GCSBufferFormat.PARQUET,
-            authentication={"service_account_key": ""},
+            **config_overrides,
         ),
     )
+    with patch(f"{MODULE}.bigquery.Client"), patch(f"{MODULE}.storage.Client"):
+        return DestinationFactory().get_destination(
+            sync_metadata=sync_metadata,
+            config=config,
+            backend=MagicMock(),
+            source_callback=MagicMock(),
+            monitor=MagicMock(),
+        )
 
-    destination = DestinationFactory().get_destination(
-        sync_metadata=sync_metadata,
-        config=config,
-        backend=my_backend,
-        monitor=NoOpMonitor(sync_metadata=sync_metadata, monitoring_config=None),
-    )
+
+def test_bigquery_factory(sync_metadata):
+    destination = _get_destination(sync_metadata, authentication={"service_account_key": ""})
+
     assert isinstance(destination, BigQueryDestination)
     assert destination.config.authentication.service_account_key == ""
     assert destination.config.project_id == "project_id"
     assert destination.config.dataset_id == "dataset_id"
 
 
-@pytest.mark.skipif(
-    os.getenv("POETRY_ENV_TEST") == "CI",
-    reason="Skipping tests that require a BigQuery database",
-)
-def test_bigquery_factory_empty_service_account(sync_metadata, my_backend):
-    config = BigQueryConfig(
-        name=DestinationTypes.BIGQUERY,
-        config=BigQueryConfigDetails(
-            project_id="project_id",
-            dataset_id="dataset_id",
-            table_id="table_id",
-            credentials_path="credentials_path",
-            gcs_buffer_bucket="gcs_buffer_bucket",
-            gcs_buffer_format=GCSBufferFormat.PARQUET,
-        ),
-    )
+def test_bigquery_factory_without_authentication(sync_metadata):
+    destination = _get_destination(sync_metadata)
 
-    destination = DestinationFactory().get_destination(
-        sync_metadata=sync_metadata,
-        config=config,
-        backend=my_backend,
-        monitor=NoOpMonitor(sync_metadata=sync_metadata, monitoring_config=None),
-    )
     assert isinstance(destination, BigQueryDestination)
     assert destination.config.authentication is None

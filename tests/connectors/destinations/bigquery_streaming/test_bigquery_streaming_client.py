@@ -16,6 +16,9 @@ from bizon.destination.destination import DestinationFactory
 from bizon.destination.models import destination_record_schema
 from bizon.monitoring.noop.monitor import NoOpMonitor
 
+# Talks to real GCP; CI deselects it with -m 'not live'.
+pytestmark = pytest.mark.live
+
 load_dotenv()
 
 
