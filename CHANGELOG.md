@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Incremental sources can persist their own state.** `SourceIteration.next_state` is saved to
+  `stream_jobs.incremental_state`, a column that has always existed but was never written, so no
+  migration is needed. The next run receives it as `source_state.state`. The last non-None value of a run
+  is kept, and only if the job succeeds. A run that emits none carries the previous state forward. A reset
+  starts from an empty state.
+- **`SourceIncrementalState.run_started_at`** is the current job's `created_at`, which is stable across
+  resumes. It is exactly the `last_run` the next run will receive, so using it as the window's upper bound
+  makes consecutive windows tile with no gap.
+
+### Changed
+
+- **`source_state.last_run` is now timezone-aware UTC.** It used to be naive, as read back from the
+  backend. `.timestamp()` callers are unaffected on UTC hosts. `isoformat()` callers now get a `+00:00`
+  suffix, and comparing it with a naive datetime raises `TypeError`.
+
 ## [0.6.2] - 2026-10-05
 
 ### Fixed

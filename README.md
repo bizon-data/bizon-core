@@ -430,6 +430,16 @@ On the first incremental run (no previous successful job):
 - The job is marked successful
 - Subsequent runs use `get_records_after()` with the `last_run` timestamp
 
+#### Source state and the run window
+
+`source_state` carries more than `last_run`, which is timezone-aware UTC:
+- `run_started_at` is the current job's start time. Use it as the upper bound of your query: the next
+  run's `last_run` is this exact value, so the windows tile with no gap or overlap.
+- `state` is whatever the previous successful run returned as `SourceIteration.next_state`. For example,
+  a max cursor value or a per-partition offset; it must be JSON-serializable. The last non-None value of
+  a run is persisted when the job succeeds. A run that emits none keeps the previous state, and a reset
+  starts from `{}`.
+
 #### Stream Reset
 
 A reset re-fetches the whole stream once and **replaces** the destination table, then resumes

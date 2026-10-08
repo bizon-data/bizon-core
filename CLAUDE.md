@@ -352,7 +352,9 @@ def get_records_after(
 ```
 
 **Key Implementation Notes:**
-- `source_state.last_run` is a `datetime` from the previous successful job's `created_at`
+- `source_state.last_run` is a tz-aware UTC `datetime` from the previous successful job's `created_at`
+- `source_state.run_started_at` is this job's `created_at`: use it as the upper bound so windows tile
+- `source_state.state` is the previous successful run's last non-None `SourceIteration.next_state`
 - `source_state.cursor_field` tells you which field the user configured (e.g., "updated_at")
 - Filter records server-side when possible (more efficient)
 - For APIs without timestamp filters, filter client-side after fetching

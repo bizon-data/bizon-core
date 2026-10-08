@@ -321,6 +321,16 @@ class SQLAlchemyBackend(AbstractBackend):
         )
         self._execute(stmt, session=session)
 
+    def update_stream_job_incremental_state(self, job_id: str, state: dict, session: Optional[Session] = None):
+        """Persist the source state the next incremental run will receive"""
+        stmt = (
+            update(StreamJob)
+            .where(StreamJob.id == job_id)
+            .values(incremental_state=json.dumps(state), updated_at=datetime.now(tz=UTC))
+            .execution_options(synchronize_session="fetch")
+        )
+        self._execute(stmt, session=session)
+
     def get_stream_job_by_id(self, job_id: str, session: Optional[Session] = None) -> Optional[StreamJob]:
         """Get the job by its ID"""
 

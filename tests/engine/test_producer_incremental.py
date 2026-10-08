@@ -1,3 +1,4 @@
+import json
 import os
 from datetime import datetime
 from queue import Queue
@@ -103,7 +104,7 @@ def test_source_incremental_state_creation(incremental_producer: Producer, previ
         cursor_field=incremental_producer.bizon_config.source.cursor_field,
     )
 
-    assert source_incremental_state.last_run == last_successful.created_at
+    assert source_incremental_state.last_run == last_successful.created_at.replace(tzinfo=UTC)
     assert source_incremental_state.state == {}
     assert source_incremental_state.cursor_field == "updated_at"
 
@@ -177,3 +178,100 @@ def test_reset_ignores_the_watermark(
 
     incremental_producer.source.get.assert_called_once()
     incremental_producer.source.get_records_after.assert_not_called()
+
+
+def _previous_job_with_state(producer: Producer, state: dict, session) -> StreamJob:
+    job = producer.backend.create_stream_job(
+        name=producer.bizon_config.name,
+        source_name=producer.source.config.name,
+        stream_name=producer.source.config.stream,
+        sync_mode=SourceSyncModes.INCREMENTAL.value,
+        job_status=JobStatus.SUCCEEDED,
+        session=session,
+    )
+    producer.backend.update_stream_job_incremental_state(job_id=job.id, state=state, session=session)
+    return job
+
+
+def test_source_receives_persisted_state_and_run_window(
+    incremental_producer: Producer, sqlite_db_session, started_job: StreamJob
+):
+    previous = _previous_job_with_state(incremental_producer, {"max_updated_at": "2026-01-01"}, sqlite_db_session)
+    _stub_source_fetches(incremental_producer)
+
+    incremental_producer.run(job_id=started_job.id, stop_event=Event())
+
+    source_state = incremental_producer.source.get_records_after.call_args.kwargs["source_state"]
+    assert source_state.state == {"max_updated_at": "2026-01-01"}
+    assert source_state.last_run == previous.created_at.replace(tzinfo=UTC)
+    assert source_state.last_run.tzinfo is not None
+    assert source_state.run_started_at == started_job.created_at.replace(tzinfo=UTC)
+
+
+def test_last_emitted_next_state_is_persisted(
+    incremental_producer: Producer, previous_successful_job: StreamJob, started_job: StreamJob
+):
+    incremental_producer.source.get_records_after = MagicMock(
+        side_effect=[
+            SourceIteration(records=[], next_pagination={"page": 2}, next_state={"max_updated_at": "a"}),
+            SourceIteration(records=[], next_pagination={"page": 3}, next_state={"max_updated_at": "b"}),
+            SourceIteration(records=[], next_pagination={}),
+        ]
+    )
+
+    incremental_producer.run(job_id=started_job.id, stop_event=Event())
+
+    job = incremental_producer.backend.get_stream_job_by_id(job_id=started_job.id)
+    assert json.loads(job.incremental_state) == {"max_updated_at": "b"}
+
+
+def test_run_without_next_state_carries_previous_state_forward(
+    incremental_producer: Producer, sqlite_db_session, started_job: StreamJob
+):
+    _previous_job_with_state(incremental_producer, {"max_updated_at": "a"}, sqlite_db_session)
+    _stub_source_fetches(incremental_producer)
+
+    incremental_producer.run(job_id=started_job.id, stop_event=Event())
+
+    job = incremental_producer.backend.get_stream_job_by_id(job_id=started_job.id)
+    assert json.loads(job.incremental_state) == {"max_updated_at": "a"}
+
+
+def test_reset_does_not_carry_previous_state_forward(
+    incremental_producer: Producer, sqlite_db_session, started_job: StreamJob
+):
+    _previous_job_with_state(incremental_producer, {"max_updated_at": "a"}, sqlite_db_session)
+    incremental_producer.bizon_config.source.reset = True
+    _stub_source_fetches(incremental_producer)
+
+    incremental_producer.run(job_id=started_job.id, stop_event=Event())
+
+    job = incremental_producer.backend.get_stream_job_by_id(job_id=started_job.id)
+    assert job.incremental_state is None
+
+
+def test_state_is_not_persisted_on_source_error(
+    incremental_producer: Producer, previous_successful_job: StreamJob, started_job: StreamJob
+):
+    incremental_producer.source.get_records_after = MagicMock(
+        side_effect=[
+            SourceIteration(records=[], next_pagination={"page": 2}, next_state={"max_updated_at": "a"}),
+            RuntimeError("boom"),
+        ]
+    )
+
+    incremental_producer.run(job_id=started_job.id, stop_event=Event())
+
+    job = incremental_producer.backend.get_stream_job_by_id(job_id=started_job.id)
+    assert job.incremental_state is None
+
+
+def test_next_state_must_be_json_serializable():
+    with pytest.raises(ValueError, match="JSON-serializable"):
+        SourceIteration(records=[], next_pagination={}, next_state={"at": datetime.now(tz=UTC)})
+
+
+def test_naive_last_run_is_read_as_utc():
+    state = SourceIncrementalState(last_run=datetime(2026, 1, 1, 12, 0))
+
+    assert state.last_run == datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
