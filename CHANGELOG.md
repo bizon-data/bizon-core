@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-08
+
 ### Added
 
 - **Python 3.13 and 3.14 are supported.** `requires-python` now allows up to 3.14. CI tests 3.10, 3.12,
