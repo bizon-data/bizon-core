@@ -7,35 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **OAuth2 tokens are refreshed shortly before they expire, not after.** A request sent in the last
-  moments of a token's lifetime could reach the API after the token expired and get a 401. The default
-  margin is 10% of the token's lifetime, at most 60 seconds. Set it with `expiry_skew_seconds` on
-  `Oauth2AuthParams`, or override `get_expiry_skew_seconds()`.
-
-### Fixed
-
-- **Token auth with an empty `auth_method` sent the token with a leading space**, which `requests`
-  rejects with `InvalidHeader`. Bare keys in a custom header (`auth_header: x-api-key`, `auth_method: ""`)
-  now work.
+## [0.6.3] - 2026-10-08
 
 ### Added
 
 - **`engine.queue.config.max_bytes` bounds the queue by memory, not only by record count.** The
   producer pauses once the queued iterations take about that many bytes, estimated from the average
   size of the iterations produced so far. Unset by default.
-
-### Changed
-
-- **An iteration larger than the destination's `buffer_size` is written in buffer-sized chunks**
-  instead of failing the run with `Records size ... is greater than buffer size`.
-  - The iteration gets a single destination cursor, written only once every chunk has landed. A crash
-    midway therefore resumes from the previous iteration and re-writes the chunks, which is
-    at-least-once. It does not skip the rest of the iteration.
-
-### Added
-
 - **Incremental sources can persist their own state.** `SourceIteration.next_state` is saved to
   `stream_jobs.incremental_state`, a column that has always existed but was never written, so no
   migration is needed. The next run receives it as `source_state.state`. The last non-None value of a run
@@ -74,6 +52,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **OAuth2 tokens are refreshed shortly before they expire, not after.** A request sent in the last
+  moments of a token's lifetime could reach the API after the token expired and get a 401. The default
+  margin is 10% of the token's lifetime, at most 60 seconds. Set it with `expiry_skew_seconds` on
+  `Oauth2AuthParams`, or override `get_expiry_skew_seconds()`.
+- **An iteration larger than the destination's `buffer_size` is written in buffer-sized chunks**
+  instead of failing the run with `Records size ... is greater than buffer size`.
+  - The iteration gets a single destination cursor, written only once every chunk has landed. A crash
+    midway therefore resumes from the previous iteration and re-writes the chunks, which is
+    at-least-once. It does not skip the rest of the iteration.
 - **`source_state.last_run` is now timezone-aware UTC.** It used to be naive, as read back from the
   backend. `.timestamp()` callers are unaffected on UTC hosts. `isoformat()` callers now get a `+00:00`
   suffix, and comparing it with a naive datetime raises `TypeError`.
@@ -83,6 +70,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`source.reset: true` in a config file.** It resets on every run until someone removes it. It still
   works, but `bizon run` and `bizon config validate` now warn. Use `bizon run --reset` or
   `bizon stream reset <config>` instead.
+
+### Fixed
+
+- **Token auth with an empty `auth_method` sent the token with a leading space**, which `requests`
+  rejects with `InvalidHeader`. Bare keys in a custom header (`auth_header: x-api-key`, `auth_method: ""`)
+  now work.
 
 ## [0.6.2] - 2026-10-05
 
