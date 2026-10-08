@@ -26,12 +26,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_session()`, so it keeps the default session and its `raise_for_status` hook.
 - **A warning when `source.http` is set on a source that overrides `get_session()`.** The block has no
   effect there.
+- **`bizon config validate <config>` checks a config without running anything.**
+  - It validates the engine schema, the stream name and the source's own config class.
+  - Errors exit non-zero; `--strict` makes warnings exit non-zero too.
+  - `--skip-references` validates without resolving secrets, for CI.
+- **Unknown `source:` keys now log a warning.** Previously they were dropped silently and the run fell
+  back to defaults, typically after a typo or a key that belongs under `destination.config`. Source
+  config classes declared with `extra="allow"` are exempt.
 
 ### Changed
 
 - **`source_state.last_run` is now timezone-aware UTC.** It used to be naive, as read back from the
   backend. `.timestamp()` callers are unaffected on UTC hosts. `isoformat()` callers now get a `+00:00`
   suffix, and comparing it with a naive datetime raises `TypeError`.
+
+### Deprecated
+
+- **`source.reset: true` in a config file.** It resets on every run until someone removes it. It still
+  works, but `bizon run` and `bizon config validate` now warn. Use `bizon run --reset` or
+  `bizon stream reset <config>` instead.
 
 ## [0.6.2] - 2026-10-05
 
