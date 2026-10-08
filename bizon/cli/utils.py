@@ -7,6 +7,19 @@ def parse_from_yaml(path_to_yaml) -> dict:
     return config
 
 
+def deprecated_config_warnings(config: dict) -> list:
+    """Warnings for config keys that still work but are on their way out. Call on the YAML as written."""
+    warnings = []
+
+    if (config.get("source") or {}).get("reset") is True:
+        warnings.append(
+            "`source.reset: true` in a config re-runs the reset on every run until it is removed, and will stop "
+            "being accepted in a future release. Use `bizon run --reset` or `bizon stream reset <config>`."
+        )
+
+    return warnings
+
+
 # TODO: Refacto
 def set_log_level(config: dict, level: str):
     # Set Log Level to DEBUG

@@ -179,6 +179,7 @@ The CLI entry point is `bizon` (`bizon.cli.main:cli`).
 | `bizon stream list <source>` | List a source's streams, flagged `[Supports incremental]` / `[Full refresh only]` |
 | `bizon stream reset <config.yml>` | Queue a [stream reset](#stream-reset) for the next run of that pipeline |
 | `bizon secrets check <config.yml>` | Dry-run every `gsm://` / `env://` reference and report (masked) results |
+| `bizon config validate <config.yml>` | Validate a config, including the source's own config class, without running it |
 | `bizon destination` | Subcommand group (no subcommands yet) |
 
 ### `bizon run`
@@ -202,6 +203,26 @@ bizon secrets check config.yml [--env-file .env]
 
 Resolves every reference in the config (without running the pipeline) and prints each one with a
 masked ✓/✗ status. Exits non-zero if any reference fails — handy as a pre-deploy gate.
+
+### `bizon config validate`
+
+```bash
+bizon config validate config.yml [--env-file .env] [--strict]
+```
+
+Validates the config the way a run would, without running anything:
+- the engine schema;
+- the stream name;
+- the source's own config class.
+
+It also warns about two things that are not errors:
+- `source:` keys the source's config class does not declare, which a run silently ignores. This
+  usually means a typo, or a key that belongs under `destination.config`.
+- deprecated keys.
+
+References are resolved, so the command needs the same access as a run. In CI without secret access,
+pass `--skip-references` to validate them as literal strings instead. Use `--strict` to fail on
+warnings too.
 
 ## Configuration Reference
 
@@ -494,7 +515,7 @@ bizon stream reset config.yml --stream deals
 ```yaml
 source:
   sync_mode: incremental
-  reset: true      # same effect, set in the config
+  reset: true      # deprecated: resets on every run until removed
 ```
 
 What the run does differently:

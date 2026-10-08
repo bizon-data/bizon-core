@@ -10,6 +10,7 @@ from typing import Any, List, Type
 from loguru import logger
 from pydantic import BaseModel
 
+from bizon.source.config import SourceConfig
 from bizon.source.source import AbstractSource
 from bizon.utils import BIZON_ABSOLUTE_PATH
 
@@ -288,23 +289,54 @@ def discover_all_sources() -> Mapping[str, SourceModel]:
     return discovered_sources
 
 
+def get_source_class_by_source_and_stream(
+    source_name: str, stream_name: str, source_config: Mapping[str, Any]
+) -> Type[AbstractSource]:
+    """Get the source class for a source config, external if it names a source_file_path"""
+
+    if source_config.get("source_file_path"):
+        return get_external_source_class_by_source_and_stream(
+            source_name=source_name,
+            stream_name=stream_name,
+            filepath=source_config["source_file_path"],
+        )
+    return get_internal_source_class_by_source_and_stream(source_name=source_name, stream_name=stream_name)
+
+
+def find_unknown_source_keys(config_class: Type[SourceConfig], source_config: Mapping[str, Any]) -> List[str]:
+    """Top-level source keys the config class does not declare, which pydantic drops without a word"""
+
+    if config_class.model_config.get("extra") == "allow":
+        return []
+
+    known = set()
+    for name, field in config_class.model_fields.items():
+        known.add(name)
+        if field.alias:
+            known.add(field.alias)
+        if isinstance(field.validation_alias, str):
+            known.add(field.validation_alias)
+
+    return sorted(key for key in source_config if key not in known)
+
+
 def get_source_instance_by_source_and_stream(
     source_name: str, stream_name: str, source_config: Mapping[str, Any]
 ) -> AbstractSource:
     """Get an instance of the source by source and stream name"""
 
-    if source_config.get("source_file_path"):
-        source_class: AbstractSource = get_external_source_class_by_source_and_stream(
-            source_name=source_name,
-            stream_name=stream_name,
-            filepath=source_config["source_file_path"],
-        )
-    else:
-        source_class: AbstractSource = get_internal_source_class_by_source_and_stream(
-            source_name=source_name, stream_name=stream_name
+    source_class = get_source_class_by_source_and_stream(
+        source_name=source_name, stream_name=stream_name, source_config=source_config
+    )
+    config_class = source_class.get_config_class()
+
+    unknown_keys = find_unknown_source_keys(config_class, source_config)
+    if unknown_keys:
+        logger.warning(
+            f"Ignoring source keys that {config_class.__name__} does not declare: {', '.join(unknown_keys)}. "
+            "Check for typos or keys placed in the wrong section."
         )
 
-    config_class = source_class.get_config_class()
     config_parsed = config_class.model_validate(source_config)
 
     return source_class(config=config_parsed)

@@ -98,3 +98,21 @@ def test_discover_all_sources():
             assert set(source_model.available_streams) == set(["creatures", "plants"])
 
     assert found_dummy
+
+
+def test_find_unknown_source_keys_ignores_declared_fields_and_permissive_configs():
+    from pydantic import ConfigDict, Field
+
+    from bizon.source.config import SourceConfig
+    from bizon.source.discover import find_unknown_source_keys
+
+    class StrictConfig(SourceConfig):
+        page_size: int = Field(10, alias="pageSize")
+
+    class PermissiveConfig(SourceConfig):
+        model_config = ConfigDict(extra="allow")
+
+    raw = {"name": "x", "stream": "y", "pageSize": 5, "buffer_size": 1, "typo_mode": "z"}
+
+    assert find_unknown_source_keys(StrictConfig, raw) == ["buffer_size", "typo_mode"]
+    assert find_unknown_source_keys(PermissiveConfig, raw) == []

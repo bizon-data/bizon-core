@@ -1,5 +1,9 @@
+import sys
+
 import click
 from dotenv import find_dotenv, load_dotenv
+from loguru import logger
+from pydantic import ValidationError
 
 from bizon.common.models import BizonConfig
 from bizon.engine.backend.backend import BackendFactory
@@ -16,9 +20,14 @@ from bizon.engine.resolvers import (
 )
 from bizon.engine.runner.config import LoggerLevel
 from bizon.source.config import SourceSyncModes
-from bizon.source.discover import discover_all_sources
+from bizon.source.discover import (
+    discover_all_sources,
+    find_unknown_source_keys,
+    get_source_class_by_source_and_stream,
+)
 
 from .utils import (
+    deprecated_config_warnings,
     parse_from_yaml,
     set_custom_source_path_in_config,
     set_log_level,
@@ -239,6 +248,101 @@ def check(filename: str, env_file: str):
     click.secho(f"All {len(references)} reference(s) resolved.", fg="green")
 
 
+# Create a 'config' group under 'bizon'
+@cli.group()
+def config():
+    """Subcommands for handling pipeline configs."""
+    pass
+
+
+@config.command()
+@click.argument("filename", type=click.Path(exists=True))
+@click.option(
+    "--env-file",
+    required=False,
+    type=click.Path(exists=True),
+    help="Path to .env file to load environment variables from.",
+)
+@click.option("--strict", is_flag=True, default=False, help="Fail on warnings as well as errors.")
+@click.option(
+    "--skip-references",
+    is_flag=True,
+    default=False,
+    help="Do not resolve gsm:// / env:// references; validate them as literal strings. For CI without secret access.",
+)
+def validate(filename: str, env_file: str, strict: bool, skip_references: bool):
+    """Check a config without running anything.
+
+    Validates the engine schema, the source's own config class and the stream name. References
+    (gsm://, env://) are resolved like a run would, so this needs the same access as one.
+    """
+
+    if env_file:
+        load_dotenv(env_file)
+    else:
+        load_dotenv(find_dotenv(".env"))
+
+    # Source discovery logs every class it inspects at DEBUG.
+    logger.remove()
+    logger.add(sys.stderr, level="WARNING")
+
+    raw_config = parse_from_yaml(filename)
+    warnings = deprecated_config_warnings(raw_config)
+
+    unchecked = 0
+    try:
+        resolved_config = raw_config if skip_references else resolve_config(raw_config)
+        unchecked += _validate_skipping_references(BizonConfig, resolved_config, skip_references)
+        source_config = resolved_config["source"]
+        source_class = get_source_class_by_source_and_stream(
+            source_name=source_config["name"], stream_name=source_config["stream"], source_config=source_config
+        )
+        config_class = source_class.get_config_class()
+        unchecked += _validate_skipping_references(config_class, source_config, skip_references)
+    except (ValueError, ReferenceResolutionError, ImportError) as error:
+        raise click.exceptions.ClickException(f"{filename} is invalid:\n{error}")
+
+    if unchecked:
+        click.echo(f"{unchecked} field(s) hold an unresolved reference and were not type-checked.")
+
+    unknown_keys = find_unknown_source_keys(config_class, resolved_config["source"])
+    if unknown_keys:
+        warnings.append(f"source keys not declared by {config_class.__name__} are ignored: {', '.join(unknown_keys)}")
+
+    for warning in warnings:
+        click.secho(f"Warning: {warning}", fg="yellow", err=True)
+
+    if strict and warnings:
+        raise click.exceptions.ClickException(f"{filename} has {len(warnings)} warning(s) and --strict is set.")
+
+    click.secho(
+        f"{filename} is valid: {source_config['name']}.{source_config['stream']} "
+        f"({source_config.get('sync_mode', SourceSyncModes.FULL_REFRESH.value)}) -> "
+        f"{resolved_config['destination']['name']}",
+        fg="green",
+    )
+
+
+def _validate_skipping_references(model_class, data: dict, skip_references: bool) -> int:
+    """Validate data, returning how many errors were skipped for coming from an unresolved reference."""
+    try:
+        model_class.model_validate(data)
+        return 0
+    except ValidationError as error:
+        if not skip_references:
+            raise
+        skipped = [e for e in error.errors() if _is_unresolved_reference(e.get("input"))]
+        if len(skipped) < error.error_count():
+            raise
+        return len(skipped)
+
+
+def _is_unresolved_reference(value) -> bool:
+    if not isinstance(value, str):
+        return False
+    return value.startswith("BIZON_ENV_") or bool(collect_references_in_config({"value": value}))
+
+
 @cli.command()
 @click.argument("filename", type=click.Path(exists=True))
 @click.option(
@@ -294,6 +398,9 @@ def run(
 
     # Parse config from YAML file as a dictionary
     config = parse_from_yaml(filename)
+
+    for warning in deprecated_config_warnings(config):
+        click.secho(f"Warning: {warning}", fg="yellow", err=True)
 
     # Set debug mode
     set_log_level(config=config, level=log_level)
