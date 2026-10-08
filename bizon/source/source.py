@@ -1,18 +1,26 @@
 from abc import ABC, abstractmethod
 from typing import Any, List, Optional, Tuple, Type, Union
 
+from loguru import logger
+from requests.adapters import Retry
 from requests.auth import AuthBase
 
 from .callback import AbstractSourceCallback, NoOpSourceCallback
 from .config import SourceConfig
 from .models import SourceIncrementalState, SourceIteration
-from .session import Session
+from .session import CappedRetry, Session
 
 
 class AbstractSource(ABC):
     def __init__(self, config: SourceConfig):
         self.config = config
         self.session = self.get_session()
+
+        if config.http is not None and type(self).get_session is not AbstractSource.get_session:
+            logger.warning(
+                "source.http has no effect: this source overrides get_session(). "
+                "Override get_retry_policy() instead to keep the default session."
+            )
 
         # Set authentication in the session
         auth = self.get_authenticator()
@@ -96,9 +104,33 @@ class AbstractSource(ABC):
         # -> return empty pagination and return last offset pulled to put in the state
         pass
 
+    def get_retry_policy(self) -> Optional[Retry]:
+        """Retry policy of the default session. Override to tune retries without replacing the session.
+
+        None keeps the legacy policy.
+        """
+        http = self.config.http
+        if http is None:
+            return None
+
+        return CappedRetry(
+            total=http.retries.total,
+            backoff_factor=http.retries.backoff_factor,
+            status_forcelist=http.retries.status_forcelist,
+            allowed_methods=http.retries.allowed_methods,
+            respect_retry_after_header=True,
+            max_retry_after=http.retries.retry_after_max,
+            # Hand back the last response once retries run out, so raise_for_status raises an HTTPError
+            # carrying it instead of urllib3 raising a bare RetryError.
+            raise_on_status=False,
+        )
+
     def get_session(self) -> Session:
         """Return a new session"""
-        return Session()
+        http = self.config.http
+        if http is None:
+            return Session(retries=self.get_retry_policy())
+        return Session(retries=self.get_retry_policy(), timeout=http.timeout, raise_for_status=http.raise_for_status)
 
     def commit(self):
         """Commit the records to the source"""

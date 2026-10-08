@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`SourceIncrementalState.run_started_at`** is the current job's `created_at`, which is stable across
   resumes. It is exactly the `last_run` the next run will receive, so using it as the window's upper bound
   makes consecutive windows tile with no gap.
+- **Opt-in HTTP policy for sources: `source.http`.**
+  - The block sets a default timeout, retries 5xx and Cloudflare 52x responses even without a
+    `Retry-After`, and caps how long a `Retry-After` can make the run sleep.
+  - Exhausted retries raise a `requests.HTTPError` carrying the last response, not a `RetryError`.
+  - Without the block nothing changes.
+- **`AbstractSource.get_retry_policy()`** lets a source tune retries without overriding
+  `get_session()`, so it keeps the default session and its `raise_for_status` hook.
+- **A warning when `source.http` is set on a source that overrides `get_session()`.** The block has no
+  effect there.
 
 ### Changed
 
