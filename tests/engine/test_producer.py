@@ -159,3 +159,35 @@ def _drain_signals(queue) -> list:
         signals.append(message.signal)
         queue.queue.task_done()
     return signals
+
+
+def _put_iteration(producer: Producer, cursor, nb_records: int):
+    source_iteration = SourceIteration(
+        records=[SourceRecord(id=str(i), data={"payload": "x" * 100}) for i in range(nb_records)],
+        next_pagination={"page": cursor.iteration + 1},
+    )
+    producer._bytes_put += producer.queue.put(source_iteration=source_iteration, iteration=cursor.iteration)
+    producer._iterations_put += 1
+    cursor.update_state(pagination_dict=source_iteration.next_pagination, nb_records_fetched=nb_records)
+
+
+def test_queue_is_full_once_queued_bytes_reach_max_bytes(my_producer: Producer, my_job: StreamJob):
+    cursor = my_producer.get_or_create_cursor(job_id=my_job.id)
+    _put_iteration(my_producer, cursor, 100)
+    iteration_bytes = my_producer._bytes_put
+
+    my_producer.queue.config.max_bytes = iteration_bytes * 3
+    _put_iteration(my_producer, cursor, 100)
+    assert my_producer.is_queue_full(cursor)[0] is False
+
+    _put_iteration(my_producer, cursor, 100)
+    assert my_producer.is_queue_full(cursor)[0] is True
+
+
+def test_max_bytes_unset_keeps_counting_records_only(my_producer: Producer, my_job: StreamJob):
+    cursor = my_producer.get_or_create_cursor(job_id=my_job.id)
+    for _ in range(5):
+        _put_iteration(my_producer, cursor, 100)
+
+    assert my_producer.queue.config.max_bytes is None
+    assert my_producer.is_queue_full(cursor)[0] is False

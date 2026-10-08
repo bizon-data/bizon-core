@@ -38,6 +38,11 @@ class AbastractQueueConfigDetails(BaseModel, ABC):
     model_config = ConfigDict(extra="forbid")
 
     max_nb_messages: int = Field(1_000_000, description="Maximum number of messages in the queue")
+    max_bytes: Optional[int] = Field(
+        None,
+        description="Pause the producer while the queued records take about this many bytes in memory. "
+        "Estimated from the average size of the iterations produced so far.",
+    )
 
     queue: BaseModel = Field(..., description="Configuration of the queue")
     consumer: BaseModel = Field(..., description="Configuration of the consumer")

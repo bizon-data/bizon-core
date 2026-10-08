@@ -66,7 +66,8 @@ class AbstractQueue(ABC):
         iteration: int,
         signal: str = None,
         extracted_at: datetime = None,
-    ):
+    ) -> int:
+        """Put an iteration in the queue and return its estimated size in bytes"""
         df_source_records = source_records_to_df(source_iteration.records)
 
         queue_message = QueueMessage(
@@ -78,6 +79,7 @@ class AbstractQueue(ABC):
         )
 
         self.put_queue_message(queue_message)
+        return df_source_records.estimated_size(unit="b")
 
 
 class QueueFactory:

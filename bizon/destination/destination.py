@@ -1,3 +1,4 @@
+import math
 from abc import ABC, abstractmethod
 from datetime import datetime
 from enum import Enum
@@ -233,9 +234,16 @@ class AbstractDestination(ABC):
         )
 
         if df_destination_records.estimated_size(unit="b") > self.buffer.buffer_size:
-            raise ValueError(
-                f"Records size {round(df_destination_records.estimated_size(unit='b') / 1024 / 1024, 2)} Mb is greater than buffer size {round(self.buffer.buffer_size / 1024 / 1024, 2)} Mb. Please increase destination buffer_size or reduce batch_size from the source."
+            if not self.buffer.is_empty:
+                self.buffer_flush_handler(session=session)
+                self.buffer.flush()
+            self.write_oversized_iteration(
+                df_destination_records=df_destination_records,
+                iteration=iteration,
+                pagination=pagination,
+                session=session,
             )
+            return DestinationBufferStatus.RECORDS_WRITTEN
 
         # Write buffer to destination if buffer is ripe and create a new buffer for the new iteration
         if self.buffer.is_ripe:
@@ -265,6 +273,56 @@ class AbstractDestination(ABC):
                 iteration=iteration, df_destination_records=df_destination_records, pagination=pagination
             )
             return DestinationBufferStatus.RECORDS_WRITTEN_THEN_BUFFERED
+
+    def write_oversized_iteration(
+        self, df_destination_records: pl.DataFrame, iteration: int, pagination: dict = None, session=None
+    ):
+        """Write an iteration larger than the buffer in buffer-sized chunks.
+
+        The iteration gets a single cursor, written once every chunk has landed. A cursor carries the
+        iteration's next pagination, so one written after the first chunk would make a resumed run skip
+        the rest. Without it, a crash mid-way resumes from the previous iteration and re-writes the chunks.
+        """
+        size = df_destination_records.estimated_size(unit="b")
+        nb_chunks = math.ceil(size / self.buffer.buffer_size)
+        chunk_rows = max(1, math.ceil(df_destination_records.height / nb_chunks))
+        logger.info(
+            f"Iteration {iteration} is {round(size / 1024 / 1024, 2)} Mb, more than the "
+            f"{round(self.buffer.buffer_size / 1024 / 1024, 2)} Mb buffer: writing it in {nb_chunks} chunks."
+        )
+
+        written = 0
+        for offset in range(0, df_destination_records.height, chunk_rows):
+            chunk = df_destination_records.slice(offset, chunk_rows)
+            success, error_msg = self.write_records(df_destination_records=chunk)
+
+            if not success:
+                self.create_cursors(
+                    DestinationIteration(
+                        success=False,
+                        error_message=error_msg,
+                        records_written=written,
+                        from_source_iteration=iteration,
+                        to_source_iteration=iteration,
+                        pagination=pagination,
+                    )
+                )
+                raise DestinationWriteError(
+                    f"Failed to write source iteration {iteration} to destination {self.destination_id} "
+                    f"after {written} of {df_destination_records.height} records: {error_msg}"
+                )
+            written += chunk.height
+
+        self.create_cursors(
+            DestinationIteration(
+                success=True,
+                records_written=written,
+                from_source_iteration=iteration,
+                to_source_iteration=iteration,
+                pagination=pagination,
+            )
+        )
+        logger.info(f"Successfully wrote {written} records to destination {self.destination_id}")
 
     def create_cursors(self, destination_iteration: DestinationIteration):
         self.backend.create_destination_cursor(
