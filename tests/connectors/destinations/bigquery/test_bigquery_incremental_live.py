@@ -21,6 +21,9 @@ from bizon.connectors.destinations.bigquery.src.config import (
 from bizon.connectors.destinations.bigquery.src.destination import BigQueryDestination
 from bizon.source.config import SourceSyncModes
 
+# Talks to real GCP; CI deselects it with -m 'not live'.
+pytestmark = pytest.mark.live
+
 # Test configuration - update these values for your GCP project
 PROJECT_ID = "my-gcp-project"
 DATASET_ID = "bizon_test"

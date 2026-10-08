@@ -1,5 +1,3 @@
-import os
-
 import pytest
 
 from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
@@ -45,10 +43,7 @@ def test_backend_factory_postgres():
     assert isinstance(backend, SQLAlchemyBackend)
 
 
-@pytest.mark.skipif(
-    os.getenv("CI") is not None,
-    reason="Skipping tests that require a BigQuery database",
-)
+@pytest.mark.live
 def test_backend_factory_bigquery():
     config = BigQuerySQLAlchemyConfig(
         type=BackendTypes.BIGQUERY,

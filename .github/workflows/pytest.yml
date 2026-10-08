@@ -5,7 +5,13 @@ on:
     paths:
       - 'bizon/**'
       - 'tests/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
       - '.github/workflows/pytest.yml'
+  # Releases are tagged on main, so main itself must be green, not only the PRs that reached it.
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,9 +20,14 @@ jobs:
   test:
 
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
 
-    container: python:3.10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+
+    container: python:${{ matrix.python-version }}
 
     services:
       postgres:
@@ -34,10 +45,10 @@ jobs:
           --health-retries 10
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v4
+      uses: astral-sh/setup-uv@v10.2.0
 
     - name: Install dependencies
       run: |
@@ -45,7 +56,9 @@ jobs:
 
     - name: Run tests
       run: |
-        uv run pytest tests/ --ignore=tests/e2e/ --ignore=tests/connectors/destinations/bigquery/ --ignore=tests/connectors/destinations/bigquery_streaming/ --ignore=tests/connectors/destinations/bigquery_streaming_v2/ --ignore=tests/connectors/destinations/bigquery_iceberg/
+        uv run pytest tests/ --ignore=tests/e2e/ -m "not live"
       env:
         POSTGRES_HOST: postgres
         POSTGRES_PORT: 5432
+        # Makes any Google client that escapes its mock fail instead of looking for credentials.
+        GOOGLE_APPLICATION_CREDENTIALS: /nonexistent/credentials.json

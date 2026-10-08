@@ -1,5 +1,4 @@
 import logging
-import os
 import random
 from datetime import datetime
 from random import randint
@@ -20,6 +19,9 @@ from bizon.destination.config import DestinationTypes
 from bizon.destination.destination import DestinationFactory
 from bizon.destination.models import destination_record_schema
 from bizon.monitoring.noop.monitor import NoOpMonitor
+
+# Talks to real GCP; CI deselects it with -m 'not live'.
+pytestmark = pytest.mark.live
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +70,6 @@ def test_table():
     client.delete_table(f"{table_id}_temp")
 
 
-@pytest.mark.skipif(
-    os.getenv("POETRY_ENV_TEST") == "CI",
-    reason="Skipping tests that require a BigQuery database",
-)
 def test_load_records_to_bigquery(my_backend_config, test_table, sync_metadata):
     bigquery_config = BigQueryConfig(
         name=DestinationTypes.BIGQUERY,

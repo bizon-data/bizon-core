@@ -14,6 +14,10 @@ from bizon.engine.backend.adapters.sqlalchemy.config import (
 from bizon.engine.backend.config import BackendTypes
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "live: needs real GCP credentials; deselect with -m 'not live'")
+
+
 @pytest.fixture(scope="session", autouse=True)
 def load_env():
     env_file = find_dotenv(".env")
