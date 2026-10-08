@@ -269,7 +269,7 @@ class AbstractDestination(ABC):
     def create_cursors(self, destination_iteration: DestinationIteration):
         self.backend.create_destination_cursor(
             job_id=self.sync_metadata.job_id,
-            name=self.sync_metadata.name,
+            name=self.sync_metadata.job_name or self.sync_metadata.name,
             source_name=self.sync_metadata.source_name,
             stream_name=self.sync_metadata.stream_name,
             destination_name=self.sync_metadata.destination_name,

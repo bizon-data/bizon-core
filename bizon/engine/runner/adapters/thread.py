@@ -94,7 +94,9 @@ class ThreadRunner(AbstractRunner):
                     logger.error("Consumer thread failed, stopping producer ...")
                     producer_stop_event.set()
 
-        runner_status = RunnerStatus(producer=future_producer.result(), consumer=future_consumer.result())
+        runner_status = RunnerStatus(
+            producer=future_producer.result(), consumer=future_consumer.result(), job_id=job.id
+        )
 
         if not runner_status.is_success:
             logger.error(runner_status.to_string())

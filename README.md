@@ -189,11 +189,37 @@ bizon run config.yml \
   --custom-source ./my_source.py \   # Custom Python file implementing a Bizon source
   --runner thread \                  # thread | process | stream (default: thread)
   --log-level INFO \                 # DEBUG | INFO | WARNING | ERROR | CRITICAL
-  --env-file .env                    # Load env vars from a .env file (auto-detected if omitted)
+  --env-file .env \                  # Load env vars from a .env file (auto-detected if omitted)
+  --result-json result.json          # Write the run's outcome as JSON
 ```
 
 The `--runner` flag overrides `engine.runner.type` in the config; `--log-level` overrides
 `engine.runner.log_level`.
+
+`--result-json` writes the run's outcome as JSON, so a wrapper can act on it without parsing logs:
+
+```json
+{
+  "status": "failure",
+  "failure_class": "source",
+  "job_id": "2d876897b416403f892e9f411b69efd6",
+  "producer": "source_error",
+  "consumer": "source_error",
+  "stream": null,
+  "records_written": 1200,
+  "started_at": "2026-10-08T09:46:55.094362Z",
+  "duration_s": 42.1,
+  "error": "RuntimeError: page 2 came back empty"
+}
+```
+
+- `status` is `success` or `failure`.
+- `failure_class` is one of `config`, `source`, `destination`, `backend`, `queue`, `transform`,
+  `stream`, `killed` or `unknown`.
+- `error` is the first error the run logged.
+- The file reads `"status": "running"` from the moment the run starts. A process killed from outside
+  (OOM, a pod deadline) therefore leaves `running` behind, not the previous run's outcome.
+- The exit code is unchanged.
 
 ### `bizon secrets check`
 
@@ -232,6 +258,7 @@ A pipeline is defined by a single YAML file validated against `BizonConfig`
 | Key | Required | Description |
 |-----|----------|-------------|
 | `name` | ✅ | Unique name identifying this sync |
+| `id` | — | Stable identity the backend keys jobs, cursors and resets under. Defaults to `name`. Set it to the current `name` before renaming a pipeline, or the rename starts it from scratch |
 | `source` | ✅ | Source connector config (see below) |
 | `destination` | ✅ | Destination connector config; routed by its `name` field |
 | `transforms` | — | List of in-pipeline transforms (default `[]`) |

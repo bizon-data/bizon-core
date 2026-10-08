@@ -163,7 +163,7 @@ class Producer:
         elif is_incremental:
             # Get the last successful job to determine last_run timestamp
             last_successful_job = self.backend.get_last_successful_stream_job(
-                name=self.bizon_config.name,
+                name=self.bizon_config.job_name,
                 source_name=self.bizon_config.source.name,
                 stream_name=self.bizon_config.source.stream,
             )
@@ -208,7 +208,7 @@ class Producer:
                 try:
                     self.backend.create_source_cursor(
                         job_id=job_id,
-                        name=self.bizon_config.name,
+                        name=self.bizon_config.job_name,
                         source_name=self.source.config.name,
                         stream_name=self.source.config.stream,
                         iteration=cursor.iteration,

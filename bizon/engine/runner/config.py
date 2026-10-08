@@ -57,6 +57,7 @@ class RunnerStatus(BaseModel):
     producer: Optional[PipelineReturnStatus] = None
     consumer: Optional[PipelineReturnStatus] = None
     stream: Optional[PipelineReturnStatus] = None
+    job_id: Optional[str] = None
 
     def __init__(self, **data):
         super().__init__(**data)

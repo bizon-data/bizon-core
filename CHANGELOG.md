@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unknown `source:` keys now log a warning.** Previously they were dropped silently and the run fell
   back to defaults, typically after a typo or a key that belongs under `destination.config`. Source
   config classes declared with `extra="allow"` are exempt.
+- **`bizon run --result-json <path>` writes the run's outcome as JSON.**
+  - It records `status`, a `failure_class` and the job id, plus the records written, the duration and
+    the first logged error.
+  - The failure classes are `config`, `source`, `destination`, `backend`, `queue`, `transform`,
+    `stream`, `killed` and `unknown`.
+  - The file reads `running` until the run ends, so a process killed from outside leaves that behind
+    instead of a stale outcome.
+  - The exit code is unchanged.
+- **Optional top-level `id:`, a stable identity for a pipeline's backend state** (jobs, cursors,
+  resets). It defaults to `name`, so existing pipelines keep their state. With `id` set, `name` is
+  purely cosmetic and can be renamed freely.
 
 ### Changed
 

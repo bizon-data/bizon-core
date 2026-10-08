@@ -157,10 +157,10 @@ class StreamingRunner(AbstractRunner):
                     except Exception as e:
                         logger.error(f"Error committing source: {e}")
                         monitor.track_pipeline_status(PipelineReturnStatus.SOURCE_ERROR)
-                        return RunnerStatus(stream=PipelineReturnStatus.SOURCE_ERROR)
+                        return RunnerStatus(stream=PipelineReturnStatus.SOURCE_ERROR, job_id=job.id)
 
                 iteration += 1
 
                 monitor.track_pipeline_status(PipelineReturnStatus.SUCCESS)
 
-        return RunnerStatus(stream=PipelineReturnStatus.SUCCESS)  # return when max iterations is reached
+        return RunnerStatus(stream=PipelineReturnStatus.SUCCESS, job_id=job.id)  # return when max iterations is reached

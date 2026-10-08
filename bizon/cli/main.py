@@ -26,6 +26,7 @@ from bizon.source.discover import (
     get_source_class_by_source_and_stream,
 )
 
+from .result import RunResultRecorder, failure_class_from_exception
 from .utils import (
     deprecated_config_warnings,
     parse_from_yaml,
@@ -144,7 +145,7 @@ def reset(filename: str, env_file: str, cancel: bool, stream_name: str):
 
     if cancel:
         cancelled = backend.cancel_pending_stream_resets(
-            name=bizon_config.name,
+            name=bizon_config.job_name,
             source_name=bizon_config.source.name,
             stream_name=bizon_config.source.stream,
         )
@@ -156,7 +157,7 @@ def reset(filename: str, env_file: str, cancel: bool, stream_name: str):
         return
 
     if backend.get_pending_stream_reset(
-        name=bizon_config.name,
+        name=bizon_config.job_name,
         source_name=bizon_config.source.name,
         stream_name=bizon_config.source.stream,
     ):
@@ -166,7 +167,7 @@ def reset(filename: str, env_file: str, cancel: bool, stream_name: str):
     # Nothing validates the stream name here (the source is never instantiated), so a typo — most
     # likely via --stream — would otherwise queue a reset that silently never fires.
     if not backend.get_last_successful_stream_job(
-        name=bizon_config.name,
+        name=bizon_config.job_name,
         source_name=bizon_config.source.name,
         stream_name=bizon_config.source.stream,
     ):
@@ -177,7 +178,7 @@ def reset(filename: str, env_file: str, cancel: bool, stream_name: str):
         )
 
     backend.create_stream_reset(
-        name=bizon_config.name,
+        name=bizon_config.job_name,
         source_name=bizon_config.source.name,
         stream_name=bizon_config.source.stream,
     )
@@ -379,6 +380,13 @@ def _is_unresolved_reference(value) -> bool:
     help="Reset the incremental stream: re-fetch it in full and replace the destination table, "
     "then resume incremental from this run.",
 )
+@click.option(
+    "--result-json",
+    required=False,
+    type=click.Path(dir_okay=False),
+    help="Write the run's outcome as JSON to this path. It reads `running` until the run ends, so a run killed "
+    "from outside leaves that behind.",
+)
 def run(
     filename: str,
     custom_source: str,
@@ -386,6 +394,7 @@ def run(
     log_level: LoggerLevel,
     env_file: str,
     reset: bool,
+    result_json: str,
     help="Run a bizon pipeline from a YAML file.",
 ):
     """Run a bizon pipeline from a YAML file."""
@@ -414,8 +423,27 @@ def run(
     # Override reset param in config
     set_reset_in_config(config=config, reset=reset)
 
-    runner = RunnerFactory.create_from_config_dict(config=config)
-    result = runner.run()
+    recorder = RunResultRecorder(result_json)
+
+    try:
+        runner = RunnerFactory.create_from_config_dict(config=config)
+    except Exception as error:
+        recorder.failed(error, failure_class="config")
+        raise
+
+    recorder.capture_errors()
+    try:
+        result = runner.run()
+    except Exception as error:
+        recorder.failed(error, failure_class=failure_class_from_exception(error))
+        raise
+
+    recorder.finished(
+        result,
+        records_written=lambda job_id: runner.get_backend(
+            bizon_config=runner.bizon_config
+        ).get_number_of_written_rows_for_job(job_id=job_id),
+    )
 
     if result.is_success:
         click.secho("Pipeline finished successfully.", fg="green")
