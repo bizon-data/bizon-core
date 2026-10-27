@@ -1,10 +1,14 @@
 import ast
+import hashlib
 import importlib
 import importlib.util
 import inspect
 import os
+import re
+import sys
 import traceback
 from collections.abc import Mapping
+from types import ModuleType
 from typing import Any, List, Type
 
 from loguru import logger
@@ -228,6 +232,26 @@ def get_internal_source_class_by_source_and_stream(source_name: str, stream_name
     return stream.source_class
 
 
+def load_external_source_module(source_name: str, filepath: str) -> ModuleType:
+    """Execute a custom source file as a module registered in sys.modules.
+
+    Registration is what lets pydantic resolve string annotations (`from __future__ import annotations`)
+    against the module's globals, and lets pickle find its functions in a forked worker.
+    """
+    path_hash = hashlib.sha1(os.path.abspath(filepath).encode()).hexdigest()[:8]
+    module_name = "bizon_custom_source_" + re.sub(r"\W", "_", source_name) + "_" + path_hash
+
+    spec = importlib.util.spec_from_file_location(module_name, filepath)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
 def get_external_source_class_by_source_and_stream(
     source_name: str, stream_name: str, filepath: str
 ) -> Type[AbstractSource]:
@@ -242,21 +266,11 @@ def get_external_source_class_by_source_and_stream(
     # Find  class that inherit from AbstractSource
     class_names = find_inherited_classes(file_path=filepath)
 
+    module = load_external_source_module(source_name=source_name, filepath=filepath)
+
     stream_names = []
 
     for class_name in class_names:
-        # Extract the module name from the file (remove directory and extension)
-        module_name = os.path.splitext(os.path.basename(filepath))[0]
-
-        # Create module spec from the file
-        spec = importlib.util.spec_from_file_location(module_name, filepath)
-
-        # Create a module from the spec
-        module = importlib.util.module_from_spec(spec)
-
-        # Execute the module (this loads the module into memory)
-        spec.loader.exec_module(module)
-
         class_to_test = getattr(module, class_name)
 
         if is_class_a_source(class_to_test, filepath):

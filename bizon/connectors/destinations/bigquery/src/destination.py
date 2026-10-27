@@ -1,3 +1,4 @@
+import concurrent.futures
 import io
 import os
 import tempfile
@@ -293,8 +294,21 @@ class BigQueryDestination(AbstractDestination):
         load_job = self.bq_client.load_table_from_uri(
             self._gcs_uri(gcs_file), self.temp_table_id, job_config=self._build_load_job_config()
         )
-        result = load_job.result()  # Waits for the job to complete
+        result = self._wait_for_job(load_job)
         assert result.state == "DONE", f"Job failed with state {result.state} with error {result.error_result}"
+
+    def _wait_for_job(self, job):
+        timeout = self.config.job_timeout_seconds
+        try:
+            return job.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            try:
+                job.cancel()
+            except Exception as e:
+                logger.warning(f"Could not cancel BigQuery job {job.job_id}: {e}")
+            raise TimeoutError(
+                f"BigQuery {job.job_type} job {job.job_id} did not finish within {timeout}s and was cancelled"
+            ) from None
 
     def write_records(self, df_destination_records: pl.DataFrame) -> Tuple[bool, str]:
         self._ensure_dataset()
@@ -385,7 +399,7 @@ class BigQueryDestination(AbstractDestination):
         success = True
         error_message = None
         try:
-            result = entry["job"].result()  # Waits if not yet done
+            result = self._wait_for_job(entry["job"])
             if getattr(result, "state", "DONE") != "DONE":
                 success = False
                 error_message = f"Load job failed with state {result.state}"
@@ -519,7 +533,7 @@ class BigQueryDestination(AbstractDestination):
         job_config = bigquery.CopyJobConfig(write_disposition=write_disposition)
         copy_job = self.bq_client.copy_table(self.temp_table_id, self.table_id, job_config=job_config)
         try:
-            result = copy_job.result()  # Waits for the job to complete
+            result = self._wait_for_job(copy_job)
         except BadRequest as e:
             message = str(e)
             if "artitioning" in message or "lustering" in message:

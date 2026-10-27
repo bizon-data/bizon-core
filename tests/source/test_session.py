@@ -5,9 +5,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 import requests
+from requests.adapters import HTTPAdapter
 
 from bizon.source.config import SourceConfig
-from bizon.source.session import CappedRetry, Session
+from bizon.source.session import DEFAULT_TIMEOUT, CappedRetry, Session
 from bizon.source.source import AbstractSource
 
 
@@ -55,11 +56,14 @@ def server():
         def do_GET(self):
             hits.append(self.path)
             status, headers, delay = responses[min(len(hits), len(responses)) - 1]
+            headers = dict(headers)
+            # A Content-Length above the 2 bytes written makes a truncated body.
+            content_length = headers.pop("Content-Length", "2")
             time.sleep(delay)
             self.send_response(status)
             for key, value in headers.items():
                 self.send_header(key, value)
-            self.send_header("Content-Length", "2")
+            self.send_header("Content-Length", content_length)
             self.end_headers()
             self.wfile.write(b"{}")
 
@@ -72,14 +76,51 @@ def server():
     httpd.shutdown()
 
 
-def test_without_http_block_the_legacy_policy_is_kept():
+def test_without_http_block_the_http_defaults_apply(server):
+    url, responses, hits = server
+    responses += [(502, {}, 0), (200, {}, 0)]
     source = make_source()
     retries = source.session.get_adapter("https://").max_retries
 
-    assert type(retries) is not CappedRetry
-    assert retries.total == 20
-    assert not retries.status_forcelist
-    assert source.session.timeout is None
+    assert type(retries) is CappedRetry
+    assert 500 in retries.status_forcelist
+    assert source.session.timeout == (10, 60)
+    assert source.session.get(url).status_code == 200
+    assert len(hits) == 2
+
+
+def test_bare_session_gets_the_default_timeout():
+    assert Session().timeout == DEFAULT_TIMEOUT == (10, 300)
+    assert Session(timeout=5).timeout == 5
+
+
+def test_truncated_body_is_retried(server):
+    url, responses, hits = server
+    responses += [(200, {"Content-Length": "100"}, 0), (200, {}, 0)]
+    source = make_source(retries={"backoff_factor": 0})
+
+    assert source.session.get(url).json() == {}
+    assert len(hits) == 2
+
+
+def test_truncated_body_raises_once_retries_run_out(server):
+    url, responses, hits = server
+    responses += [(200, {"Content-Length": "100"}, 0)]
+    source = make_source(retries={"backoff_factor": 0})
+
+    with pytest.raises(requests.exceptions.ChunkedEncodingError):
+        source.session.get(url)
+    assert len(hits) == 4
+
+
+def test_truncated_body_is_not_retried_for_a_method_the_policy_excludes(server):
+    url, responses, hits = server
+    responses += [(200, {"Content-Length": "100"}, 0)]
+    source = make_source(retries={"backoff_factor": 0, "allowed_methods": ["POST"]})
+
+    with pytest.raises(requests.exceptions.ChunkedEncodingError):
+        source.session.get(url)
+    assert len(hits) == 1
 
 
 def test_http_block_retries_5xx_without_retry_after(server):
@@ -171,3 +212,75 @@ def test_http_block_warns_when_get_session_is_overridden():
         logger.remove(sink)
 
     assert any("overrides get_session()" in m for m in messages)
+
+
+def test_overriding_get_session_without_http_block_does_not_warn():
+    from loguru import logger
+
+    class OwnSessionSource(HttpSource):
+        def get_session(self):
+            return Session()
+
+    messages = []
+    sink = logger.add(messages.append, level="WARNING")
+    try:
+        OwnSessionSource(HttpSourceConfig(name="http", stream="items"))
+    finally:
+        logger.remove(sink)
+
+    assert messages == []
+
+
+class PlainSessionSource(HttpSource):
+    def get_session(self):
+        return requests.Session()
+
+
+def capture_timeouts(monkeypatch) -> list:
+    seen = []
+    send = HTTPAdapter.send
+
+    def recording_send(self, request, **kwargs):
+        seen.append(kwargs.get("timeout"))
+        return send(self, request, **kwargs)
+
+    monkeypatch.setattr(HTTPAdapter, "send", recording_send)
+    return seen
+
+
+def test_overriding_source_plain_session_gets_default_timeout(server, monkeypatch):
+    url, responses, hits = server
+    responses += [(200, {}, 0)]
+    seen = capture_timeouts(monkeypatch)
+    source = PlainSessionSource(HttpSourceConfig(name="http", stream="items"))
+
+    source.session.get(url)
+    source.session.get(url, timeout=5)
+
+    assert seen == [DEFAULT_TIMEOUT, 5]
+
+
+def test_overriding_source_plain_session_retries_truncated_body(server, monkeypatch):
+    url, responses, hits = server
+    responses += [(200, {"Content-Length": "100"}, 0), (200, {}, 0)]
+    monkeypatch.setattr("bizon.source.session.time.sleep", lambda seconds: None)
+    source = PlainSessionSource(HttpSourceConfig(name="http", stream="items"))
+
+    assert source.session.get(url).json() == {}
+    assert len(hits) == 2
+
+
+def test_overriding_source_plain_session_keeps_its_own_status_handling(server):
+    url, responses, hits = server
+    responses += [(404, {}, 0)]
+    source = PlainSessionSource(HttpSourceConfig(name="http", stream="items"))
+
+    assert source.session.get(url).status_code == 404
+    assert not source.session.hooks["response"]
+    assert source.session.get_adapter("https://").max_retries.total == 0
+
+
+def test_bizon_session_is_not_wrapped_twice():
+    source = make_source()
+
+    assert "request" not in vars(source.session)

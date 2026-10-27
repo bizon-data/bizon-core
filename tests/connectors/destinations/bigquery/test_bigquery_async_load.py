@@ -1,5 +1,6 @@
 """Tests for the async / batched BigQuery load-job path (config.async_load)."""
 
+import concurrent.futures
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
@@ -254,3 +255,42 @@ class TestAsyncFinalize:
         dest.bq_client.copy_table.assert_called_once()
         _, kwargs = dest.bq_client.copy_table.call_args
         assert kwargs["job_config"].write_disposition == bigquery.WriteDisposition.WRITE_TRUNCATE
+
+
+class TestJobTimeout:
+    def test_timeout_reaches_every_job_wait(self, mock_bq_client, mock_gcs_client):
+        dest = make_destination(make_config(load_files_per_job=1, job_timeout_seconds=42))
+        load_job = make_load_job(done=False)
+        dest.bq_client.load_table_from_uri.return_value = load_job
+        copy_job = MagicMock()
+        dest.bq_client.copy_table = MagicMock(return_value=copy_job)
+        dest.bq_client.get_table = MagicMock()
+
+        flush(dest, iteration=0)
+        assert dest.finalize() is True
+
+        load_job.result.assert_called_with(timeout=42)
+        copy_job.result.assert_called_with(timeout=42)
+
+    def test_sync_load_waits_with_the_default_timeout(self, mock_bq_client, mock_gcs_client):
+        dest = make_destination(make_config(async_load=False))
+        load_job = make_load_job()
+        dest.bq_client.load_table_from_uri.return_value = load_job
+
+        flush(dest, iteration=0)
+
+        load_job.result.assert_called_once_with(timeout=600)
+
+    def test_timeout_cancels_the_job_and_fails(self, mock_bq_client, mock_gcs_client):
+        dest = make_destination(make_config(load_files_per_job=1))
+        dest.bq_client.load_table_from_uri.return_value = make_load_job()
+        copy_job = MagicMock(job_id="copy_1", job_type="copy")
+        copy_job.result.side_effect = concurrent.futures.TimeoutError()
+        dest.bq_client.copy_table = MagicMock(return_value=copy_job)
+        dest.bq_client.get_table = MagicMock()
+
+        flush(dest, iteration=0)
+        with pytest.raises(TimeoutError, match="copy job copy_1 did not finish within 600"):
+            dest.finalize()
+
+        copy_job.cancel.assert_called_once()

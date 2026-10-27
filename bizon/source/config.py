@@ -97,8 +97,8 @@ class SourceConfig(BaseModel, ABC):
     )
 
     http: Optional[HttpConfig] = Field(
-        description="HTTP policy for the default session. Unset keeps the legacy policy: no timeout, and retries "
-        "only on 413/429/503 carrying a Retry-After header.",
+        description="HTTP policy for the default session. Unset applies the HttpConfig defaults. Ignored by "
+        "sources that override get_session().",
         default=None,
     )
 

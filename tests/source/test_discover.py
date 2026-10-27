@@ -1,3 +1,5 @@
+import textwrap
+
 import pytest
 
 from bizon.source.discover import (
@@ -116,3 +118,58 @@ def test_find_unknown_source_keys_ignores_declared_fields_and_permissive_configs
 
     assert find_unknown_source_keys(StrictConfig, raw) == ["buffer_size", "typo_mode"]
     assert find_unknown_source_keys(PermissiveConfig, raw) == []
+
+
+FUTURE_ANNOTATIONS_SOURCE = textwrap.dedent(
+    """
+    from __future__ import annotations
+
+    from enum import Enum
+
+    from bizon.source.config import SourceConfig
+    from bizon.source.source import AbstractSource
+
+
+    class FutureSourceConfig(SourceConfig):
+        stream: FutureStreams
+
+
+    class FutureStreams(str, Enum):
+        ITEMS = "items"
+
+
+    class FutureSource(AbstractSource):
+        @staticmethod
+        def streams():
+            return [item.value for item in FutureStreams]
+
+        @staticmethod
+        def get_config_class():
+            return FutureSourceConfig
+
+        def get_authenticator(self):
+            return None
+
+        def check_connection(self):
+            return True, None
+
+        def get_total_records_count(self):
+            return None
+
+        def get(self, pagination=None):
+            raise NotImplementedError
+    """
+)
+
+
+def test_external_source_with_future_annotations_resolves_module_local_forward_refs(tmp_path):
+    source_file = tmp_path / "source.py"
+    source_file.write_text(FUTURE_ANNOTATIONS_SOURCE)
+
+    source_class = get_external_source_class_by_source_and_stream(
+        source_name="future", stream_name="items", filepath=str(source_file)
+    )
+    config = source_class.get_config_class().model_validate({"name": "future", "stream": "items"})
+
+    assert config.stream.value == "items"
+    assert source_class.__module__.startswith("bizon_custom_source_future_")
