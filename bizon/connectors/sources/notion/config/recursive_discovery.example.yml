@@ -1,0 +1,31 @@
+name: notion pages with recursive discovery
+
+source:
+  name: notion
+  stream: pages  # discovery applies to pages, databases and data_sources
+  authentication:
+    type: api_key
+    params:
+      token: <YOUR_NOTION_TOKEN>
+
+  # Walk these pages (including toggles and columns) for child pages and inline databases
+  page_ids:
+    - "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz"
+  full_recursive_search: true
+  max_recursion_depth: 5
+
+  database_ids:
+    - "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  database_filters:
+    "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx":
+      property: Status
+      status:
+        equals: Published
+
+  # Only pages created on or after this date; AND-combined with database_filters
+  start_date: "2024-01-01"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
