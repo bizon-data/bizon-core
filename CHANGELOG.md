@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The thread runner hung when the producer raised** instead of returning a status (for example in
+  `get_source()`). It never sent a termination signal, so the consumer blocked on `queue.get()` forever and
+  the run sat until the pod deadline. The consumer now polls the queue with a timeout and honours the stop
+  event, which the runner sets when the producer raises; this also makes the process runner's stop effective.
+  A producer that *returns* a failure is still left to drain without publishing, as since 0.5.4.
+- **The thread runner logged every producer result as a success**: `if result_producer.SUCCESS:` tested the
+  enum member, which is always truthy.
 - **hubspot**: the last page of a list was dropped, because `parse_response` returned a tuple rather than a
   `SourceIteration`. Also fixed:
   - GETs sent a `"null"` body;
