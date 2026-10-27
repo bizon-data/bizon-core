@@ -69,9 +69,11 @@ class OpenaiSourceConfig(SourceConfig):
     organization_id: Optional[str] = Field(None, description="Required for the chatgpt_costs stream")
     workspace_id: Optional[str] = Field(None, description="Required for the workspace_daily_usage stream")
     # Errors are raised by hand so the API's 4xx body, which carries the actionable reason, reaches the message.
-    # 520-524 are Cloudflare edge errors the API returns transiently on wide-window list calls.
+    # 520-524 are Cloudflare edge errors the API returns transiently on wide-window list calls. A 524 means the
+    # origin ran past 100s, so the read timeout has to sit above that rather than at the 60s default.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(
+            timeout=(10, 300),
             raise_for_status=False,
             retries=HttpRetryConfig(status_forcelist=[429, 500, 502, 503, 504, 520, 521, 522, 523, 524]),
         ),

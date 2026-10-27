@@ -154,7 +154,11 @@ class Session(requests.Session):
             response = self._method_mapping[method](url=url, *args, **kwargs)
         except HTTPError as e:
             logger.error(f"Error {e}")
-            logger.error(f"detailed error response: {e.response.json()}")
+            try:
+                detail = e.response.json()
+            except ValueError:
+                detail = e.response.text[:500]
+            logger.error(f"detailed error response: {detail}")
             logger.error(f"for request body: {e.request.body}")
             raise e
         except Exception as e:

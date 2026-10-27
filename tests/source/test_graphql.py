@@ -369,7 +369,7 @@ def test_adaptive_without_probe_raises_once_the_ladder_is_exhausted():
 def test_adaptive_probe_recovery_returns_max_size_not_start_size():
     """By the time pagination reaches an unresolvable run the ladder has already
     walked the page size to the floor, so resuming at start_size would leave the
-    rest of the connection fetched one row at a time (#195)."""
+    rest of the connection fetched one row at a time."""
     counter = gql.MutableCounter()
     probes = {"n": 0}
     reals = {"n": 0}

@@ -288,7 +288,9 @@ Common `SourceConfig` fields (`bizon/source/config.py`); each connector adds its
 
 ### HTTP retries and timeouts
 
-The default session applies these defaults, and an `http` block overrides them:
+The default session applies these defaults, and an `http` block overrides them. Many built-in connectors
+ship their own `http` default (often `raise_for_status: false`, or a tuned retry list); a block you set is
+merged over that connector default, so you only write the keys you want to change:
 
 ```yaml
 source:

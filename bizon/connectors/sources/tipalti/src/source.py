@@ -78,7 +78,7 @@ class TipaltiSourceConfig(SourceConfig):
     api_key: str = Field(..., description="Master encryption key, used as the HMAC key")
     payer_name: str = Field(..., description="Payer name of the Tipalti account, part of every signed request")
     lookback_days: int = 730
-    # SOAP returns faults as HTTP 500, so a 500 is not retried. A retry would also replay a stale signed timestamp.
+    # SOAP returns faults (bad signature, bad request) as HTTP 500, so a 500 is not retried.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(
             retries=HttpRetryConfig(status_forcelist=[429, 502, 503, 504, 520, 522, 524]),
