@@ -1,6 +1,7 @@
 import multiprocessing
 import multiprocessing.synchronize
 import threading
+from queue import Empty
 from typing import Union
 
 from loguru import logger
@@ -14,6 +15,8 @@ from bizon.monitoring.monitor import AbstractMonitor
 from bizon.transform.transform import Transform
 
 from .config import PythonQueueConfig
+
+STOP_EVENT_POLL_SECONDS = 1
 
 
 class PythonQueueConsumer(AbstractQueueConsumer):
@@ -42,8 +45,12 @@ class PythonQueueConsumer(AbstractQueueConsumer):
                 self.monitor.track_pipeline_status(PipelineReturnStatus.KILLED_BY_RUNNER)
                 return PipelineReturnStatus.KILLED_BY_RUNNER
 
-            # Retrieve the message from the queue
-            queue_message: QueueMessage = self.queue.get()
+            # A blocking get() would never see the stop event, e.g. when the producer died without sending a
+            # termination signal.
+            try:
+                queue_message: QueueMessage = self.queue.get(timeout=STOP_EVENT_POLL_SECONDS)
+            except Empty:
+                continue
 
             status = self.process_queue_message(queue_message)
 

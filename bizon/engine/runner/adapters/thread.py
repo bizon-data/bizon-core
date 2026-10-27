@@ -75,14 +75,18 @@ class ThreadRunner(AbstractRunner):
             self._is_running = False
 
             if not future_producer.running():
-                result_producer: PipelineReturnStatus = future_producer.result()
-                logger.info(f"Producer thread stopped running with result: {result_producer}")
-
-                if result_producer.SUCCESS:
-                    logger.info("Producer thread has finished successfully, will wait for consumer to finish ...")
-                else:
-                    logger.error("Producer thread failed, stopping consumer ...")
+                # A producer that returns a status has already sent the termination signal, so the consumer stops
+                # on its own (draining without publishing on a failure). One that raised never sent it.
+                if future_producer.exception() is not None:
+                    logger.error("Producer thread raised, stopping consumer ...")
                     consumer_stop_event.set()
+                else:
+                    result_producer: PipelineReturnStatus = future_producer.result()
+                    logger.info(f"Producer thread stopped running with result: {result_producer}")
+                    if result_producer == PipelineReturnStatus.SUCCESS:
+                        logger.info("Producer thread has finished successfully, will wait for consumer to finish ...")
+                    else:
+                        logger.error("Producer thread failed, waiting for consumer to drain without publishing ...")
 
             if not future_consumer.running():
                 result_consumer = future_consumer.result()
