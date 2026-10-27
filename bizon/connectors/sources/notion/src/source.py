@@ -590,14 +590,9 @@ class NotionSource(AbstractSource):
         return database_ids
 
     def discover_children_from_pages(self, page_ids: List[str]) -> Tuple[List[str], List[str]]:
-        """
-        Recursively discover child databases and child pages under page_ids, descending into
-        container blocks (toggles, columns, callouts...) and into the pages of discovered databases,
-        up to max_recursion_depth.
+        """Return (database_ids, child_page_ids) found under page_ids, up to max_recursion_depth.
 
-        Returns:
-            (discovered_database_ids, discovered_child_page_ids). Pages that belong to a discovered
-            database are walked for deeper children but not returned.
+        Pages of a discovered database are walked for deeper children but not returned.
         """
         discovered_db_ids: List[str] = []
         discovered_child_page_ids: List[str] = []

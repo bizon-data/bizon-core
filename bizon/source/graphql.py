@@ -1,14 +1,8 @@
-"""Shared GraphQL transport for bizon sources.
+"""Shared GraphQL transport: bounded-retry POST, a same-cursor page-size shrink ladder and an optional
+phantom-entry cursor probe.
 
-Bounded-retry POST, a same-cursor page-size shrink ladder, and an optional
-phantom-entry cursor probe, shared by the GraphQL sources. Deliberately
-API-agnostic: every API-specific decision (which `errors[]` shapes are
-transient, where `pageInfo` lives, how to read a rate-limit reset header, how
-to acquire a token) is injected by the caller.
-
-The helper never creates a session and never calls `requests.*` directly; it
-posts through the session it is handed, which carries the source's auth and
-`Retry` adapter.
+API-agnostic: error classification, `pageInfo` location, rate-limit hints and auth are injected by the caller, and
+requests go through the caller's session.
 """
 
 from __future__ import annotations
@@ -23,8 +17,7 @@ from typing import Any, Callable, Iterable, Optional, Sequence, Tuple
 import requests
 from loguru import logger
 
-# Explicit (connect, read) on every POST: without a read timeout a stalled
-# socket never becomes a retryable event and the run hangs to the pod deadline.
+# Without a read timeout a stalled socket never becomes retryable and hangs to the pod deadline.
 GRAPHQL_TIMEOUT = (10, 120)
 
 DEFAULT_SHRINK_STEPS = (25, 10, 5, 1)
@@ -49,30 +42,18 @@ class ErrorClass(Enum):
 
 
 class GraphQLError(RuntimeError):
-    """A GraphQL `errors[]` response that is not retry-worthy.
-
-    Subclasses RuntimeError so existing `except RuntimeError` fail-closed call
-    sites keep working unchanged.
-    """
+    """A GraphQL `errors[]` response that is not retry-worthy."""
 
 
 class TransientGraphQLError(GraphQLError):
-    """Raised when a response's `errors[]` matched a caller-supplied transient
-    signature and the transient attempt budget is exhausted.
+    """Transient `errors[]` persisted past the attempt budget.
 
-    "Transient" means "retry-worthy", not strictly "flaky": a deterministic
-    query-cost ceiling belongs here too, because its remedy has the same shape
-    as a timeout's -- shrink the page and retry the same cursor, which is what
-    `graphql_post_adaptive` does.
+    "Transient" means retry-worthy: a query-cost ceiling belongs here too, since shrinking the page fixes it.
     """
 
 
 class GraphQLRateLimited(GraphQLError):
-    """Raised when the rate-limit attempt budget is exhausted.
-
-    `wait_seconds` is first and positional so sources can keep raising it from
-    non-GraphQL code paths that only have a wait to report.
-    """
+    """Rate limit persisted past the attempt budget; also raised from non-GraphQL paths with only a wait."""
 
     def __init__(self, wait_seconds: float | None = None, message: str = ""):
         self.wait_seconds = wait_seconds
@@ -99,14 +80,10 @@ def errors_match(
     message_signatures: Iterable[str] = (),
     type_fields: Sequence[str] = ("type",),
 ) -> bool:
-    """True if any `errors[]` entry carries one of `types` in one of
-    `type_fields`, or one of `message_signatures` as a lowercased substring of
-    its `message`.
+    """True if any `errors[]` entry has one of `types` in a `type_fields` field, or a `message_signatures`
+    substring in its lowercased message.
 
-    `type_fields` is explicit rather than "check everywhere" because the two
-    APIs put the discriminator in different places -- top-level `type` vs
-    `extensions.type`/`extensions.code` -- and widening a source's match set is
-    a silent behaviour change, not a cleanup.
+    `type_fields` is explicit because APIs put the discriminator in different places (`type` vs `extensions.*`).
     """
     wanted_types = {t.upper() for t in types}
     signatures = tuple(message_signatures)
@@ -123,10 +100,7 @@ def errors_match(
 
 
 def default_classifier(response: requests.Response, body: dict) -> ErrorClass | None:
-    """Generic classifier: the cases every GraphQL API shares.
-
-    Sources with their own error vocabulary pass their own `classify`.
-    """
+    """The cases every GraphQL API shares; sources with their own error vocabulary pass their own `classify`."""
     if response.status_code == 429:
         return ErrorClass.RATE_LIMITED
     if response.status_code >= 500:
@@ -148,8 +122,7 @@ def default_classifier(response: requests.Response, body: dict) -> ErrorClass | 
 
 
 def _parse_body(response: requests.Response) -> dict | None:
-    """None means the body isn't JSON at all -- distinct from valid JSON that
-    isn't a dict, which still folds to {} as before."""
+    """None for a non-JSON body; valid JSON that isn't a dict folds to {}."""
     try:
         body = response.json()
     except ValueError:
@@ -186,29 +159,13 @@ def graphql_post(
 ) -> dict:
     """POST a GraphQL query with bounded retries; return the parsed JSON body.
 
-    `classify` is called for every response with `(response, parsed_body)` and
-    returns None for a success, else the class to act on.
+    `classify(response, body)` returns None for a success, else the class to act on. `*_attempts` are total
+    attempts and `*_wait` are `(initial, max)` seconds doubling per retry; the rate-limit budget resets on each
+    transient attempt. `retry_exceptions` (include the adapter's `RetryError`) share the rate-limit budget.
+    `auth_factory` mints `auth` per attempt, inside the retried region, so a short-lived token fetch is retried too.
 
-    Both `*_attempts` values are TOTAL attempts, and both `*_wait` values are
-    `(initial, max)` seconds doubling per retry -- so the defaults sleep
-    15, 30 across 3 transient attempts and 60, 120, 240, 480, 900 across 6
-    rate-limited ones. The rate-limit budget resets on each transient attempt
-    (the two failure modes must not share a counter).
-
-    `retry_exceptions` (typically the source's network-error tuple, including
-    the adapter's `RetryError` -- exhausting the adapter raises that, not
-    `HTTPError`) are retried on the rate-limit ladder and share its budget.
-
-    `auth_factory` mints the request's `auth` per attempt, INSIDE the retried
-    region, for sources whose credential is a short-lived token fetched over
-    the network -- minting it outside would leave that fetch unprotected by the
-    ladder. It takes precedence over `auth`.
-
-    Raises `TransientGraphQLError` / `GraphQLRateLimited` once the matching
-    budget is spent, `GraphQLError` immediately on FATAL, and lets a non-OK
-    response the classifier did not claim surface as `HTTPError`. An OK
-    response with a non-JSON body is treated as transient too, not returned
-    as a silent `{}` success.
+    Raises `TransientGraphQLError` / `GraphQLRateLimited` once a budget is spent and `GraphQLError` on FATAL; a
+    non-OK response the classifier did not claim surfaces as `HTTPError`.
     """
     payload: dict = {"query": query}
     if variables:
@@ -258,9 +215,7 @@ def graphql_post(
 
             hint = rate_limit_wait_hint(response) if rate_limit_wait_hint else None
             if hint is not None:
-                # Small pad so we don't race the exact reset instant, capped at
-                # the same ceiling as the blind ladder so a reset far in the
-                # future can't stall the stream on a single event.
+                # Padded past the reset instant, and capped so a far-future reset can't stall the stream.
                 sleep_for = min(hint + 1 + random.random(), rate_limit_wait[1])
                 logger.warning(
                     f"{prefix}Rate limited, sleeping {sleep_for:.1f}s per reset hint "
@@ -302,14 +257,7 @@ def graphql_post(
 
 
 def build_page_shrink_sequence(start_size: int, floor: int = 1, *, steps: Sequence[int] = DEFAULT_SHRINK_STEPS) -> list:
-    """Strictly-decreasing page sizes from `start_size` down to `floor`, inclusive.
-
-    `steps` intersected with [floor, start_size], plus the two endpoints -- so a
-    full-size page walks the canonical ladder while a start_size already below
-    the first step shrinks directly instead of inventing an intermediate size.
-    `steps` is per-source: the useful ladder depends on what the API charges for
-    a page.
-    """
+    """Strictly-decreasing page sizes: `steps` within [floor, start_size], plus both endpoints."""
     sizes = {size for size in steps if floor <= size <= start_size}
     sizes.add(start_size)
     sizes.add(floor)
@@ -331,20 +279,12 @@ class MutableCounter:
 
 @dataclass
 class PhantomProbe:
-    """A node-free sibling of the real query, used to tell a broken node
-    resolver apart from a broken connection.
+    """A node-free sibling of the real query, telling a broken node resolver apart from a broken connection.
 
-    Some GraphQL connections contain contiguous index entries whose node data
-    the server can never load: page size is irrelevant, but a `pageInfo`-only
-    probe of the exact same cursor succeeds. That asymmetry is the
-    discriminator -- if the probe fails too it is a real outage and the caller
-    must still fail closed.
-
-    `query` must select only `pageInfo { hasNextPage endCursor }` off the same
-    connection, taking the same variables. `page_info` digs that block out of a
-    probe response body (the path is API-specific). `describe_cursor` is an
-    optional log-only decoder that turns an opaque cursor into something
-    human-readable.
+    Some connections hold index entries whose nodes never load at any page size, while a `pageInfo`-only probe
+    of the same cursor succeeds; if the probe fails too, it is a real outage. `query` must select only
+    `pageInfo { hasNextPage endCursor }` off the same connection with the same variables; `page_info` extracts
+    that block from the response, and `describe_cursor` optionally decodes a cursor for logs.
     """
 
     query: str
@@ -373,21 +313,11 @@ def graphql_post_adaptive(
     post: Callable[[str, dict], dict] | None = None,
     **graphql_post_kwargs,
 ) -> Tuple[dict, int]:
-    """POST, shrinking `variables[page_size_var]` on a persistent
-    TransientGraphQLError instead of retrying the same page size.
+    """POST, shrinking `variables[page_size_var]` and retrying the same cursor on a persistent
+    TransientGraphQLError (Relay cursors are page-size-independent).
 
-    Relay cursors are page-size-independent, so stepping the page size down and
-    retrying the SAME cursor is correct and lets pagination continue once a size
-    succeeds. Returns `(body, size_that_worked)`; callers carry that size
-    forward, since a page that shrank once usually needs to again.
-
-    Once the ladder is exhausted at `floor`, re-raises the last transient error
-    (fail closed, watermark does not advance) unless a `probe` is supplied and
-    recovers -- see `PhantomProbe`.
-
-    `post` overrides the default `graphql_post(session, url, ...)` call, for
-    sources whose transport needs per-request auth or token refresh; `session`
-    and `url` are then unused.
+    Returns `(body, size_that_worked)` for the caller to carry forward. At `floor` it re-raises unless `probe`
+    recovers. `post` replaces the default `graphql_post(session, url, ...)` call, leaving `session`/`url` unused.
     """
     if max_size is None:
         max_size = start_size
@@ -440,8 +370,7 @@ def graphql_post_adaptive(
         end_cursor = page_info.get("endCursor")
         has_next_page = page_info.get("hasNextPage")
         if not end_cursor or not has_next_page or end_cursor == variables.get(cursor_var):
-            # End of connection, or the probe echoed the same cursor back: no
-            # progress is possible, so this can't be an entry we step over.
+            # End of connection, or the probe echoed the cursor back: nothing to step over.
             raise last_error
 
         described = probe.describe_cursor(end_cursor) if probe.describe_cursor else None
@@ -472,7 +401,7 @@ def graphql_post_adaptive(
         try:
             result = post(query, variables)
         except TransientGraphQLError as exc:
-            # Still broken past this cursor -- likely another contiguous entry.
+            # Likely another contiguous broken entry.
             last_error = exc
             continue
 
@@ -482,12 +411,8 @@ def graphql_post_adaptive(
             f"entr{'y' if skipped_this_page == 1 else 'ies'} starting at cursor "
             f"{cursor_var}={starting_cursor}, resuming pagination at page size {max_size}."
         )
-        # max_size, NOT start_size: by the time pagination reaches an
-        # unresolvable run the ladder has already walked page_size down to the
-        # floor, so start_size here IS floor -- returning it leaves the rest of
-        # the connection fetched one row at a time. Restoring the configured
-        # size is safe because the next window no longer contains the entries
-        # just stepped over, and the ladder will kick in again if it does.
+        # max_size, not start_size: start_size is floor by now, and the rest of the connection would be fetched
+        # one row at a time.
         return result, max_size
 
     raise last_error

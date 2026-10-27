@@ -86,10 +86,9 @@ query($owner: String!, $name: String!, $first: Int!, $after: String) {
 }
 """
 
-# Node-free sibling of the PR_*_GRAPHQL_QUERY queries (same connection, same variables). Some
-# repos carry pull-request index entries whose nodes GitHub can never resolve: if a page fails
-# but this pageInfo-only probe succeeds, only node resolution is broken and the cursor can step
-# past those entries. If the probe fails too it is a real outage and callers fail closed.
+# Node-free sibling of the PR_*_GRAPHQL_QUERY queries. Some repos carry PR index entries GitHub can
+# never resolve: if a page fails but this probe succeeds, the cursor can step past them. If the probe
+# fails too, it is an outage and callers fail closed.
 PR_PAGE_CURSOR_PROBE_QUERY = """
 query($owner: String!, $name: String!, $first: Int!, $after: String) {
   rateLimit { cost remaining resetAt }
@@ -146,7 +145,6 @@ query($owner: String!, $name: String!, $number: Int!, $first: Int!, $after: Stri
 }
 """
 
-# Shared inline fragment for review comment fields
 _REVIEW_COMMENT_FIELDS = """
   databaseId
   body
@@ -318,7 +316,7 @@ query($owner: String!, $name: String!, $first: Int!, $after: String) {
 }
 """
 
-# Shared inline fragment for timeline item nodes (most event types only expose `id`, not `databaseId`)
+# Most timeline event types only expose `id`, not `databaseId`.
 _TIMELINE_ITEMS_NODES = """
   __typename
   ... on AddedToProjectEvent { id createdAt actor { login } }
@@ -403,7 +401,6 @@ query($owner: String!, $name: String!, $number: Int!, $first: Int!, $after: Stri
 
 DEFAULT_BINARY_EXTENSIONS = frozenset(
     {
-        # Images
         "png",
         "jpg",
         "jpeg",
@@ -417,7 +414,6 @@ DEFAULT_BINARY_EXTENSIONS = frozenset(
         "psd",
         "ai",
         "eps",
-        # Compiled
         "pyc",
         "pyo",
         "class",
@@ -429,7 +425,6 @@ DEFAULT_BINARY_EXTENSIONS = frozenset(
         "exe",
         "bin",
         "elf",
-        # Archives
         "zip",
         "tar",
         "gz",
@@ -441,7 +436,6 @@ DEFAULT_BINARY_EXTENSIONS = frozenset(
         "war",
         "ear",
         "whl",
-        # Media
         "mp3",
         "mp4",
         "avi",
@@ -455,13 +449,11 @@ DEFAULT_BINARY_EXTENSIONS = frozenset(
         "wma",
         "wmv",
         "webm",
-        # Fonts
         "ttf",
         "otf",
         "woff",
         "woff2",
         "eot",
-        # Binary docs
         "pdf",
         "doc",
         "docx",
@@ -469,7 +461,6 @@ DEFAULT_BINARY_EXTENSIONS = frozenset(
         "xlsx",
         "ppt",
         "pptx",
-        # Data
         "db",
         "sqlite",
         "sqlite3",
@@ -481,7 +472,6 @@ DEFAULT_BINARY_EXTENSIONS = frozenset(
         "hdf5",
         "parquet",
         "avro",
-        # Other
         "lock",
         "map",
         "wasm",
@@ -496,7 +486,6 @@ DEFAULT_BINARY_EXTENSIONS = frozenset(
 SKIP_PATH_SUFFIXES = (".min.js", ".min.css")
 
 
-# Shared inline fragment for reaction nodes (used by both reaction streams)
 _REACTION_FIELDS = """
   databaseId
   content
@@ -587,9 +576,7 @@ query($commentNodeId: ID!, $first: Int!, $after: String) {
 """
 )
 
-# Review-comment reaction queries.
-# Cost budget: PRs (3) -> reviews (10) -> comments (50) -> reactions (20).
-# Approx cost: 1 + 1 + 3 + 30 + 3*10*50 + 3*10*50*1 = ~1535 points/query.
+# PRs (3) -> reviews (10) -> comments (50) -> reactions (20): ~1535 points/query.
 PR_REVIEW_COMMENT_REACTIONS_GRAPHQL_QUERY = (
     """
 query($owner: String!, $name: String!, $first: Int!, $after: String) {
@@ -813,12 +800,8 @@ class GitHubSourceConfig(SourceConfig):
 
 
 class GitHubAppAuth(AuthBase):
-    """GitHub App authentication using JWT and installation access tokens.
-
-    Generates a JWT signed with the app's private key, then exchanges it for
-    short-lived installation tokens. Automatically discovers all installations
-    and caches tokens per installation (refreshed at the 50-minute mark).
-    """
+    """Signs a JWT with the app's private key and exchanges it for installation tokens, cached per
+    installation and refreshed at the 50-minute mark."""
 
     def __init__(self, app_id: str, private_key: str):
         self.app_id = app_id
@@ -832,7 +815,7 @@ class GitHubAppAuth(AuthBase):
     def _generate_jwt(self) -> str:
         now = int(time.time())
         payload = {
-            "iat": now - 60,  # issued at time, 60s in the past to allow clock drift
+            "iat": now - 60,  # 60s in the past to allow clock drift
             "exp": now + (10 * 60),  # max 10 minutes
             "iss": self.app_id,
         }
@@ -847,14 +830,12 @@ class GitHubAppAuth(AuthBase):
         }
 
     def set_installation(self, installation_id: int, token: str, expires_at: float):
-        """Cache a token for an installation and set it as current."""
         self._installation_tokens[installation_id] = (token, expires_at)
         self._current_installation_id = installation_id
         self._current_token = token
         self._token_expires_at = expires_at
 
     def use_jwt_mode(self):
-        """Switch to JWT mode for app-level endpoints."""
         self._current_token = None
         self._current_installation_id = None
 
@@ -868,12 +849,8 @@ class GitHubAppAuth(AuthBase):
         return request
 
     def get_installation_token_threadsafe(self, installation_id: int, session: Session) -> str:
-        """Thread-safe token retrieval that does NOT mutate _current_token.
-
-        Checks the cache under lock, returns if still valid. Otherwise generates
-        a new JWT and POSTs for a fresh installation token, updating only the
-        cache (not session-level auth state).
-        """
+        """Thread-safe token lookup that only touches the cache, never `_current_token`, so concurrent
+        threads can't clobber each other's session auth."""
         with self._token_lock:
             cached = self._installation_tokens.get(installation_id)
             if cached:
@@ -881,7 +858,7 @@ class GitHubAppAuth(AuthBase):
                 if time.time() < expires_at - 600:  # 50-min mark
                     return token
 
-        # Token expired or missing — fetch outside the lock to avoid blocking
+        # Fetch outside the lock so other threads aren't blocked on the HTTP call.
         jwt_token = self._generate_jwt()
         response = session.post(
             f"{BASE_URL}/app/installations/{installation_id}/access_tokens",
@@ -899,7 +876,6 @@ class GitHubAppAuth(AuthBase):
         return token
 
     def invalidate_installation_token(self, installation_id: int):
-        """Remove a cached token so the next call fetches a fresh one."""
         with self._token_lock:
             self._installation_tokens.pop(installation_id, None)
 
@@ -917,14 +893,12 @@ class _StaticTokenAuth(AuthBase):
         return request
 
 
-# Kept as module-level names: the REST helpers below raise RateLimitError, and
-# RepoFetchError wrapping plus the tests import both from here.
+# Module-level alias: the REST helpers raise it and callers import it from here.
 RateLimitError = GraphQLRateLimited
 
 
-# HTTPAdapter raises RetryError after exhausting its status_forcelist. Treat that
-# exhaustion as retryable at the outer tenacity layer too; otherwise a run gets only
-# the adapter's same-request retries and the exhausted 500 escapes immediately.
+# RetryError (an exhausted status_forcelist) is retryable at the tenacity layer too; otherwise an
+# exhausted 500 escapes after only the adapter's same-request retries.
 TRANSIENT_NETWORK_ERRORS = (
     RequestsConnectionError,
     ChunkedEncodingError,
@@ -934,13 +908,10 @@ TRANSIENT_NETWORK_ERRORS = (
 
 
 class RepoFetchError(RuntimeError):
-    """Raised when a per-repo GraphQL/REST fetch fails transiently or ambiguously
-    (GraphQL `errors[]`, network error) and cannot be safely treated as "no data".
+    """A per-repo fetch failed transiently or ambiguously and can't be treated as "no data".
 
-    Swallowing it would let the run succeed and the incremental watermark advance past the
-    un-fetched window, leaving a permanent silent gap. Raising fails the run so the window is
-    retried next time. Never raise it for a genuinely gone or inaccessible repo
-    (`data.repository is None` with no `errors[]`, or REST 404/409): those are legitimate skips.
+    Failing the run keeps the incremental watermark from advancing past the un-fetched window. A gone
+    or inaccessible repo (`data.repository is None` without `errors[]`, or REST 404/409) is a skip.
     """
 
     def __init__(self, repo: str, context: str, cause: Exception):
@@ -950,17 +921,13 @@ class RepoFetchError(RuntimeError):
         super().__init__(f"Failed to fetch {context} for {repo}: {cause}")
 
 
-# /graphql 5xx responses are handed to the classifier rather than retried at length by the
-# HTTP adapter: the GraphQL session does a few quick status retries, then returns the last
-# response instead of raising RetryError. A RetryError would land on the 60-900s rate-limit
-# backoff with no page-size shrink, and an oversized page can then retry the same request for
-# over an hour before failing the stream.
+# The GraphQL session returns a persistent 5xx to the classifier after a few quick retries. Raising
+# RetryError would land on the 60-900s rate-limit backoff with no page-size shrink.
 GRAPHQL_TRANSIENT_STATUSES = (500, 502, 503, 504)
 GRAPHQL_ADAPTER_RETRIES = 3
 
-# REST `/actions/runs/{id}/jobs` page sizes, largest first. GitHub can fail to render a
-# 100-job page for a run with a few hundred jobs and return a deterministic 502 while 50 and
-# 25 work, so `_fetch_jobs_for_runs` steps down this ladder instead of retrying the same size.
+# `/actions/runs/{id}/jobs` page sizes. GitHub can return a deterministic 502 on a 100-job page for
+# a run with a few hundred jobs while 50 and 25 work.
 JOBS_PAGE_SIZE_LADDER = (100, 50, 25, 10)
 
 _TRANSIENT_GRAPHQL_ERROR_TYPES = {"SERVICE_UNAVAILABLE", "INTERNAL", "RATE_LIMITED"}
@@ -968,9 +935,7 @@ _TRANSIENT_GRAPHQL_MESSAGE_SIGNATURES = (
     "something went wrong while executing your query",
     "timeout",
     "timed out",
-    # GitHub's node/query-cost ceiling for an oversized page -- a
-    # deterministic cost signal, not a server blip, so the real remedy is the
-    # adaptive page-size shrink in `_graphql_post_adaptive`, same as a timeout.
+    # GitHub's query-cost ceiling: deterministic, so like a timeout it needs the page-size shrink.
     "resource limits for this query exceeded",
 )
 
@@ -978,19 +943,15 @@ _TRANSIENT_GRAPHQL_MESSAGE_SIGNATURES = (
 def _classify_github_graphql(response, body: dict) -> Optional[ErrorClass]:
     """Map a GitHub GraphQL response onto the shared transport's error classes.
 
-    Conservative on TRANSIENT: only the signatures above match, so a genuine
-    query bug (bad field, NOT_FOUND) is FATAL and fails fast instead of burning
-    every retry attempt. Only the top-level `type` is inspected -- that's where
-    GitHub puts the discriminator, and widening it would silently reclassify
-    errors. A 401 is deliberately unclaimed so the caller can refresh the
-    installation token and retry.
+    Only the signatures above are TRANSIENT, so a query bug (bad field, NOT_FOUND) fails fast as FATAL.
+    Only the top-level `type` is inspected, where GitHub puts the discriminator. A 401 is left
+    unclaimed so the caller can refresh the installation token.
     """
     if response.status_code in (403, 429):
         return ErrorClass.RATE_LIMITED
     if response.status_code in GRAPHQL_TRANSIENT_STATUSES:
-        # A /graphql 502 is usually GitHub killing a query that ran past its ~10s
-        # server limit, so retrying the same page size keeps failing the same way.
-        # TRANSIENT sends it to the adaptive page-size shrink instead.
+        # A /graphql 502 is usually GitHub killing a query past its ~10s limit; the same page size
+        # keeps failing, so TRANSIENT sends it to the page-size shrink.
         return ErrorClass.TRANSIENT
     if not response.ok:
         return None
@@ -1034,18 +995,10 @@ _CURSOR_V2_PREFIX = b"cursor:v2:"
 
 
 def _try_decode_relay_cursor_timestamp(cursor: str) -> Optional[str]:
-    """Best-effort decode of a GitHub Relay `cursor:v2:` opaque cursor's leading ISO
-    timestamp, purely so a phantom-entry skip log line names a human-readable position
-    instead of only an opaque blob.
+    """Best-effort decode of the ISO timestamp leading a Relay `cursor:v2:` cursor, for log lines.
 
-    The cursor is base64(b"cursor:v2:" + msgpack([<ISO timestamp str>, <int id>, ...])).
-    Decoding it fully would mean adding a `msgpack` dependency for a debug log line, so
-    this hand-rolls just enough of the msgpack wire format to pull out the first array
-    element when it's a short string (fixstr, the case for every timestamp-ordered
-    cursor observed) -- str8/16/32 and non-array payloads are left alone rather than
-    guessed at. Deliberately defensive: ANY unexpected shape returns None rather than
-    raising, because this is a nice-to-have for log readability, not load-bearing --
-    a decode failure must never break the actual GraphQL fetch it's logging about.
+    The cursor is base64(b"cursor:v2:" + msgpack([<timestamp>, <id>, ...])). Only fixarray/fixstr are
+    hand-parsed, to avoid a msgpack dependency; any other shape returns None rather than raising.
     """
     try:
         raw = base64.b64decode(cursor)
@@ -1080,14 +1033,13 @@ def _describe_relay_cursor(cursor: str) -> Optional[str]:
 
 class GitHubSource(AbstractSource):
     def __init__(self, config: GitHubSourceConfig):
-        # Handle escaped newlines in PEM keys from env vars
+        # PEM keys passed through env vars carry escaped newlines
         config.private_key = config.private_key.replace("\\n", "\n")
         # Initialize auth before super().__init__ which calls get_authenticator()
         self.auth = GitHubAppAuth(app_id=config.app_id, private_key=config.private_key)
         super().__init__(config)
         self.config: GitHubSourceConfig = config
         self._rate_limit_lock = threading.Lock()  # for sequential _api_get
-        # Per-installation rate limit tracking: maps installation_id -> reset timestamp
         self._rate_limit_resets: dict[int, float] = {}
         self._rate_limit_resets_lock = threading.Lock()
         self._start_date: Optional[datetime] = None
@@ -1095,17 +1047,13 @@ class GitHubSource(AbstractSource):
             self._start_date = datetime.fromisoformat(config.start_date.replace("Z", "+00:00")).replace(
                 tzinfo=timezone.utc
             )
-        # Phantom GraphQL index entries stepped over across this whole run, checked
-        # against config.max_phantom_skips_per_run.
+        # Phantom GraphQL index entries skipped this run, capped by max_phantom_skips_per_run.
         self._phantom_skips = MutableCounter()
-        # POST /graphql goes through its own session (see _build_graphql_session).
-        # Installation-token minting and REST keep using self.session.
+        # Token minting and REST stay on self.session.
         self._graphql_session = self._build_graphql_session()
-        # GET .../actions/runs/{id}/jobs goes through its own fail-fast session
-        # (see _build_jobs_session) so a 5xx reaches the page-size shrink quickly.
         self._jobs_session = self._build_jobs_session()
-        # repo_content tarball extraction state (instance-local, not pagination --
-        # full refresh never resumes mid-job, so losing it on a process restart is fine).
+        # repo_content tarball state lives on the instance, not in pagination: full refresh never
+        # resumes mid-job.
         self._tarball_dir: Optional[str] = None
         self._tarball_repo: Optional[str] = None
         self._tarball_missing: Set[str] = set()
@@ -1115,11 +1063,7 @@ class GitHubSource(AbstractSource):
         super().__del__()
 
     def _wait_for_rate_limit(self, installation_id: int):
-        """Block until the rate limit resets for this installation.
-
-        If another thread already recorded a reset time, we just sleep until
-        that time instead of sending a doomed request.
-        """
+        """Sleep until a reset another thread recorded, instead of sending a doomed request."""
         with self._rate_limit_resets_lock:
             reset_at = self._rate_limit_resets.get(installation_id, 0)
         wait = reset_at - time.time()
@@ -1128,9 +1072,7 @@ class GitHubSource(AbstractSource):
             time.sleep(wait)
 
     def _set_rate_limit_reset(self, installation_id: int, reset_at: float):
-        """Record when the rate limit resets for an installation."""
         with self._rate_limit_resets_lock:
-            # Only update if this reset is later than what we already know
             existing = self._rate_limit_resets.get(installation_id, 0)
             if reset_at > existing:
                 self._rate_limit_resets[installation_id] = reset_at
@@ -1142,18 +1084,11 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _build_graphql_session() -> Session:
-        """Session used only for POST /graphql.
+        """Session for POST /graphql only.
 
-        Separate from the default session because the right 5xx policy is different.
-        The REST session retries a 502 ten times with backoff, which is correct
-        for a GET. On /graphql a persistent 502 usually means the query is too
-        heavy, and ten retries of the same page cost about 14 minutes per attempt.
-        This session does a few quick status retries to absorb a real blip, then
-        returns the last 5xx response so `_classify_github_graphql` can mark it
-        TRANSIENT and `graphql_post_adaptive` can shrink the page. 429 is not in
-        the forcelist because the classifier handles it with the reset hint.
-        Connect errors and read timeouts still raise and go on the transport's
-        rate-limit backoff as before.
+        On /graphql a persistent 502 usually means the query is too heavy, so instead of the REST
+        session's ten retries this does a few quick ones, then returns the last 5xx for the classifier
+        to mark TRANSIENT and the adaptive caller to shrink the page. 429 is left to the classifier.
         """
         session = Session()
         retries = Retry(
@@ -1168,14 +1103,9 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _build_jobs_session() -> Session:
-        """Session used only for GET /actions/runs/{id}/jobs.
-
-        Same reasoning as `_build_graphql_session`: the shared REST session retries a
-        502 ten times with backoff (about 12 min), and a persistent 502 here means the
-        page is too big to render, so retrying it never helps. This session does a few
-        quick status retries, then returns the last 5xx response (`raise_on_status=False`)
-        so `_fetch_jobs_for_runs` can restart the run at a smaller page size.
-        """
+        """Session for GET /actions/runs/{id}/jobs only: a persistent 502 there means the page is too
+        big to render, so it returns the last 5xx after a few quick retries and `_fetch_jobs_for_runs`
+        drops to a smaller page size."""
         session = Session()
         retries = Retry(
             total=3,
@@ -1194,12 +1124,8 @@ class GitHubSource(AbstractSource):
         reraise=True,
     )
     def _api_get(self, url: str, **kwargs):
-        """Rate-limit-aware GET that respects GitHub rate limit headers.
-
-        On 403/429: reads retry-after / x-ratelimit-reset headers, sleeps,
-        then retries once. If still rate-limited, raises RateLimitError for
-        tenacity exponential backoff.
-        """
+        """GET that honours GitHub's rate-limit headers: on 403/429 it sleeps until the reset and
+        retries once, then raises RateLimitError for the tenacity backoff."""
         response = self.session.get(url, **kwargs)
         if response.status_code in (403, 429):
             retry_after = response.headers.get("retry-after")
@@ -1233,27 +1159,18 @@ class GitHubSource(AbstractSource):
         reraise=True,
     )
     def _api_get_with_token(self, url: str, installation_id: int, session: Optional[Session] = None, **kwargs):
-        """Thread-safe rate-limit-aware GET using per-request auth.
+        """Thread-safe `_api_get`: each request carries its own token, and a reset another thread
+        recorded is waited out first so threads don't each fire a doomed request.
 
-        Like _api_get but bypasses session-level auth entirely. Each request
-        carries its own token via _StaticTokenAuth, so concurrent threads
-        never interfere with each other's authentication state.
-
-        Before sending, checks if this installation is known to be rate-limited
-        and waits for the reset time. This prevents all threads from firing
-        doomed requests and then each sleeping independently.
-
-        `session` overrides self.session for the GET itself (token minting always
-        uses self.session).
+        `session` overrides self.session for the GET only; token minting always uses self.session.
         """
         session = session or self.session
-        # Wait if another thread already discovered this installation is rate-limited
         self._wait_for_rate_limit(installation_id)
 
         token = self.auth.get_installation_token_threadsafe(installation_id, self.session)
         response = session.get(url, auth=_StaticTokenAuth(token), **kwargs)
 
-        # Handle 401: token may have been invalidated server-side
+        # A 401 means the token was invalidated server-side
         if response.status_code == 401:
             logger.warning(f"Got 401 for installation {installation_id}, refreshing token")
             self.auth.invalidate_installation_token(installation_id)
@@ -1275,7 +1192,6 @@ class GitHubSource(AbstractSource):
                 wait_secs = 60
                 reset_at = time.time() + wait_secs
 
-            # Record the reset time so other threads wait instead of sending doomed requests
             self._set_rate_limit_reset(installation_id, reset_at)
 
             logger.warning(
@@ -1291,13 +1207,9 @@ class GitHubSource(AbstractSource):
         return response
 
     def _graphql_post(self, query: str, variables: dict, installation_id: int) -> dict:
-        """Thread-safe GraphQL POST through the shared transport.
-
-        Adds the two GitHub-specific concerns the transport can't own: a
-        per-request installation token, refreshed once on a 401 (which
-        `_classify_github_graphql` deliberately leaves unclaimed so it lands
-        here), and the GraphQL point budget GitHub reports inline.
-        """
+        """Thread-safe GraphQL POST through the shared transport, adding a per-request installation
+        token (refreshed once on a 401, which the classifier leaves unclaimed) and GitHub's inline
+        point budget."""
         try:
             result = self._graphql_request(query, variables, installation_id)
         except HTTPError as exc:
@@ -1311,22 +1223,9 @@ class GitHubSource(AbstractSource):
         return result
 
     def _graphql_request(self, query: str, variables: dict, installation_id: int) -> dict:
-        # Attempt counts and waits: a short bounded retry for TransientGraphQLError
-        # (retrying the same oversized page is near-futile -- the real remedy is the
-        # adaptive page-size shrink), and a
-        # long one shared by rate limits and network errors, including the
-        # adapter's exhausted RetryError.
-        #
-        # auth_factory, not auth: minting the installation token is itself an HTTP
-        # call, so it has to happen inside the retry ladder or a network blip on
-        # /access_tokens fails the whole stream. It also means the 401 path above
-        # only has to invalidate the cache -- the next attempt re-mints.
-        #
-        # The POST goes through self._graphql_session, which returns a persistent
-        # 5xx response instead of raising RetryError. The classifier treats it as
-        # TRANSIENT, so after 3 attempts the adaptive caller shrinks the page
-        # (about 3 minutes per page size). The token is
-        # still minted on self.session.
+        # Transient retries are short because the real remedy is the adaptive page shrink.
+        # auth_factory, not auth: minting the token is an HTTP call, so it must sit inside the retry
+        # ladder; it also means the 401 path above only has to invalidate the cache.
         return graphql_post(
             self._graphql_session,
             GRAPHQL_URL,
@@ -1373,15 +1272,12 @@ class GitHubSource(AbstractSource):
         cursor_probe_query: Optional[str] = None,
         max_size: Optional[int] = None,
     ) -> Tuple[dict, int]:
-        """Fetch one page, shrinking `first` on a persistent TransientGraphQLError
-        and retrying the same cursor.
+        """Fetch one page, shrinking `first` on a persistent TransientGraphQLError and retrying the
+        same cursor.
 
-        `cursor_probe_query` must be the node-free sibling of `query`
-        (PR_PAGE_CURSOR_PROBE_QUERY). Omitting it -- or
-        `max_phantom_skips_per_page == 0` -- keeps the pure fail-closed behaviour:
-        the caller wraps the raised error in RepoFetchError and the watermark does
-        not advance past the un-fetched window. `max_size` is the stream's
-        configured page size, restored after a phantom recovery.
+        `cursor_probe_query` (the node-free sibling of `query`) enables stepping past phantom
+        entries; without it, or with `max_phantom_skips_per_page == 0`, the error is raised and the
+        caller fails closed. `max_size` is restored after a phantom recovery.
         """
         probe = None
         if cursor_probe_query is not None:
@@ -1434,7 +1330,6 @@ class GitHubSource(AbstractSource):
         return None
 
     def _get_installations(self) -> List[dict]:
-        """Get all installations for this GitHub App."""
         self.auth.use_jwt_mode()
         installations = []
         page = 1
@@ -1455,11 +1350,8 @@ class GitHubSource(AbstractSource):
         return installations
 
     def _get_installation_token(self, installation_id: int) -> str:
-        """Exchange JWT for an installation access token. Caches and auto-refreshes.
-
-        Used by sequential (main-thread) code paths. Lock-protected for safety
-        since the cache is shared with the threadsafe path.
-        """
+        """Installation token for the sequential paths; locked because the cache is shared with the
+        threadsafe path."""
         with self.auth._token_lock:
             cached = self.auth._installation_tokens.get(installation_id)
             if cached:
@@ -1482,14 +1374,10 @@ class GitHubSource(AbstractSource):
         return token
 
     def _switch_to_installation(self, installation_id: int):
-        """Ensure we're using the token for the given installation."""
         self._get_installation_token(installation_id)
 
     def _get_repos_for_installation(self, installation_id: int) -> List[dict]:
-        """Get all repos accessible to an installation.
-
-        Returns list of {"name": "owner/repo", "default_branch": "main"}.
-        """
+        """Returns [{"name": "owner/repo", "default_branch": "main"}, ...]."""
         self._switch_to_installation(installation_id)
         repos = []
         page = 1
@@ -1508,10 +1396,7 @@ class GitHubSource(AbstractSource):
         return repos
 
     def _discover_all_repos(self) -> List[dict]:
-        """Discover all repos across all installations.
-
-        Returns list of {"repo": "owner/repo", "installation_id": 123, "default_branch": "main"}.
-        """
+        """Returns [{"repo": "owner/repo", "installation_id": 123, "default_branch": "main"}, ...]."""
         if self.config.repos:
             installations = self._get_installations()
             repo_map = []
@@ -1547,9 +1432,7 @@ class GitHubSource(AbstractSource):
         return repo_map
 
     def get_repositories(self, pagination: dict) -> SourceIteration:
-        """Fetch all repositories across all installations."""
         if not pagination:
-            # First call: discover installations
             installations = self._get_installations()
             if not installations:
                 return SourceIteration(records=[], next_pagination={})
@@ -1578,7 +1461,6 @@ class GitHubSource(AbstractSource):
         ]
         logger.info(f"Fetched {len(records)} repositories from installation {installation_id} (page {page})")
 
-        # Check if more pages for this installation
         if len(data.get("repositories", [])) == self.config.per_page:
             return SourceIteration(
                 records=records,
@@ -1589,7 +1471,6 @@ class GitHubSource(AbstractSource):
                 },
             )
 
-        # Move to next installation
         if remaining:
             return SourceIteration(
                 records=records,
@@ -1603,7 +1484,6 @@ class GitHubSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def get_members(self, pagination: dict) -> SourceIteration:
-        """Fetch org members for each installation's org account."""
         if not pagination:
             installations = self._get_installations()
             if not installations:
@@ -1667,7 +1547,6 @@ class GitHubSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def get_organization_teams(self, pagination: dict) -> SourceIteration:
-        """Fetch teams for each installation's org account."""
         if not pagination:
             installations = self._get_installations()
             if not installations:
@@ -1730,7 +1609,6 @@ class GitHubSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def _fetch_all_teams_for_org(self, org_name: str, installation_id: int) -> List[dict]:
-        """Fetch all teams for an org (handles pagination internally)."""
         self._switch_to_installation(installation_id)
         teams = []
         page = 1
@@ -1748,10 +1626,7 @@ class GitHubSource(AbstractSource):
         return teams
 
     def get_organization_team_members(self, pagination: dict) -> SourceIteration:
-        """Fetch members for each team in each org installation.
-
-        Pagination state tracks three levels: orgs → teams → members per team.
-        """
+        """Pagination state tracks three levels: orgs -> teams -> members per team."""
         if not pagination:
             installations = self._get_installations()
             if not installations:
@@ -1765,11 +1640,9 @@ class GitHubSource(AbstractSource):
                 logger.warning("No organization installations found for organization_team_members stream")
                 return SourceIteration(records=[], next_pagination={})
 
-            # Fetch all teams for the first org to bootstrap
             first_org = orgs[0]
             teams = self._fetch_all_teams_for_org(first_org["org"], first_org["installation_id"])
             if not teams and len(orgs) > 1:
-                # Skip orgs with no teams
                 for i, org in enumerate(orgs[1:], 1):
                     teams = self._fetch_all_teams_for_org(org["org"], org["installation_id"])
                     if teams:
@@ -1822,7 +1695,6 @@ class GitHubSource(AbstractSource):
         ]
         logger.info(f"Fetched {len(records)} members from team {org_name}/{team_slug} (page {page})")
 
-        # More pages for current team
         if len(data) == self.config.per_page:
             return SourceIteration(
                 records=records,
@@ -1832,7 +1704,6 @@ class GitHubSource(AbstractSource):
                 },
             )
 
-        # Move to next team in current org
         if remaining_teams:
             return SourceIteration(
                 records=records,
@@ -1845,7 +1716,6 @@ class GitHubSource(AbstractSource):
                 },
             )
 
-        # Move to next org
         if remaining_orgs:
             next_org = remaining_orgs[0]
             teams = self._fetch_all_teams_for_org(next_org["org"], next_org["installation_id"])
@@ -1872,14 +1742,7 @@ class GitHubSource(AbstractSource):
         id_field: str = "id",
         params: Optional[dict] = None,
     ) -> SourceIteration:
-        """Generic helper for streams that paginate across multiple repos.
-
-        Args:
-            pagination: Pagination state dict.
-            endpoint_template: URL template with {repo} placeholder (e.g. "/repos/{repo}/pulls").
-            id_field: Field to use as record ID (default "id").
-            params: Extra query params to include.
-        """
+        """Page through `endpoint_template` (e.g. "/repos/{repo}/pulls") across every repo."""
         extra_params = params or {}
 
         if not pagination:
@@ -1934,7 +1797,6 @@ class GitHubSource(AbstractSource):
         ]
         logger.info(f"Fetched {len(records)} records from {repo_name} (page {page})")
 
-        # More pages for this repo?
         if len(data) == self.config.per_page:
             return SourceIteration(
                 records=records,
@@ -1946,7 +1808,6 @@ class GitHubSource(AbstractSource):
                 },
             )
 
-        # Next repo
         if remaining:
             return SourceIteration(
                 records=records,
@@ -2003,12 +1864,7 @@ class GitHubSource(AbstractSource):
         return entries, truncated
 
     def _fetch_blob_content(self, repo_name: str, sha: str, installation_id: Optional[int] = None) -> Optional[str]:
-        """Fetch a blob and return decoded text content, or None on failure.
-
-        Args:
-            installation_id: If provided, uses thread-safe per-request auth.
-                           If None, uses session-level auth (sequential path).
-        """
+        """Decoded blob text, or None on failure. `installation_id` switches to per-request auth."""
         url = f"{BASE_URL}/repos/{repo_name}/git/blobs/{sha}"
         if installation_id is not None:
             response = self._api_get_with_token(url, installation_id)
@@ -2036,9 +1892,8 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _sweep_stale_tarball_temp_files():
-        """A retried run on the same host finds a killed attempt's temp dir/file still on disk.
-        Sweep at the start of a fresh run (empty pagination) rather than relying on per-repo
-        cleanup, which never runs for an attempt that never got that far."""
+        """Remove a killed attempt's leftover temp files at the start of a fresh run; its per-repo
+        cleanup never ran."""
         tmp_dir = tempfile.gettempdir()
         for pattern in ("gh_repo_content_*", "gh_tarball_*"):
             for path in glob.glob(os.path.join(tmp_dir, pattern)):
@@ -2053,13 +1908,10 @@ class GitHubSource(AbstractSource):
     def _fetch_repo_tarball(
         self, repo_name: str, branch: str, installation_id: int, wanted_paths: Set[str]
     ) -> Optional[Tuple[str, Set[str]]]:
-        """Download the repo's default-branch tarball (1 call) and extract only the
-        tree-filtered paths into a fresh per-repo temp dir.
+        """Download the default-branch tarball (one call) and extract only `wanted_paths` into a temp dir.
 
-        Returns (extract_dir, missing_paths) where missing_paths is the subset of
-        wanted_paths not found in the tarball (LFS pointer / submodule / etc — callers
-        fall back to a per-blob fetch for those), or None if the download/extraction
-        failed entirely, in which case the caller falls back to per-blob for the repo.
+        Returns (extract_dir, missing_paths), where missing_paths (LFS pointers, submodules) need a
+        per-blob fetch, or None if the download failed and the whole repo falls back to per-blob.
         """
         url = f"{BASE_URL}/repos/{repo_name}/tarball/{branch}"
         tar_fd, tar_path = tempfile.mkstemp(prefix="gh_tarball_", suffix=".tar.gz")
@@ -2067,10 +1919,8 @@ class GitHubSource(AbstractSource):
         extract_dir = tempfile.mkdtemp(prefix="gh_repo_content_")
         response = None
         try:
-            # This redirects to a pre-signed codeload.github.com URL (token in the
-            # query string); requests correctly strips our Authorization header on
-            # the cross-host hop, and the pre-signed URL carries access on its own --
-            # the auth-less follow-up request is expected, not a leak.
+            # Redirects to a pre-signed codeload.github.com URL; requests drops the Authorization header
+            # on the cross-host hop, which is fine because the URL carries access itself.
             response = self._api_get_with_token(url, installation_id, stream=True, timeout=(10, 60))
             if response.status_code in (404, 409, 422):
                 logger.warning(
@@ -2118,13 +1968,11 @@ class GitHubSource(AbstractSource):
                 pass
 
     def _refresh_tarball_state(self, repo_name: str, branch: str, installation_id: int, wanted_paths: Set[str]):
-        """Ensure `self._tarball_dir` holds a live extraction for `repo_name` covering
-        `wanted_paths`, (re-)downloading if it's missing -- including a dir that vanished
-        mid-repo (e.g. node disk pressure), which would otherwise crash the next disk read.
-        """
+        """Ensure `self._tarball_dir` holds a live extraction for `repo_name` covering `wanted_paths`,
+        re-downloading a dir that vanished mid-repo (e.g. node disk pressure)."""
         if self._tarball_repo == repo_name:
             if self._tarball_dir is None:
-                return  # already attempted and failed for this repo this run -- don't hammer it every batch
+                return  # already failed for this repo this run; don't retry every batch
             if os.path.isdir(self._tarball_dir):
                 return
             logger.warning(f"Extracted tarball dir for {repo_name} vanished mid-repo, re-downloading")
@@ -2151,7 +1999,7 @@ class GitHubSource(AbstractSource):
         return self._fetch_blob_content(repo_name, entry["sha"], installation_id=installation_id)
 
     def get_repo_content(self, pagination: dict) -> SourceIteration:
-        """Fetch text file contents from all repos using Git Trees + Blobs APIs."""
+        """Text file contents of every repo: tree listing, then tarball content with a per-blob fallback."""
         if not pagination:
             self._sweep_stale_tarball_temp_files()
             repo_map = self._discover_all_repos()
@@ -2175,11 +2023,9 @@ class GitHubSource(AbstractSource):
 
         self._switch_to_installation(installation_id)
 
-        # If no tree entries buffered, fetch the tree for the current repo
         if not tree_entries:
             tree_entries, tree_truncated = self._fetch_tree(repo_name, default_branch)
             if not tree_entries:
-                # Empty or failed tree — advance to next repo
                 self._cleanup_tarball_dir()
                 if remaining:
                     return SourceIteration(
@@ -2194,21 +2040,16 @@ class GitHubSource(AbstractSource):
                     )
                 return SourceIteration(records=[], next_pagination={})
 
-        # One tarball call covers the whole repo (vs. one REST call per file, which can
-        # exhaust the installation's hourly budget on a large repo). Re-checked every
-        # call so a dir that vanished mid-repo gets re-downloaded, not crashed on.
+        # One tarball call per repo, not one REST call per file, which can exhaust the hourly budget
+        # on a large repo.
         self._refresh_tarball_state(repo_name, default_branch, installation_id, {e["path"] for e in tree_entries})
 
-        # Pop a batch of entries
         batch_size = self.config.blobs_per_batch
         batch = tree_entries[:batch_size]
         remaining_entries = tree_entries[batch_size:]
 
-        # Scale workers proportionally to repo size: more files → more parallelism
-        # e.g. 50 files → 3 workers, 5000 → 10, 11000+ → 20 (capped)
         effective_workers = min(20, max(3, len(tree_entries) // 500))
 
-        # Fetch blobs concurrently (thread-safe auth via installation_id)
         def _fetch_entry(entry):
             content = self._read_entry_content(repo_name, entry, installation_id)
             return entry, content
@@ -2237,16 +2078,13 @@ class GitHubSource(AbstractSource):
                         )
                     )
         except Exception:
-            # A genuine failure here (not the expected per-entry None/fallback path)
-            # aborts the batch -- don't leave this repo's extracted dir behind for a
-            # retried run to trip over; the startup sweep is the other net.
+            # Don't leave the extracted dir behind for a retried run to trip over.
             self._cleanup_tarball_dir()
             raise
         logger.info(
             f"Fetched {len(records)} file contents from {repo_name} ({len(remaining_entries)} entries remaining, {effective_workers} workers)"
         )
 
-        # More entries for this repo?
         if remaining_entries:
             return SourceIteration(
                 records=records,
@@ -2259,7 +2097,6 @@ class GitHubSource(AbstractSource):
                 },
             )
 
-        # Next repo
         self._cleanup_tarball_dir()
         if remaining:
             return SourceIteration(
@@ -2277,8 +2114,6 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _transform_graphql_pr_to_rest(node: dict) -> dict:
-        """Convert a GraphQL PR node to REST-compatible dict for BigQuery compatibility."""
-
         def _reshape_user(graphql_user: Optional[dict]) -> Optional[dict]:
             if not graphql_user:
                 return None
@@ -2342,7 +2177,6 @@ class GitHubSource(AbstractSource):
         }
 
     def _fetch_pull_requests_graphql(self, repo_info: dict) -> List[SourceRecord]:
-        """Fetch all PRs for a single repo using GraphQL (sequential pagination)."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         owner, name = repo_name.split("/", 1)
@@ -2350,8 +2184,7 @@ class GitHubSource(AbstractSource):
         records = []
         cursor = None
         page = 0
-        # Smaller page size for GraphQL to keep response payloads manageable
-        # (PR bodies can be very large; 100 PRs can produce multi-MB responses)
+        # PR bodies can be huge: 100 PRs can produce a multi-MB response
         initial_page_size = 25
         page_size = initial_page_size
 
@@ -2388,7 +2221,7 @@ class GitHubSource(AbstractSource):
 
             hit_cutoff = False
             for node in nodes:
-                # Check start_date cutoff (results ordered by UPDATED_AT DESC)
+                # Results are ordered by UPDATED_AT DESC
                 if self._start_date and node.get("updatedAt"):
                     updated = self._parse_gh_timestamp(node["updatedAt"])
                     if updated < self._start_date:
@@ -2415,7 +2248,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def get_pull_requests(self, pagination: dict) -> SourceIteration:
-        """Fetch pull requests using GraphQL API (sequential repo processing)."""
         if not pagination:
             repo_map = self._discover_all_repos()
             if not repo_map:
@@ -2426,7 +2258,7 @@ class GitHubSource(AbstractSource):
         if not remaining:
             return SourceIteration(records=[], next_pagination={})
 
-        # Process one repo at a time (GraphQL budget is ~49 queries/hr)
+        # One repo per call to stay within the GraphQL point budget
         repo_info = remaining[0]
         remaining = remaining[1:]
 
@@ -2449,8 +2281,6 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _transform_graphql_deployment_to_rest(node: dict) -> dict:
-        """Convert a GraphQL deployment node to REST-compatible dict for BigQuery compatibility."""
-
         def _reshape_user(graphql_user: Optional[dict]) -> Optional[dict]:
             if not graphql_user:
                 return None
@@ -2503,7 +2333,6 @@ class GitHubSource(AbstractSource):
         }
 
     def _fetch_deployments_graphql(self, repo_info: dict) -> List[SourceRecord]:
-        """Fetch all deployments for a single repo using GraphQL (sequential pagination)."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         owner, name = repo_name.split("/", 1)
@@ -2522,11 +2351,8 @@ class GitHubSource(AbstractSource):
                 time.sleep(1)
 
             try:
-                # No cursor_probe_query here (deliberately): the phantom-index defect has only
-                # been seen on the pullRequests(orderBy: UPDATED_AT) connection. The
-                # deployments connection is a different connection with a different
-                # orderBy and no evidence it's affected -- extending the skip fix here would
-                # need its own probe query, not this one, so it's out of scope for now.
+                # No cursor_probe_query: the phantom-index defect has only been seen on
+                # pullRequests(orderBy: UPDATED_AT), and this connection would need its own probe.
                 result, page_size = self._graphql_post_adaptive(
                     DEPLOYMENTS_GRAPHQL_QUERY,
                     variables,
@@ -2548,7 +2374,7 @@ class GitHubSource(AbstractSource):
 
             hit_cutoff = False
             for node in nodes:
-                # Check start_date cutoff (results ordered by CREATED_AT DESC)
+                # Results are ordered by CREATED_AT DESC
                 if self._start_date and node.get("createdAt"):
                     created = self._parse_gh_timestamp(node["createdAt"])
                     if created < self._start_date:
@@ -2575,7 +2401,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def get_deployments(self, pagination: dict) -> SourceIteration:
-        """Fetch deployments using GraphQL API (sequential repo processing)."""
         if not pagination:
             repo_map = self._discover_all_repos()
             if not repo_map:
@@ -2608,21 +2433,11 @@ class GitHubSource(AbstractSource):
         )
 
     def get_workflow_jobs(self, pagination: dict) -> SourceIteration:
-        """Fetch workflow jobs (full refresh).
-
-        Jobs are a NESTED resource under runs -- there is no repo-wide jobs list.
-        Lists workflow runs per repo/page (same `created>=start_date` filter as
-        workflow_runs, when a start_date is configured), then resolves each run's
-        jobs via `_fetch_jobs_for_runs`. Uses the sequential single-page-per-repo
-        cursor (see `_get_workflow_jobs_paginated`) rather than workflow_runs' full
-        concurrent-repo-pagination model, so memory stays bounded to one page of
-        runs (and their jobs) at a time.
-        """
+        """Full-refresh workflow jobs; see `_get_workflow_jobs_paginated`."""
         return self._get_workflow_jobs_paginated(pagination, since=self._start_date)
 
     @staticmethod
     def _transform_graphql_review_to_rest(review_node: dict) -> dict:
-        """Convert a GraphQL review node to REST-compatible dict."""
         author = review_node.get("author")
         user = None
         if author:
@@ -2643,9 +2458,7 @@ class GitHubSource(AbstractSource):
             "commit_id": (review_node.get("commit") or {}).get("oid"),
         }
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_reviews_graphql(
         self,
         owner: str,
@@ -2654,7 +2467,6 @@ class GitHubSource(AbstractSource):
         installation_id: int,
         after: str,
     ) -> List[dict]:
-        """Fetch remaining reviews for a PR that has more than the initial batch."""
         reviews = []
         cursor = after
         while True:
@@ -2677,7 +2489,6 @@ class GitHubSource(AbstractSource):
         return reviews
 
     def _fetch_reviews_graphql(self, repo_info: dict) -> List[SourceRecord]:
-        """Fetch all PR reviews for a repo using GraphQL with nested reviews."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         owner, name = repo_name.split("/", 1)
@@ -2685,7 +2496,7 @@ class GitHubSource(AbstractSource):
         records = []
         cursor = None
         page = 0
-        # Use smaller page size to keep cost reasonable: 1 + 25*(1+10) = 276 pts/query
+        # Cost: 1 + 25*(1+10) = 276 pts/query
         initial_page_size = 25
         page_size = initial_page_size
 
@@ -2731,12 +2542,10 @@ class GitHubSource(AbstractSource):
                 pr_number = pr_node.get("number")
                 review_conn = pr_node.get("reviews", {})
 
-                # Collect inline reviews
                 review_records = []
                 for review_node in review_conn.get("nodes", []):
                     review_records.append(self._transform_graphql_review_to_rest(review_node))
 
-                # Fetch extra reviews if the PR has more than the initial batch
                 review_page_info = review_conn.get("pageInfo", {})
                 if review_page_info.get("hasNextPage"):
                     extra = self._fetch_extra_reviews_graphql(
@@ -2771,7 +2580,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def get_pull_request_reviews(self, pagination: dict) -> SourceIteration:
-        """Fetch PR reviews using GraphQL API (sequential repo processing)."""
         if not pagination:
             repo_map = self._discover_all_repos()
             if not repo_map:
@@ -2793,7 +2601,6 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _transform_graphql_comment_to_rest(comment_node: dict) -> dict:
-        """Convert a GraphQL issue comment node to REST-compatible dict."""
         author = comment_node.get("author")
         user = None
         if author:
@@ -2811,9 +2618,7 @@ class GitHubSource(AbstractSource):
             "user": user,
         }
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_comments_graphql(
         self,
         owner: str,
@@ -2822,7 +2627,6 @@ class GitHubSource(AbstractSource):
         installation_id: int,
         after: str,
     ) -> List[dict]:
-        """Fetch remaining comments for a PR that has more than the initial batch."""
         comments = []
         cursor = after
         while True:
@@ -2845,7 +2649,6 @@ class GitHubSource(AbstractSource):
         return comments
 
     def _fetch_comments_graphql(self, repo_info: dict) -> List[SourceRecord]:
-        """Fetch all PR comments for a repo using GraphQL with nested comments."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         owner, name = repo_name.split("/", 1)
@@ -2853,7 +2656,7 @@ class GitHubSource(AbstractSource):
         records = []
         cursor = None
         page = 0
-        # Use smaller page size to keep cost reasonable: 1 + 25*(1+1) = ~51 pts/query
+        # Cost: 1 + 25*(1+1) = ~51 pts/query
         initial_page_size = 25
         page_size = initial_page_size
 
@@ -2899,12 +2702,10 @@ class GitHubSource(AbstractSource):
                 pr_number = pr_node.get("number")
                 comment_conn = pr_node.get("comments", {})
 
-                # Collect inline comments
                 comment_records = []
                 for comment_node in comment_conn.get("nodes", []):
                     comment_records.append(self._transform_graphql_comment_to_rest(comment_node))
 
-                # Fetch extra comments if the PR has more than the initial batch (100)
                 comment_page_info = comment_conn.get("pageInfo", {})
                 if comment_page_info.get("hasNextPage"):
                     extra = self._fetch_extra_comments_graphql(
@@ -2939,7 +2740,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def get_pull_request_comments(self, pagination: dict) -> SourceIteration:
-        """Fetch PR comments using GraphQL API (sequential repo processing)."""
         if not pagination:
             repo_map = self._discover_all_repos()
             if not repo_map:
@@ -2961,7 +2761,6 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _transform_graphql_review_comment_to_rest(comment_node: dict) -> dict:
-        """Convert a GraphQL PullRequestReviewComment node to REST-compatible dict."""
         author = comment_node.get("author")
         user = None
         if author:
@@ -2990,16 +2789,13 @@ class GitHubSource(AbstractSource):
             "pull_request_review_id": (comment_node.get("pullRequestReview") or {}).get("databaseId"),
         }
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_review_comments_graphql(
         self,
         review_node_id: str,
         installation_id: int,
         after: str,
     ) -> List[dict]:
-        """Fetch remaining comments for a review that has more than the initial batch."""
         comments = []
         cursor = after
         while True:
@@ -3051,9 +2847,7 @@ class GitHubSource(AbstractSource):
                     )
         return comment_records
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_review_comments_reviews_graphql(
         self,
         owner: str,
@@ -3062,7 +2856,6 @@ class GitHubSource(AbstractSource):
         installation_id: int,
         after: str,
     ) -> List[dict]:
-        """Fetch remaining reviews (with comments) for a PR that has more than the initial batch."""
         all_comments = []
         cursor = after
         while True:
@@ -3093,7 +2886,6 @@ class GitHubSource(AbstractSource):
         return all_comments
 
     def _fetch_review_comments_graphql(self, repo_info: dict) -> List[SourceRecord]:
-        """Fetch all PR review comments for a repo using GraphQL with nested reviews->comments."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         owner, name = repo_name.split("/", 1)
@@ -3101,8 +2893,7 @@ class GitHubSource(AbstractSource):
         records = []
         cursor = None
         page = 0
-        # Small page size due to triple nesting: cost ~= 1 + N*(1 + 10*(1+100))
-        # With N=3: ~3,034 points per query (under 5,000 limit)
+        # Triple nesting: cost ~= 1 + N*(1 + 10*(1+100)), ~3,034 points at N=3 (limit 5,000)
         initial_page_size = 3
         page_size = initial_page_size
 
@@ -3192,7 +2983,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def get_pull_request_review_comments(self, pagination: dict) -> SourceIteration:
-        """Fetch PR review comments using GraphQL API (sequential repo processing)."""
         if not pagination:
             repo_map = self._discover_all_repos()
             if not repo_map:
@@ -3229,16 +3019,13 @@ class GitHubSource(AbstractSource):
             "user": user,
         }
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_pr_comment_reactions_graphql(
         self,
         comment_node_id: str,
         installation_id: int,
         after: str,
     ) -> List[dict]:
-        """Fetch remaining reactions for a top-level PR comment that has > 20 reactions."""
         reactions = []
         cursor = after
         while True:
@@ -3272,7 +3059,6 @@ class GitHubSource(AbstractSource):
         pr_number: int,
         pr_db_id: int,
     ) -> List[SourceRecord]:
-        """Walk top-level PR comment nodes and emit one SourceRecord per reaction."""
         records = []
         for comment_node in comment_nodes:
             comment_db_id = comment_node.get("databaseId")
@@ -3300,9 +3086,7 @@ class GitHubSource(AbstractSource):
                 records.append(SourceRecord(id=str(reaction_data["id"]), data=reaction_data))
         return records
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_pr_comments_with_reactions_graphql(
         self,
         owner: str,
@@ -3313,7 +3097,6 @@ class GitHubSource(AbstractSource):
         repo_name: str,
         pr_db_id: int,
     ) -> List[SourceRecord]:
-        """Fetch remaining comments (and their reactions) for a PR with > 100 comments."""
         records = []
         cursor = after
         while True:
@@ -3353,7 +3136,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def _fetch_pr_comment_reactions_graphql(self, repo_info: dict) -> List[SourceRecord]:
-        """Fetch all top-level PR comment reactions for a repo using GraphQL."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         owner, name = repo_name.split("/", 1)
@@ -3447,7 +3229,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def get_pull_request_comment_reactions(self, pagination: dict) -> SourceIteration:
-        """Fetch top-level PR comment reactions (sequential repo processing)."""
         if not pagination:
             repo_map = self._discover_all_repos()
             if not repo_map:
@@ -3467,16 +3248,13 @@ class GitHubSource(AbstractSource):
             return SourceIteration(records=records, next_pagination={"remaining_repos": remaining})
         return SourceIteration(records=records, next_pagination={})
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_review_comment_reactions_graphql(
         self,
         comment_node_id: str,
         installation_id: int,
         after: str,
     ) -> List[dict]:
-        """Fetch remaining reactions for a review comment that has > 20 reactions."""
         reactions = []
         cursor = after
         while True:
@@ -3511,7 +3289,6 @@ class GitHubSource(AbstractSource):
         pr_db_id: int,
         review_db_id: int,
     ) -> List[SourceRecord]:
-        """Walk review-comment nodes and emit one SourceRecord per reaction."""
         records = []
         for comment_node in comment_nodes:
             comment_db_id = comment_node.get("databaseId")
@@ -3540,9 +3317,7 @@ class GitHubSource(AbstractSource):
                 records.append(SourceRecord(id=str(reaction_data["id"]), data=reaction_data))
         return records
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_review_comments_with_reactions_graphql(
         self,
         review_node_id: str,
@@ -3553,7 +3328,6 @@ class GitHubSource(AbstractSource):
         pr_db_id: int,
         review_db_id: int,
     ) -> List[SourceRecord]:
-        """Fetch remaining comments (with reactions) for a review with > 50 comments."""
         records = []
         cursor = after
         while True:
@@ -3597,7 +3371,6 @@ class GitHubSource(AbstractSource):
         pr_number: int,
         pr_db_id: int,
     ) -> List[SourceRecord]:
-        """Walk review nodes — for each, walk comments and emit reactions."""
         records = []
         for review_node in review_nodes:
             review_node_id = review_node.get("id")
@@ -3628,9 +3401,7 @@ class GitHubSource(AbstractSource):
             records.extend(review_records)
         return records
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_reviews_with_reactions_graphql(
         self,
         owner: str,
@@ -3641,7 +3412,6 @@ class GitHubSource(AbstractSource):
         repo_name: str,
         pr_db_id: int,
     ) -> List[SourceRecord]:
-        """Fetch remaining reviews (with comments and reactions) for a PR with > 10 reviews."""
         records = []
         cursor = after
         while True:
@@ -3681,7 +3451,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def _fetch_review_comment_reactions_graphql(self, repo_info: dict) -> List[SourceRecord]:
-        """Fetch all PR review comment reactions for a repo using GraphQL."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         owner, name = repo_name.split("/", 1)
@@ -3775,7 +3544,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def get_pull_request_review_comment_reactions(self, pagination: dict) -> SourceIteration:
-        """Fetch PR review comment reactions (sequential repo processing)."""
         if not pagination:
             repo_map = self._discover_all_repos()
             if not repo_map:
@@ -3797,7 +3565,6 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _transform_graphql_timeline_item(node: dict) -> dict:
-        """Convert a GraphQL timeline item node to a flat dict."""
         typename = node.get("__typename", "Unknown")
         actor = node.get("actor")
         author = node.get("author")
@@ -3821,7 +3588,6 @@ class GitHubSource(AbstractSource):
                 "id": author.get("databaseId"),
             }
 
-        # Event-specific fields
         if typename == "IssueComment":
             item["body"] = node.get("body")
             item["updated_at"] = node.get("updatedAt")
@@ -3870,9 +3636,7 @@ class GitHubSource(AbstractSource):
 
         return item
 
-    # Per-PR overflow fetcher: already paginates at a small fixed page size (10-100),
-    # so a query-cost timeout is unlikely here. Intentionally left on plain _graphql_post
-    # rather than _graphql_post_adaptive.
+    # Small fixed page size makes a query-cost timeout unlikely, so not _graphql_post_adaptive.
     def _fetch_extra_timeline_graphql(
         self,
         owner: str,
@@ -3881,7 +3645,6 @@ class GitHubSource(AbstractSource):
         installation_id: int,
         after: str,
     ) -> List[dict]:
-        """Fetch remaining timeline items for a PR that has more than the initial batch."""
         items = []
         cursor = after
         while True:
@@ -3904,7 +3667,6 @@ class GitHubSource(AbstractSource):
         return items
 
     def _fetch_timeline_graphql(self, repo_info: dict) -> List[SourceRecord]:
-        """Fetch all PR timeline items for a repo using GraphQL with nested timelineItems."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         owner, name = repo_name.split("/", 1)
@@ -3957,12 +3719,10 @@ class GitHubSource(AbstractSource):
                 pr_number = pr_node.get("number")
                 timeline_conn = pr_node.get("timelineItems", {})
 
-                # Collect inline timeline items
                 timeline_items = []
                 for node in timeline_conn.get("nodes", []):
                     timeline_items.append(self._transform_graphql_timeline_item(node))
 
-                # Fetch extra items if the PR has more than the initial batch
                 timeline_page_info = timeline_conn.get("pageInfo", {})
                 if timeline_page_info.get("hasNextPage"):
                     extra = self._fetch_extra_timeline_graphql(
@@ -4000,7 +3760,6 @@ class GitHubSource(AbstractSource):
         return records
 
     def get_pull_request_timeline(self, pagination: dict) -> SourceIteration:
-        """Fetch PR timeline events using GraphQL API (sequential repo processing)."""
         if not pagination:
             repo_map = self._discover_all_repos()
             if not repo_map:
@@ -4022,7 +3781,6 @@ class GitHubSource(AbstractSource):
 
     @staticmethod
     def _parse_gh_timestamp(ts: str) -> datetime:
-        """Parse a GitHub API timestamp (ISO 8601) into an aware datetime."""
         return datetime.fromisoformat(ts.replace("Z", "+00:00"))
 
     def _filter_records_after(
@@ -4033,12 +3791,7 @@ class GitHubSource(AbstractSource):
         id_field: str = "id",
         extra_data: Optional[dict] = None,
     ) -> tuple[list[SourceRecord], bool]:
-        """Filter items by timestamp, returning records and whether we hit the cutoff.
-
-        Returns:
-            (records, hit_cutoff): records that pass the filter, and True if any item
-            was older than `since` (meaning we can stop paginating).
-        """
+        """Records newer than `since`, and whether any older item was seen (so pagination can stop)."""
         records = []
         hit_cutoff = False
         extra = extra_data or {}
@@ -4112,7 +3865,6 @@ class GitHubSource(AbstractSource):
             records = enrich_fn(records)
         logger.info(f"Fetched {len(records)} incremental records from {repo_name} (page {page}, cutoff={hit_cutoff})")
 
-        # If we hit the cutoff, skip remaining pages for this repo
         if hit_cutoff:
             if remaining:
                 return SourceIteration(
@@ -4126,7 +3878,6 @@ class GitHubSource(AbstractSource):
                 )
             return SourceIteration(records=records, next_pagination={})
 
-        # More pages for this repo?
         if len(data) == self.config.per_page:
             return SourceIteration(
                 records=records,
@@ -4138,7 +3889,6 @@ class GitHubSource(AbstractSource):
                 },
             )
 
-        # Next repo
         if remaining:
             return SourceIteration(
                 records=records,
@@ -4163,12 +3913,8 @@ class GitHubSource(AbstractSource):
         response_key: Optional[str] = None,
         enrich_fn: Optional[Callable[[List[SourceRecord]], List[SourceRecord]]] = None,
     ) -> List[SourceRecord]:
-        """Fetch all pages for a single repo. Used by concurrent fetcher.
-
-        Args:
-            response_key: If set, extract data from response[key] (e.g. "workflow_runs").
-            enrich_fn: If set, called on the records after fetching to add extra fields.
-        """
+        """Fetch all pages for one repo, for the concurrent fetcher. `response_key` unwraps an enveloped
+        list (e.g. "workflow_runs"); `enrich_fn` post-processes the records."""
         repo_name = repo_info["repo"]
         installation_id = repo_info["installation_id"]
         extra_params = params or {}
@@ -4392,18 +4138,11 @@ class GitHubSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def _fetch_jobs_for_runs(self, runs: List[dict], repo_name: str, installation_id: int) -> List[SourceRecord]:
-        """Resolve the jobs for a page of workflow runs, concurrently, one job SourceRecord per job.
+        """Resolve the jobs for a page of workflow runs, concurrently.
 
-        Jobs are nested under `/repos/{repo}/actions/runs/{run_id}/jobs` (filter=all
-        so every run attempt's jobs are captured, not just the latest). Uses
-        `_api_get_with_token` (thread-safe, per-request auth) so the runs on this
-        page can be resolved concurrently, matching the concurrency idiom used by
-        `_fetch_all_pages_for_repo`. A 404/409 on an individual run's jobs endpoint
-        is skipped with a warning rather than failing the whole page.
-
-        A 5xx on a jobs page restarts that run's fetch from page 1 at the next smaller
-        size in `JOBS_PAGE_SIZE_LADDER`, discarding the partial records. A 5xx at the
-        smallest size raises `RepoFetchError` (fail-closed, never skipped).
+        `filter=all` captures every run attempt's jobs. A 404/409 on one run is skipped with a warning.
+        A 5xx restarts that run at the next smaller `JOBS_PAGE_SIZE_LADDER` size, discarding its
+        partial records; at the smallest size it raises `RepoFetchError`.
         """
         if not runs:
             return []
@@ -4466,22 +4205,11 @@ class GitHubSource(AbstractSource):
         return all_records
 
     def _get_workflow_jobs_paginated(self, pagination: dict, since: Optional[datetime]) -> SourceIteration:
-        """Shared pagination core for workflow_jobs (used by both full-refresh and incremental).
+        """Pagination core for workflow_jobs, full refresh and incremental.
 
-        Jobs are a NESTED resource under runs -- there is no repo-wide jobs list --
-        so this lists workflow runs per repo/page (same `created>=since` filter as
-        workflow_runs, applied only when `since` is set) and resolves each page's
-        runs' jobs via `_fetch_jobs_for_runs`. Mirrors the sequential per-repo
-        cursor shape of `_get_workflow_runs_incremental` (`remaining_repos`,
-        `current_repo`, `page`, `repos_loaded`) plus its 404/409 skip-and-advance
-        handling, so this stays bounded to one page of runs (and their jobs) in
-        memory per iteration.
-
-        LIMITATION (incremental): a run created before `since` whose jobs complete
-        afterward will NOT be re-ingested by a later incremental sync -- job
-        completion time is not part of the run-listing filter. Re-runs create a
-        new run (new `created_at`) and so ARE captured on the next sync; `filter=all`
-        on the jobs endpoint also captures prior attempts of a re-listed run.
+        There is no repo-wide jobs list, so this lists one page of runs per repo per call (filtered on
+        `created>=since` when set) and resolves their jobs. Incremental limitation: a run created
+        before `since` whose jobs finish later is not re-ingested; a re-run gets a new `created_at`.
         """
         if not pagination:
             repo_map = self._discover_all_repos()
@@ -4557,8 +4285,7 @@ class GitHubSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def _get_workflow_jobs_incremental(self, pagination: dict, since: datetime) -> SourceIteration:
-        """Incremental workflow jobs -- see `_get_workflow_jobs_paginated` docstring
-        for the pagination shape and the known incremental-coverage limitation."""
+        """Incremental workflow jobs; see `_get_workflow_jobs_paginated` for its coverage limitation."""
         return self._get_workflow_jobs_paginated(pagination, since=since)
 
     def _get_pull_request_reviews_incremental(self, pagination: dict, since: datetime) -> SourceIteration:

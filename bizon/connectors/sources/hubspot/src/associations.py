@@ -107,7 +107,7 @@ def fetch_typed_associations(source: HubSpotBaseSource, from_object: str, to_obj
 def fetch_id_lists(
     source: HubSpotBaseSource, from_object: str, to_objects: List[str], ids: List[str]
 ) -> Dict[str, Dict[str, List[str]]]:
-    """Associated ids per to-object and from-id: {to_object: {from_id: [associated_id, ...]}}."""
+    """{to_object: {from_id: [associated_id, ...]}}"""
     out: Dict[str, Dict[str, List[str]]] = {to: {} for to in to_objects}
     for to_object in to_objects:
         url = f"{URL_ASSOCIATIONS_V4}/{from_object}/{to_object}/batch/read"
@@ -141,11 +141,7 @@ class HubSpotAssociationsSourceConfig(HubSpotBaseSourceConfig):
 
 
 class HubSpotAssociationsSource(HubSpotBaseSource):
-    """Typed associations of every deal or contact, as a full sweep.
-
-    Ids are enumerated with the v3 list API, which unlike search has no result cap, and buffered up to BATCH_SIZE
-    so each v4 batch/read call carries a full batch.
-    """
+    """Ids come from the v3 list API, which unlike search has no result cap, buffered so each batch/read is full."""
 
     def __init__(self, config: HubSpotAssociationsSourceConfig):
         super().__init__(config)

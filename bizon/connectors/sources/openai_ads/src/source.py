@@ -1,9 +1,6 @@
-"""OpenAI Ads (ChatGPT Ads) account, campaign structure, conversion settings, audit log and daily insights, from
-the OpenAI Advertiser API (https://api.ads.openai.com/v1, API-key bearer auth; one key = one ad account).
+"""OpenAI Ads (ChatGPT Ads) account, campaign structure, conversion settings, audit log and daily insights.
 
-Insights request every documented metric and metadata field for the row level. The API rejects an unknown
-projection with HTTP 400, so a rejected field list is bisected to isolate and drop the field instead of failing
-the stream.
+Reads the OpenAI Advertiser API with a bearer API key; one key is one ad account.
 """
 
 import hashlib
@@ -215,8 +212,7 @@ class OpenaiAdsSource(AbstractSource):
             try:
                 items = [self._request("GET", "/ad_account/spend_limit_windows")]
             except OpenaiAdsApiError as e:
-                # Spending limits exist only for postpaid invoice-billed accounts;
-                # other accounts get 403.
+                # Spending limits exist only for postpaid invoice-billed accounts; others get 403.
                 if e.status_code != 403:
                     raise
                 logger.warning(f"spend_limit_windows unavailable for this ad account: {e}")
@@ -235,7 +231,7 @@ class OpenaiAdsSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def _insights_page(self, params: List[Tuple[str, str]], fields: List[str]) -> dict:
-        """One insights page; bisects a rejected field list to drop the invalid fields."""
+        """The API 400s on an unknown projection, so a rejected field list is bisected to drop the bad field."""
         fields = [f for f in fields if f not in self._rejected_fields]
         try:
             return self._request("GET", "/ad_account/insights", params=params + [("fields[]", f) for f in fields])
@@ -272,8 +268,7 @@ class OpenaiAdsSource(AbstractSource):
             return SourceIteration(records=[], next_pagination={})
 
         prefix = segment or level
-        # Segmented insights serve delivery metrics only; per-segment conversions
-        # come from POST /conversions/insights (conversion_events_daily).
+        # Segmented insights serve delivery metrics only; conversions come from conversion_events_daily.
         metrics = DELIVERY_METRICS + ([] if segment else CONVERSION_METRICS)
         fields = ["metadata.readable_time", "metadata.timezone"] + LEVEL_METADATA[level]
         fields += SEGMENT_METADATA.get(segment, []) + [f"{prefix}.{m}" for m in metrics]
@@ -292,8 +287,7 @@ class OpenaiAdsSource(AbstractSource):
 
         payload = self._insights_page(params, fields)
         rows = payload.get("data") or []
-        # Row ids end in an opaque ":plan=..." query token; the part before it is
-        # the row's grain (time bucket + entity + segment value).
+        # Row ids end in an opaque ":plan=..." token; the part before it is the row's grain.
         records = [
             self._record(
                 stream.value,

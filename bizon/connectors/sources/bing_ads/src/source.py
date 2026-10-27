@@ -1,14 +1,11 @@
 """Microsoft Advertising (Bing Ads) accounts, Bulk campaign entities and daily reports, from the v13 REST API.
 
-Auth: users who sign in to Microsoft Advertising with Google can use a Google OAuth refresh token
-(`IdentityProvider: Google`), which needs no Microsoft Entra app. Set identity_provider=Microsoft to use an
-Entra app and a Microsoft refresh token (scope msads.manage) instead.
+Auth defaults to a Google OAuth refresh token (`IdentityProvider: Google`, no Entra app needed); set
+identity_provider=Microsoft for an Entra app and a Microsoft refresh token (scope msads.manage).
 
-Each report requests every column the API offers for it. Microsoft refuses some column combinations without
-naming the culprit (RestrictedColumnCombinations), so the sets below were found by probing the API with a greedy
-search over each report's v13 column enum. Impression-share columns cannot share a request with network,
-match-type and device-OS segments, so those reports get a second `*_impression_share` stream. A column the API
-later stops accepting is dropped at runtime, using the `$.Columns[i]` path in its error.
+Microsoft refuses some column combinations without naming the culprit, so the column sets below were probed.
+Impression-share columns cannot share a request with network, match-type and device-OS segments, hence the
+`*_impression_share` streams. A column the API later rejects is dropped at runtime.
 """
 
 import csv
@@ -41,8 +38,7 @@ TOKEN_URLS = (GOOGLE_TOKEN_URL, MICROSOFT_TOKEN_URL)
 POLL_INTERVAL_SECONDS = 5
 POLL_TIMEOUT_SECONDS = 1800
 
-# A request with every DownloadEntity value returns InternalError, so this is a verified working subset.
-# Hotel, app and product types are omitted.
+# Requesting every DownloadEntity returns InternalError; this is a verified working subset.
 # fmt: off
 BULK_ENTITIES = [
     "Campaigns", "AdGroups", "Ads", "Keywords", "CampaignNegativeKeywords", "AdGroupNegativeKeywords",
@@ -683,8 +679,7 @@ class BingAdsSource(AbstractSource):
 
         records = []
         for row_number, row in enumerate(self._download_csv(status["ResultFileUrl"])):
-            # The Bulk file is one wide sheet (580+ columns) shared by every entity
-            # type; keep only the populated cells so each record carries its own shape.
+            # The Bulk file is one 580+ column sheet shared by every entity type; keep only populated cells.
             data = {k: v for k, v in row.items() if v not in ("", None)}
             if not data.get("Type"):
                 continue
@@ -759,8 +754,7 @@ class BingAdsSource(AbstractSource):
         accounts = self._account_ids()
         pagination = pagination or {}
         account_idx = pagination.get("account_idx", 0)
-        # The cursor stores the window's first day, not an index: a resumed run
-        # recomputes `end` from today, so an index would point at a different window.
+        # A resumed run recomputes `end` from today, so the cursor stores a date, not an index.
         window_start = date.fromisoformat(pagination["window_start"]) if pagination.get("window_start") else start
         if account_idx >= len(accounts) or window_start > end:
             return SourceIteration(records=[], next_pagination={})
@@ -779,8 +773,7 @@ class BingAdsSource(AbstractSource):
                 "_window_start": window_start.isoformat(),
                 "_window_end": window_end.isoformat(),
             }
-            # Report rows have no id; every column of a daily row is part of its grain
-            # or a measure of it, and restated measures arrive in a later run anyway.
+            # Report rows have no id; every column is grain or measure, so the whole row is hashed.
             row_key = json.dumps([stream, account_id, row], sort_keys=True)
             records.append(SourceRecord(id=hashlib.sha1(row_key.encode()).hexdigest(), data=data))
 

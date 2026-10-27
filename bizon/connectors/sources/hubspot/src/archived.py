@@ -34,12 +34,8 @@ class HubSpotArchivedSourceConfig(HubSpotBaseSourceConfig):
 
 
 class HubSpotArchivedSource(HubSpotBaseSource):
-    """Archived contacts, deals and companies.
-
-    `archived=true` has no server-side date filter and its pages are not ordered by `archivedAt`, so every run walks
-    the whole list and keeps the rows archived inside the window. Use incremental to accumulate them: the list only
-    carries recently archived records, so a full refresh would drop older ones.
-    """
+    """`archived=true` has no date filter and isn't ordered by `archivedAt`, so every run walks the whole list. The
+    list only carries recently archived records: use incremental to accumulate them."""
 
     def __init__(self, config: HubSpotArchivedSourceConfig):
         super().__init__(config)

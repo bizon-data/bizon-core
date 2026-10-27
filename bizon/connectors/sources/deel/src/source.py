@@ -13,8 +13,7 @@ from bizon.source.source import AbstractSource
 
 BASE_URL = "https://api.letsdeel.com/rest/v2"
 
-# (connect, read) seconds. Without a read timeout a stalled socket never becomes
-# a retryable event and the run hangs until the pod deadline.
+# Without a read timeout a stalled socket never becomes retryable and hangs to the pod deadline.
 REQUEST_TIMEOUT = (10, 60)
 
 # Only filenames of uploaded documents (e.g. sick notes): sensitive and of no analytical use.
@@ -42,8 +41,7 @@ OFFSET_STREAMS = {DeelStreams.PEOPLE, DeelStreams.MANAGERS}
 class DeelSourceConfig(SourceConfig):
     stream: DeelStreams
     api_key: str
-    # check_connection reports the status and body of a non-2xx response, and the fetches log it before raising.
-    # The default policy caps a 429's Retry-After at 120s, so a long penalty fails the attempt instead of hanging.
+    # Non-2xx bodies are reported before raising.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(raise_for_status=False), description="HTTP timeout/retry policy"
     )
@@ -113,9 +111,7 @@ class DeelSource(AbstractSource):
 
         body = response.json()
         items = body.get("data", [])
-        # `total_rows` counts what remains from `offset`, not the grand total. A short
-        # page with rows still remaining would end the run early and publish a truncated
-        # table over the full one.
+        # `total_rows` counts what remains from `offset`, not the grand total; a short page doesn't mean the end.
         remaining = (body.get("page") or {}).get("total_rows")
         if len(items) < PAGE_SIZE and isinstance(remaining, int) and remaining > len(items):
             raise ValueError(f"Deel returned {len(items)} rows at offset {offset} but reports {remaining} remaining")
@@ -141,8 +137,7 @@ class DeelSource(AbstractSource):
 
         body = response.json()
         next_cursor = body.get("next")
-        # A missing cursor on a page that says more exist would end the run early
-        # and publish a truncated table over the full one.
+        # A missing cursor while more pages exist would otherwise end the run with a truncated table.
         if body.get("has_next_page") and not next_cursor:
             raise ValueError("Deel reported has_next_page but returned no `next` cursor")
         if next_cursor and next_cursor == cursor:

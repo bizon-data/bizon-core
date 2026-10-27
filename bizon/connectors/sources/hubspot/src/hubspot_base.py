@@ -26,8 +26,7 @@ URL_TOKEN_REFRESH = f"{URL_BASE}/oauth/v1/token"
 DEFAULT_TIMEOUT = (10, 60)
 LONG_TIMEOUT = (10, 120)
 
-# A request prepared just before the 30-minute access token expires can reach HubSpot after it,
-# so refresh well ahead unless the config sets its own skew.
+# A request prepared just before the 30-minute access token expires can reach HubSpot after it.
 DEFAULT_EXPIRY_SKEW_SECONDS = 120
 
 SEARCH_PAGE_SIZE_MAX = 200
@@ -38,7 +37,6 @@ def default_http_config() -> HttpConfig:
 
 
 def to_ms(value) -> int:
-    """Epoch milliseconds from an ISO-8601 string or a datetime."""
     if isinstance(value, str):
         value = pendulum.parse(value)
     return int(value.timestamp() * 1000)
@@ -158,11 +156,8 @@ class HubSpotBaseSource(AbstractSource, ABC):
             return False, repr(e)
 
     def _call(self, method: str, url: str, **kwargs) -> Response:
-        """Paced `session.call` that refreshes the token and replays once on a 401 EXPIRED_AUTHENTICATION.
-
-        Only that category is replayed, and only once: a second one straight after a forced refresh is not the
-        expiry race, so it is left fatal like any other 401.
-        """
+        """Refreshes the token and replays once on a 401 EXPIRED_AUTHENTICATION; a second one right after a forced
+        refresh is not the expiry race, so it stays fatal."""
         kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
         try:
             return self._send(method, url, **kwargs)
@@ -205,9 +200,8 @@ class HubSpotBaseSource(AbstractSource, ABC):
         return selected
 
     def run_start_ms(self, source_state: Optional[SourceIncrementalState] = None) -> int:
-        """Exclusive upper bound of a window, stable across the paginated walk so records modified mid-run don't
-        drift in or out of it. The job's start time is preferred: it is the next run's `last_run`, so windows tile.
-        """
+        """Exclusive window end, fixed for the whole walk. The job's start time is the next run's `last_run`, so
+        preferring it makes windows tile."""
         if source_state is not None and source_state.run_started_at is not None:
             return to_ms(source_state.run_started_at)
         if self._run_start_ms is None:
@@ -223,11 +217,7 @@ class HubSpotBaseSource(AbstractSource, ABC):
         window: Optional[Tuple[str, int, int]] = None,
         filters: Optional[List[dict]] = None,
     ) -> List[dict]:
-        """One CRM search page sorted by `hs_object_id`, optionally filtered to `property` in `[start, end)`.
-
-        Search returns at most 10,000 results per query however far `after` pages, so instead of `after` each page
-        re-filters on `hs_object_id > last_id`: the cap never applies and the cursor is one resumable scalar.
-        """
+        """Pages on `hs_object_id > last_id` instead of `after`, so search's 10,000-result cap never applies."""
         filters = list(filters or [])
         if window is not None:
             cursor_property, start_ms, end_ms = window

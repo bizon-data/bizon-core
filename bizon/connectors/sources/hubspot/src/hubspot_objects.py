@@ -106,7 +106,6 @@ class HubSpotObjectsSource(HubSpotBaseSource):
         self,
         pagination: dict = None,
     ) -> SourceIteration:
-        """Return the next page of the v3 list API."""
         if not pagination:
             response = self._get()
         else:

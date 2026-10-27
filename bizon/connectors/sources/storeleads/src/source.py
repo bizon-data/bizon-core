@@ -1,8 +1,6 @@
 """StoreLeads source: domains, cart-link domains, apps, technologies and Shopify app reviews. Full refresh only.
 
-Records are the untouched StoreLeads objects, except app_reviews, which stamps `app_token`/`app_platform` onto
-each review. StoreLeads 429s on back-to-back list calls (Retry-After: 1s), so list endpoints are paced to
-<=1 req/s and the per-app reviews calls to <=2 req/s, on top of the session's retry on 429/5xx.
+app_reviews records carry the parent `app_token`/`app_platform`; every other stream lands the raw object.
 """
 
 import hashlib
@@ -24,13 +22,10 @@ from bizon.source.source import AbstractSource
 BASE = "https://storeleads.app/json/api/v1/"
 TIMEOUT = (10, 300)
 
-# List endpoints are documented at 2 req/s (Pro) but 429 on back-to-back calls with
-# Retry-After: 1; pace to <=1 req/s to stay well clear and leave headroom for other
-# clients sharing the key.
+# List endpoints are documented at 2 req/s but 429 on back-to-back calls, so pace to <=1 req/s.
 MIN_LIST_INTERVAL_SECONDS = 1.05
 
-# Retrieve endpoints (the per-app reviews calls) are documented at 5 req/s on Pro, so
-# they can be paced faster than the list endpoints -- up to 2 req/s.
+# Retrieve endpoints (per-app reviews) are documented at 5 req/s.
 MIN_REVIEWS_INTERVAL_SECONDS = 0.55
 
 GET_ATTEMPTS = 6
@@ -41,19 +36,18 @@ TRANSIENT_NETWORK_ERRORS = (
     requests.exceptions.Timeout,
 )
 
-DOMAINS_PAGE_SIZE = 2000  # 5000 measured at 137 MB/page; 2000 keeps the worst page well under buffer_size.
-CART_LINK_PAGE_SIZE = 5000  # fields=name,platform keeps this endpoint's payload small even at 5000.
+DOMAINS_PAGE_SIZE = 2000  # domain objects are large; keeps one page well under buffer_size.
+CART_LINK_PAGE_SIZE = 5000  # fields=name,platform keeps this payload small.
 CART_LINK_PLATFORMS = "shopify,magento,bigcommerce,woocommerce"
 
-# all/app and all/technology: page pagination, page_size 50.
 APPS_TECH_PAGE_SIZE = 50
 
 # all/app 422s ("invalid page value") past this page index, and its `sort` order is unstable
 # within created_at ties, so the catalog is walked as filtered partitions in default order.
 MAX_PAGE_INDEX = 1000
 
-# The 26 largest shopify categories. `or` and `not` over the same set are complements, so the
-# three partitions are disjoint and complete whatever this list contains; only balance drifts.
+# `or` and `not` over the same set are complements, so the partitions stay disjoint and complete
+# whatever this list contains; only their balance drifts.
 SHOPIFY_CATEGORIES = (
     "analytics,discounts,upsell and cross-sell,seo,chat,store design,shipping,marketing,dropshipping,"
     "inventory sync,inventory optimization,delivery and pickup,workflow automation,cart customization,"
@@ -69,10 +63,7 @@ APPS_PARTITIONS: Tuple[Tuple[str, dict], ...] = (
     ("not_shopify", {"f:p": "shopify", "f:p:op": "not"}),
 )
 
-# app_reviews only walks shopify-platform apps. review_count on all/app is NOT a filter:
-# it is NULL for over half the shopify apps, and the reviews endpoint returns reviews
-# for them anyway.
-# page_size is capped server-side at 50 -- tested 100/250/1000, each returned 50.
+# The reviews endpoint caps page_size at 50 server-side.
 REVIEWS_PLATFORM = "shopify"
 REVIEWS_PAGE_SIZE = 50
 
@@ -88,8 +79,7 @@ class StoreleadsStreams(str, Enum):
 class StoreleadsSourceConfig(SourceConfig):
     api_token: Optional[str] = Field(None, description="StoreLeads API token (required)")
 
-    # Testing only: caps how many all/app pages the app_reviews scan walks (the full scan is ~850 pages).
-    # Leave unset in production so every app page is scanned.
+    # Testing only: caps how many all/app pages the app_reviews scan walks.
     max_review_scan_pages: Optional[int] = None
     # app_reviews treats a 404 on an app's reviews as no reviews.
     http: Optional[HttpConfig] = Field(
@@ -112,14 +102,12 @@ class StoreleadsSource(AbstractSource):
         self.config: StoreleadsSourceConfig = config
         self._next_list_request_at = 0.0
         self._next_reviews_request_at = 0.0
-        # app_reviews only: de-duplicated, ordered shopify tokens from the up-front
-        # all/app scan. Process-local; the cursor carries only small ints.
+        # Process-local: the cursor carries only small ints, never the token list.
         self._scan_cursor: dict = {}
         self._scan_done = False
         self._app_tokens: List[str] = []
         self._app_tokens_seen: set[str] = set()
         self._scan_duplicates = 0
-        # all/app walker state (see _walk_apps_page); process-local like _app_tokens.
         self._apps_seen: set[str] = set()
         self._apps_duplicates = 0
         self._apps_pages = 0
@@ -244,14 +232,10 @@ class StoreleadsSource(AbstractSource):
         next_pagination = {"page": page + 1} if page < total_pages - 1 else {}
         return SourceIteration(next_pagination=next_pagination, records=records)
 
-    # apps: all/app walked as filtered partitions (APPS_PARTITIONS) in the API's default
-    # order, each paged 0..total_pages-1 within MAX_PAGE_INDEX (~1,009 pages in all). Dedup is by the unique app
-    # `id` (`token` is only unique per platform); expected to drop nothing.
-
     def _walk_apps_page(
         self, pagination: dict, partitions: Tuple[Tuple[str, dict], ...], max_pages: Optional[int] = None
     ) -> Tuple[List[dict], dict]:
-        """One all/app page -> (apps not seen yet, next pagination; {} when the walk is complete)."""
+        """One all/app page -> (unseen apps, next pagination). Dedups on `id`; `token` is only unique per platform."""
         part = pagination.get("part", 0)
         page = pagination.get("page", 0)
         if (part or page) and not self._apps_part_totals:
@@ -268,7 +252,7 @@ class StoreleadsSource(AbstractSource):
         apps = data.get("apps", [])
         total = data.get("total")
         # Ending early would publish a partial table via WRITE_TRUNCATE; a failed run keeps the last one.
-        # No partition is legitimately empty, and a 200 with `total: 0` mid-walk was observed.
+        # No partition is legitimately empty, yet the API can return a 200 with `total: 0` mid-walk.
         if not total:
             meta = {k: v for k, v in data.items() if k != "apps"}
             raise RuntimeError(
@@ -314,21 +298,9 @@ class StoreleadsSource(AbstractSource):
         records = [SourceRecord(id=str(a["token"]), data=a) for a in apps]
         return SourceIteration(next_pagination=next_pagination, records=records)
 
-    # app_reviews: scan all/app up front (one page per get(), no records), then fan out
-    # over all/app/shopify.{token}/reviews for every shopify app.
-    #
-    # The scan has to be fast: all/app is page-paginated and shifts under a slow walk, so
-    # apps drift across page boundaries and get skipped (and can repeat: dedup is a
-    # safeguard, a fast full pass returned none). ~850 shopify pages at <=1 req/s is ~15 min,
-    # versus the whole multi-hour run when the walk was interleaved with the reviews calls.
-    #
-    # The cursor is {idx, review_page}; the token list lives in memory, never in the
-    # cursor. A cursor with an empty list would redo the scan and continue at idx, but
-    # that is unreachable: a full_refresh job restarts from iteration 0.
-    #
-    # review_count is unused: it is NULL for over half the apps and understates the true
-    # total when set (19 -> 62 real reviews observed), so the only safe stop signal for
-    # an app is a short page.
+    # app_reviews scans all/app up front rather than interleaving it with the reviews calls: all/app is
+    # page-paginated and shifts under a slow walk, so apps would drift across pages and be skipped.
+    # review_count is often NULL and understates when set, so only a short page ends an app.
 
     def _scan_apps_page(self, pagination: dict) -> SourceIteration:
         scanned = self._scan_cursor or {"part": 0, "page": 0}
@@ -382,12 +354,10 @@ class StoreleadsSource(AbstractSource):
             rec = dict(review)
             rec["app_token"] = token
             rec["app_platform"] = REVIEWS_PLATFORM
-            # Reviews carry no id of their own -- a deterministic hash of the app +
-            # raw fields stands in.
+            # Reviews carry no id of their own.
             review_id = hashlib.sha1(f"{token}|{json.dumps(rec, sort_keys=True, default=str)}".encode()).hexdigest()
             records.append(SourceRecord(id=review_id, data=rec))
 
-        # A short page proves there's no more, so no extra confirming empty-page request.
         done_with_app = len(reviews) < REVIEWS_PAGE_SIZE
 
         logger.info(

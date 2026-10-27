@@ -1,7 +1,7 @@
 """Airtable source: one table per stream, flattened to sanitised column names with the full field set per record.
 
-Column names, the `_airtable_*` metadata columns and the stringified field types follow a widely used Airtable
-export layout, so existing downstream models can read the output unchanged.
+Column names, `_airtable_*` metadata columns and stringified field types follow a common Airtable export layout,
+so existing downstream models read the output unchanged.
 """
 
 import re
@@ -21,9 +21,8 @@ DEFAULT_BASE_URL = "https://api.airtable.com/v0"
 DEFAULT_PAGE_SIZE = 100
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 120
 
-# Types whose API value is a list/dict but which the export layout stores as a STRING holding the Python repr
-# (single-quoted), not JSON. A downstream JSON_VALUE on a nested object yields NULL, so the repr has to be
-# produced here or the column silently empties out. Every other type is left as the API returns it.
+# The export layout stores these list/dict types as a STRING holding the Python repr, not JSON; downstream
+# JSON_VALUE on them yields NULL otherwise. Every other type is left as the API returns it.
 STRINGIFIED_FIELD_TYPES = frozenset(
     {"multipleAttachments", "button", "createdBy", "lastModifiedBy", "singleCollaborator"}
 )
@@ -131,11 +130,8 @@ class AirtableSource(AbstractSource):
         return payload
 
     def _schema(self) -> dict:
-        """GET /meta/bases/{base_id}/tables, cached on the instance. Returns
-        {"table_name": str, "fields": [(raw_name, airtable_type, column_name), ...]}
-        in Meta-API field order for self.config.table_id -- this is what lets
-        the source emit the full field set per record even for rows where
-        Airtable omitted an empty field from `fields`."""
+        """Cached Meta API schema for the table: lets every record carry the full field set, since Airtable
+        omits empty fields from `fields`."""
         if self._schema_cache is not None:
             return self._schema_cache
 

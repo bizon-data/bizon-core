@@ -12,23 +12,18 @@ from bizon.source.config import HttpConfig, SourceConfig
 from bizon.source.models import SourceIncrementalState, SourceIteration, SourceRecord
 from bizon.source.source import AbstractSource
 
-# apilayer's "Exchange Rates Data API" product with header auth; an access_key query param against the legacy
-# api.exchangeratesapi.io host is rejected for keys provisioned for this product.
+# The legacy api.exchangeratesapi.io host rejects keys provisioned for this product.
 BASE_URL = "https://api.apilayer.com/exchangerates_data"
 
-# Fetch through today. Before the day's ECB fix is published, apilayer answers the dated endpoint with the last
-# published rates labelled with the requested date; a day later it serves the settled value for that date, which
-# differs. Changing this lag switches a consumer from the provisional to the settled series.
+# Before the day's ECB fix, apilayer serves the last published rates under the requested date, and the settled
+# (different) value a day later. Changing this lag switches consumers from the provisional to the settled series.
 DATA_LAG_DAYS = 0
 
-# Status-code retries get their own small budget: on a plan with a few hundred requests a month, a deep retry
-# storm against a 429 or a flapping 5xx spends a meaningful share of the quota. Connection failures cost nothing
-# and keep the full total.
+# A small status-retry budget: on a plan with a few hundred requests a month, retry storms spend real quota.
+# Connection failures cost nothing and keep the full total.
 STATUS_RETRIES = 3
 
-# Resume on the day after the watermark, so a daily run makes a single request. last_run is the last successful
-# job's created_at, which with DATA_LAG_DAYS = 0 was fetched through. A failed run catches up on its own because
-# last_run only advances on success.
+# With DATA_LAG_DAYS = 0 last_run's day was already fetched, so a daily run makes a single request.
 RESUME_OFFSET_DAYS = 1
 
 
@@ -37,8 +32,7 @@ class ExchangeRatesSourceConfig(SourceConfig):
     start_date: str = Field(..., description="First day (YYYY-MM-DD) fetched by a first or full sync")
     ignore_weekends: bool = False
     base: Optional[str] = Field(None, description="Base currency. Unset uses the account default (EUR)")
-    # apilayer answers a spent monthly quota with a 429 whose Retry-After runs to the next month; the default
-    # policy caps that wait at 120s so the run fails instead of sleeping.
+    # A spent monthly quota is a 429 with Retry-After to next month; the default policy caps the wait at 120s.
     http: Optional[HttpConfig] = Field(default_factory=HttpConfig, description="HTTP timeout/retry policy")
 
 
@@ -60,7 +54,6 @@ class ExchangeRatesSource(AbstractSource):
         return retry.new(status=STATUS_RETRIES) if retry is not None else None
 
     def get_authenticator(self) -> Optional[AuthBase]:
-        # apilayer sends the key as the `apikey` header, not a query param.
         self.session.headers.update({"apikey": self.config.access_key})
         return None
 

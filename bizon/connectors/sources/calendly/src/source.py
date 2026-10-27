@@ -30,7 +30,7 @@ class CalendlySourceConfig(SourceConfig):
         ..., description="Organization URI, e.g. https://api.calendly.com/organizations/<uuid>"
     )
     start_date: str = Field(..., description="ISO-8601 lower bound on scheduled event start_time for the first sync")
-    # Non-2xx responses are inspected (check_connection, error logging) before raising.
+    # check_connection and error logging inspect non-2xx bodies before raising.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(raise_for_status=False), description="HTTP timeout/retry policy"
     )
@@ -79,18 +79,12 @@ class CalendlySource(AbstractSource):
         return None
 
     def _fetch_paginated(self, url: str, params: dict = None) -> Tuple[list, Optional[str]]:
-        """Fetch a single page from a Calendly endpoint.
-
-        Returns (records, next_page_url). next_page_url is None when there are no more pages.
-        Calendly's page_token is bound to the exact query params of the first request,
-        so the full next_page URL returned by the API for subsequent pages.
-        """
+        """page_token is bound to the first request's exact params, so later pages follow the full next_page URL."""
         if params is not None:
             params = dict(params)
             params.setdefault("count", 100)
             response = self.session.get(url, params=params)
         else:
-            # url is a full next_page URL with params already encoded
             response = self.session.get(url)
 
         if not response.ok:
@@ -103,7 +97,6 @@ class CalendlySource(AbstractSource):
         return collection, next_page_url
 
     def _fetch_all_pages(self, url: str, params: dict = None) -> list:
-        """Fetch all pages from a paginated endpoint."""
         all_records = []
         records, next_page_url = self._fetch_paginated(url, params)
         all_records.extend(records)
@@ -149,10 +142,7 @@ class CalendlySource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def get_scheduled_event_invitees(self, pagination: dict = None, min_start_time: str = None) -> SourceIteration:
-        # Lazily paginate through parent events using time-based offset instead of
-        # page_token (which expires between bizon iterations). Each get() call fetches
-        # one page of parents sorted by start_time, processes their invitees, then stores
-        # the last event's start_time for the next call.
+        # Pages parents by start_time offset rather than page_token, which expires between bizon iterations.
 
         effective_min_start_time = (
             pagination.get("next_min_start_time")
@@ -179,7 +169,6 @@ class CalendlySource(AbstractSource):
                     )
                 )
 
-        # Use last event's start_time as offset for the next batch
         next_pagination = {}
         if parent_next_page_url and parent_records:
             last_start_time = parent_records[-1].get("start_time", effective_min_start_time)
@@ -211,13 +200,11 @@ class CalendlySource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def _load_parent_form_uris(self) -> list:
-        """Fetch all routing form URIs."""
         params = {"organization": self.config.organization_uri}
         forms = self._fetch_all_pages(f"{BASE_URL}/routing_forms", params)
         return [f["uri"] for f in forms]
 
     def get_routing_form_submissions(self, pagination: dict = None) -> SourceIteration:
-        # First call: load all parent form URIs
         if not pagination or "remaining_forms" not in pagination:
             form_uris = self._load_parent_form_uris()
             logger.info(f"Loaded {len(form_uris)} parent forms for submissions")
@@ -228,7 +215,6 @@ class CalendlySource(AbstractSource):
         remaining = pagination["remaining_forms"]
         all_records = []
 
-        # Process one parent form per call
         while remaining:
             form_uri = remaining.pop(0)
             submissions = self._fetch_all_pages(f"{BASE_URL}/routing_form_submissions", params={"form": form_uri})

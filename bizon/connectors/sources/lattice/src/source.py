@@ -19,8 +19,7 @@ REQUEST_TIMEOUT = (10, 60)
 # Lattice rejects limit > 100 (400).
 PAGE_LIMIT = 100
 
-# Rate limit is 240 requests per rolling minute, read from x-ratelimit-* headers.
-# Pace proactively so a long sequential walk doesn't lean on 429 retries.
+# 240 requests per rolling minute; pace proactively rather than lean on 429 retries.
 RATE_LIMIT_FLOOR = 5
 MAX_RETRY_AFTER_SECONDS = 120
 
@@ -138,7 +137,7 @@ class LatticeSourceConfig(SourceConfig):
     api_key: str
     # Server-side `onlyPublic=true` on /feedbacks, which returns fewer rows than filtering on `isPublic`.
     only_public_feedback: bool = True
-    # check_connection reports the status and body of a non-2xx response, and _get_json logs it before raising.
+    # Non-2xx bodies are reported before raising.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(raise_for_status=False), description="HTTP timeout/retry policy"
     )
@@ -158,8 +157,7 @@ class LatticeSource(AbstractSource):
         super().__init__(config)
         self.config: LatticeSourceConfig = config
         self._cycle_ids: Optional[List[str]] = None
-        # Full-refresh only: one `bizon run` process walks the whole stream, so this
-        # lives as long as the run. A fresh instance would only re-emit a question row.
+        # Lives as long as the run; a fresh instance would only re-emit a question row.
         self._seen_question_ids: set = set()
 
     @staticmethod
@@ -264,7 +262,6 @@ class LatticeSource(AbstractSource):
         return SourceIteration(records=self._records(rows, _project_user), next_pagination=next_pagination)
 
     def _cycle_page(self, pagination: Optional[dict], suffix: str) -> Tuple[str, List[dict], dict]:
-        """One page of a per-cycle sub-resource, plus the cursor for the next iteration."""
         pagination = pagination or {}
         cycle_ids = self._all_cycle_ids()
         if not cycle_ids:
@@ -294,8 +291,7 @@ class LatticeSource(AbstractSource):
         return SourceIteration(records=self._records(rows, _project_review), next_pagination=next_pagination)
 
     def _get_questions(self, pagination: Optional[dict]) -> SourceIteration:
-        # There is no list endpoint for questions: walk every review and fetch each distinct question once per
-        # instance. A resumed run may re-emit a question, so dedup on id downstream.
+        # No list endpoint for questions: fetch each distinct one seen in reviews. Dedup on id downstream.
         _, rows, next_pagination = self._cycle_page(pagination, "reviews")
         new_ids = []
         for row in rows:

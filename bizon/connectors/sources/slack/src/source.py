@@ -12,21 +12,17 @@ from bizon.source.source import AbstractSource
 
 BASE_URL = "https://slack.com/api"
 
-# Without a read timeout a stalled socket never becomes a retryable event and the run hangs.
+# Without a read timeout a stalled socket never becomes a retryable event.
 TIMEOUT = (10, 60)
 
-# conversations.members is Tier 4 (~100 req/min) and returns bare user IDs, so a
-# large page keeps the per-channel fan-out to as few calls as possible.
+# conversations.members returns bare user IDs, so a large page keeps the per-channel fan-out cheap.
 MEMBERS_PAGE_SIZE = 1000
 
-# users.info errors scoped to one user ID rather than to the token. A member ID that
-# cannot be resolved is skipped; anything else (missing_scope, invalid_auth, ...) is
-# workspace-wide and must fail the stream.
+# users.info errors scoped to one user ID; anything else is workspace-wide and fails the stream.
 PER_USER_INFO_ERRORS = frozenset({"user_not_found", "user_not_visible"})
 
-# conversations.members errors scoped to ONE channel degrade to an empty member list.
-# Anything else (missing_scope, invalid_auth, ratelimited, ...) would hit every channel,
-# so degrading it would publish members: [] everywhere on a "successful" run.
+# conversations.members errors scoped to one channel degrade to an empty member list. Anything else
+# would hit every channel, so degrading it would publish members: [] everywhere on a "successful" run.
 PER_CHANNEL_MEMBER_ERRORS = frozenset(
     {
         "channel_not_found",
@@ -37,12 +33,7 @@ PER_CHANNEL_MEMBER_ERRORS = frozenset(
 
 
 class SlackApiError(RuntimeError):
-    """A Slack ``{"ok": false, "error": ...}`` body, carrying the raw error code.
-
-    Slack signals failures with HTTP 200 plus an ``ok: false`` body, so the error code
-    is the only thing that distinguishes "this one channel is unreadable" from "this
-    token cannot read any channel". Callers branch on ``.error``, never on substrings.
-    """
+    """An HTTP 200 ``ok: false`` body. Callers branch on ``.error``, the only per-channel vs per-token signal."""
 
     def __init__(self, error: Optional[str]):
         self.error = error or "unknown_error"
@@ -50,8 +41,6 @@ class SlackApiError(RuntimeError):
 
 
 class SlackApiKeyAuth(AuthBase):
-    """Bearer-token auth for the Slack API, from the ``api_key`` source config field."""
-
     def __init__(self, api_key: str):
         self.api_key = api_key
 
@@ -95,8 +84,7 @@ class SlackSource(AbstractSource):
 
         self.session.headers.update({"Content-Type": "application/json"})
 
-        # Per-run caches for external_users: instance state survives across get() calls, which keeps
-        # the users.info cost proportional to distinct external users rather than to memberships.
+        # external_users caches: keep users.info calls proportional to distinct external users, not memberships.
         self._internal_user_ids: Optional[set] = None
         self._seen_external_ids: set = set()
 
@@ -112,7 +100,6 @@ class SlackSource(AbstractSource):
         return SlackSourceConfig
 
     def check_connection(self) -> Tuple[bool, Optional[Any]]:
-        """Test connection with a cheap, single-user users.list call."""
         try:
             response = self.session.get(f"{BASE_URL}/users.list", params={"limit": 1}, timeout=TIMEOUT)
             response.raise_for_status()
@@ -127,7 +114,6 @@ class SlackSource(AbstractSource):
         return None
 
     def get_users(self, pagination: dict = None) -> SourceIteration:
-        """Fetch all users in the Slack workspace."""
         params = {"limit": self.config.page_size}
         if pagination and pagination.get("cursor"):
             params["cursor"] = pagination["cursor"]
@@ -148,13 +134,7 @@ class SlackSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def _get_channel_members(self, channel_id: str) -> List[str]:
-        """Fetch every member user ID of a channel, following conversations.members cursors.
-
-        Large channels exceed a single page, so it is drained here rather than truncated.
-
-        An ``ok: false`` body raises SlackApiError and transport failures propagate; deciding
-        whether a failure is per-channel or must fail the stream is the caller's job.
-        """
+        """Drain every page of a channel's members; the caller decides whether a SlackApiError is per-channel."""
         members: List[str] = []
         cursor = ""
 
@@ -177,11 +157,7 @@ class SlackSource(AbstractSource):
                 return members
 
     def get_public_channels(self, pagination: dict = None) -> SourceIteration:
-        """Fetch the workspace's public channels, each with its list of member user IDs.
-
-        ``types=public_channel`` already excludes private conversations, but ``is_channel`` /
-        ``is_private`` are re-checked so an API quirk cannot leak a private one into this stream.
-        """
+        """``is_private``/``is_channel`` are re-checked so an API quirk cannot leak a private conversation."""
         params = {
             "types": "public_channel",
             "exclude_archived": "false",
@@ -231,12 +207,7 @@ class SlackSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def _load_internal_user_ids(self) -> set:
-        """Page users.list once per run and cache the workspace's own user IDs.
-
-        users.list returns only members of the token's own team, so it doubles as the
-        "is this person external?" oracle: any channel member missing from it is a
-        Slack Connect user from another workspace.
-        """
+        """users.list returns only the token's own team, so any channel member missing from it is external."""
         if self._internal_user_ids is not None:
             return self._internal_user_ids
 
@@ -265,12 +236,7 @@ class SlackSource(AbstractSource):
         return ids
 
     def _get_user_info(self, user_id: str) -> Optional[dict]:
-        """Resolve one user via users.info, or None if that ID alone is unresolvable.
-
-        users.info is the only endpoint that returns a profile (including the email,
-        via the users:read.email scope) for a Slack Connect "stranger" --
-        users.profile.get answers user_not_found for them.
-        """
+        """Only users.info returns a Slack Connect user's profile; users.profile.get says user_not_found."""
         response = self.session.get(f"{BASE_URL}/users.info", params={"user": user_id}, timeout=TIMEOUT)
         response.raise_for_status()
         data = response.json()
@@ -285,14 +251,7 @@ class SlackSource(AbstractSource):
         return data.get("user")
 
     def get_external_users(self, pagination: dict = None) -> SourceIteration:
-        """Emit one record per distinct external (Slack Connect) user in a public channel.
-
-        Only externally-shared channels are walked: a stranger can only be in a channel shared
-        with their workspace, so this cuts the members fan-out to the Slack Connect channels.
-
-        Deduplication is per-run and in-process (``_seen_external_ids``): the same person appears
-        in many shared channels, and emitting them once per channel would multiply rows.
-        """
+        """One record per distinct Slack Connect user; only externally-shared channels can hold one."""
         internal_ids = self._load_internal_user_ids()
 
         params = {
@@ -335,8 +294,7 @@ class SlackSource(AbstractSource):
                 if user is None:
                     continue
 
-                # Marks the row as external so `users` UNION `external_users` gives a
-                # complete identity table without re-deriving membership.
+                # Lets `users` UNION `external_users` form a complete identity table.
                 user["is_external"] = True
                 user["first_seen_channel_id"] = channel_id
                 records.append(SourceRecord(id=str(user["id"]), data=user))

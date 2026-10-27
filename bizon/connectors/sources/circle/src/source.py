@@ -33,8 +33,7 @@ STREAM_ENDPOINTS = {
 class CircleSourceConfig(SourceConfig):
     stream: CircleStreams
     api_token: str
-    # check_connection reports the status and body of a non-2xx response, and _get_page logs it before raising.
-    # The default forcelist already retries 520/522/524: Cloudflare-synthesised origin blips in front of the API.
+    # Non-2xx bodies are reported before raising. The default forcelist already retries Cloudflare's 520/522/524.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(raise_for_status=False), description="HTTP timeout/retry policy"
     )
@@ -78,7 +77,7 @@ class CircleSource(AbstractSource):
         return None
 
     def _get_page(self, endpoint: str, pagination: dict = None) -> SourceIteration:
-        """Fetch one page of a v2 list endpoint; every list endpoint shares the same envelope."""
+        """Every v2 list endpoint shares the same envelope."""
         page = pagination.get("page", 1) if pagination else 1
 
         response = self.session.get(f"{BASE_URL}/{endpoint}", params={"page": page, "per_page": PER_PAGE})

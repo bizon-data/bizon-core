@@ -58,8 +58,7 @@ class CloudflareAiGatewaySourceConfig(SourceConfig):
 
     @model_validator(mode="after")
     def _list_fields_must_request_the_page_token(self):
-        # Without nextPageToken the iterator can't say whether the bucket has more
-        # objects, so the run would report success after the first page.
+        # Without nextPageToken the run would report success after the first page.
         if self.list_fields and "nextPageToken" not in self.list_fields:
             raise ValueError("list_fields must include nextPageToken")
         return self
@@ -120,9 +119,8 @@ class CloudflareAiGatewaySource(AbstractSource):
         return self._get_page(pagination, cutoff=cutoff)
 
     def _get_page(self, pagination: dict, cutoff: datetime | None) -> SourceIteration:
-        # Pagination is the last object name taken, not a page token: the byte budget
-        # can end an iteration mid-page, and a name survives the 30-day lifecycle
-        # deleting objects under us where a positional offset into the page would not.
+        # Paginate on the last object name: the byte budget can end an iteration mid-page, and a name survives
+        # the 30-day lifecycle deleting objects where a positional offset would not.
         after = pagination.get("after")
         iterator = self.client.list_blobs(
             self.config.bucket_name,

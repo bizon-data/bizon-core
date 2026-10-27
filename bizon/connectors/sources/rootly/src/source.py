@@ -57,8 +57,6 @@ class RootlySource(AbstractSource):
         return None
 
     def get_post_mortems(self, pagination: dict) -> SourceIteration:
-        """Return all post mortems"""
-
         if not pagination:
             response = self.session.get(
                 f"{self.base_url}/post_mortems", params={"page[size]": 100}, timeout=REQUEST_TIMEOUT
@@ -107,8 +105,6 @@ class RootlySource(AbstractSource):
         )
 
     def get_incidents(self, pagination: dict, page_size: int = 200) -> SourceIteration:
-        """Return all incidents"""
-
         include = "sub_statuses,causes,subscribers,services,groups,action_items,incident_post_mortem,feedbacks"
 
         if not pagination:
@@ -138,7 +134,6 @@ class RootlySource(AbstractSource):
         )
 
     def get_teams(self, pagination: dict) -> SourceIteration:
-        """Return all teams"""
         if not pagination:
             response = self.session.get(f"{self.base_url}/teams", params={"page[size]": 100}, timeout=REQUEST_TIMEOUT)
         else:
@@ -160,7 +155,6 @@ class RootlySource(AbstractSource):
         )
 
     def get_services(self, pagination: dict) -> SourceIteration:
-        """Return all services"""
         if not pagination:
             response = self.session.get(
                 f"{self.base_url}/services", params={"page[size]": 100}, timeout=REQUEST_TIMEOUT
@@ -184,7 +178,6 @@ class RootlySource(AbstractSource):
         )
 
     def get_users(self, pagination: dict) -> SourceIteration:
-        """Return all users"""
         if not pagination:
             response = self.session.get(f"{self.base_url}/users", params={"page[size]": 100}, timeout=REQUEST_TIMEOUT)
         else:
@@ -206,7 +199,6 @@ class RootlySource(AbstractSource):
         )
 
     def get_incident_action_items(self, pagination: dict) -> SourceIteration:
-        """Return all incident action items"""
         incident_iteration = self.get_incidents(pagination=pagination, page_size=1)
 
         if len(incident_iteration.records) == 0:

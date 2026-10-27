@@ -4,13 +4,7 @@ Fetches developer activity data from the GitHub REST and GraphQL APIs using **Gi
 
 ## Authentication
 
-Uses GitHub App auth (JWT + installation access tokens):
-1. Generates a JWT signed with the app's private key
-2. Auto-discovers all installations via `GET /app/installations`
-3. Exchanges the JWT for short-lived installation tokens per installation
-4. Caches tokens and refreshes them at the 50-minute mark (60 min expiry)
-
-No `installation_id` is required — the source discovers all installations automatically.
+The source signs a JWT with the app's private key, discovers every installation via `GET /app/installations`, and exchanges the JWT for per-installation tokens (refreshed before their 60-minute expiry). No `installation_id` is required.
 
 ## Streams
 
@@ -29,12 +23,9 @@ The `GitHubStreams` enum in `src/source.py` is authoritative (it also covers `me
 
 ## Incremental limitations
 
-- **`workflow_jobs`**: incremental sync lists workflow runs by `created >= last_run` (same
-  filter as `workflow_runs`) and resolves jobs from those runs. A run created *before* the
-  cutoff whose jobs complete *after* it won't be re-ingested by a later incremental sync,
-  since job completion time isn't part of the run-listing filter. Re-runs create a new run
-  (new `created_at`), so they ARE captured going forward; `filter=all` on the jobs endpoint
-  also captures prior attempts of a re-listed run.
+- **`workflow_jobs`**: incremental sync lists runs by `created >= last_run` and resolves their
+  jobs, so a run created before the cutoff whose jobs finish after it is not re-ingested. Re-runs
+  get a new `created_at` and are captured.
 - `repositories`, `members`, `organization_teams` and `organization_team_members` always do
   a full read, even in incremental mode.
 - Each incremental run re-scans `lookback_days` (default 2) before the watermark, so expect
@@ -42,16 +33,12 @@ The `GitHubStreams` enum in `src/source.py` is authoritative (it also covers `me
 
 ## Resilience
 
-REST requests retry rate limits, connection drops, timeouts, and GitHub 5xx responses.
-When the underlying `HTTPAdapter` exhausts its 5xx attempts, it raises `RetryError`; the
-source treats that as retryable too, so the outer exponential backoff gets a chance to
-recover instead of failing immediately. An error that remains after those retries is still
-raised, so a failed repo fails the run instead of advancing the incremental watermark past
-data that was never fetched.
+REST requests retry rate limits, connection drops, timeouts and 5xx responses with exponential
+backoff. An error that survives the retries fails the run, so the incremental watermark never
+advances past data that was not fetched.
 
-GraphQL pages that keep failing with a 5xx or a query-cost error are retried at a smaller
-page size on the same cursor. `commits` returns full commit objects, and large commit pages
-can fail with HTTP 500, so `per_page: 50` is a reasonable setting for that stream.
+GraphQL pages that keep failing with a 5xx or a query-cost error are retried at a smaller page
+size on the same cursor. Large `commits` pages can fail with HTTP 500; `per_page: 50` helps.
 
 ## Config
 

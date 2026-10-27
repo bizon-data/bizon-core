@@ -59,15 +59,12 @@ class GongSourceConfig(SourceConfig):
     access_key: str = Field(..., description="Gong API access key")
     access_key_secret: str = Field(..., description="Gong API access key secret")
     start_date: str = Field(..., description="ISO-8601 fromDateTime for the first sync of the call streams")
-    # fromDateTime matches on a call's START time, but transcripts and the extensive payload publish some time
-    # after the call ends, so without an overlap a call still in progress at sync time falls behind the
-    # watermark for good. Every run re-appends the whole window, so dedupe downstream on the record id and size
-    # this to the longest realistic call plus the publish delay, no more.
+    # fromDateTime matches a call's START time but transcripts publish after it ends. Each run re-appends the
+    # window (dedupe on id downstream), so size it to the longest call plus the publish delay.
     lookback_hours: int = 12
-    # Upper bound (toDateTime) for the first/full-refresh run only; lets a historical backfill run in bounded
-    # windows.
+    # toDateTime for the first/full-refresh run only, for bounded historical backfills.
     end_date: Optional[str] = None
-    # Gong answers 404 when a filter window matches zero records, which is treated as an empty page.
+    # Gong answers 404 when a filter window matches zero records.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(raise_for_status=False), description="HTTP timeout/retry policy"
     )
@@ -102,11 +99,10 @@ class GongSource(AbstractSource):
         return None
 
     def _request(self, method: str, path: str, **kwargs) -> dict:
-        """Call a Gong endpoint. Returns {} for 404 (Gong's "no records" signal)."""
+        """Returns {} for a 404, Gong's "no records" signal."""
         url = f"{BASE_URL}{path}"
         response = self.session.request(method, url, timeout=(10, 300), **kwargs)
         if response.status_code == 404:
-            # Gong returns 404 when a filter window matches zero records.
             logger.info(f"Gong returned 404 (no records) for {method} {path}")
             return {}
         if not response.ok:
@@ -116,7 +112,6 @@ class GongSource(AbstractSource):
         return response.json()
 
     def _fetch_get(self, path: str, params: dict, pagination: Optional[dict], records_key: str) -> Tuple[list, dict]:
-        """Paginated GET. Cursor in query params; first page sends filters."""
         if pagination and pagination.get("cursor"):
             data = self._request("GET", path, params={"cursor": pagination["cursor"]})
         else:
@@ -127,10 +122,7 @@ class GongSource(AbstractSource):
         return records, next_pagination
 
     def _fetch_post(self, path: str, body: dict, pagination: Optional[dict], records_key: str) -> Tuple[list, dict]:
-        """Paginated POST. Gong wants the full request body (filter,
-        contentSelector, etc.) on every page — the cursor is just added on top.
-        Verified empirically: cursor-only and cursor+contentSelector both 400
-        on /v2/calls/extensive; only the full body + cursor succeeds."""
+        """Gong needs the full request body on every page, with the cursor added on top; anything less 400s."""
         payload = dict(body)
         if pagination and pagination.get("cursor"):
             payload["cursor"] = pagination["cursor"]
@@ -209,11 +201,7 @@ class GongSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def get_answered_scorecards(self, pagination: dict = None) -> SourceIteration:
-        # The filter here is date-only (YYYY-MM-DD), with fields
-        # callFromDate/callToDate/reviewFromDate/reviewToDate — unlike Gong's
-        # other endpoints, this one does not accept fromDateTime. Sending
-        # fromDateTime isn't rejected: it returns HTTP 200 and Gong silently
-        # ignores it, returning the entire history.
+        # This endpoint's filter is date-only (callFromDate/reviewFromDate...); a fromDateTime is silently ignored.
         body = {"filter": {}}
         records_raw, next_pagination = self._fetch_post(
             "/v2/stats/activity/scorecards",
@@ -243,18 +231,14 @@ class GongSource(AbstractSource):
         if stream == GongStreams.SCORECARDS:
             return self.get_scorecards(pagination)
         if stream == GongStreams.ANSWERED_SCORECARDS:
-            # Full refresh with no date filter. The endpoint may not serve its whole history: older answered
-            # scorecards can be missing under every filter, so a refresh can hold fewer rows than an earlier export.
-            # Not incremental: with no new reviews Gong 404s, the first iteration is empty and the job never
-            # commits its cursor.
+            # Not incremental: with no new reviews Gong 404s and the job never commits its cursor. The API may
+            # not serve full history, so a refresh can hold fewer rows than an earlier export.
             return self.get_answered_scorecards(pagination)
 
         raise NotImplementedError(f"Stream '{stream}' is not implemented for Gong source")
 
     def get_records_after(self, source_state: SourceIncrementalState, pagination: dict = None) -> SourceIteration:
-        # Apply the lookback window here (not in get(), which uses config.start_date
-        # verbatim for the first-ever run) so every subsequent incremental run
-        # re-covers the trailing window and picks up late-arriving transcripts.
+        # The lookback applies here, not in get(), so the first run uses start_date verbatim.
         from_dt = self._iso(source_state.last_run - timedelta(hours=self.config.lookback_hours))
         stream = self.config.stream
 
@@ -270,6 +254,5 @@ class GongSource(AbstractSource):
             return self.get_users_extensive(pagination)
         if stream == GongStreams.SCORECARDS:
             return self.get_scorecards(pagination)
-        # answered_scorecards is intentionally full-refresh only (see get()).
 
         raise NotImplementedError(f"Incremental sync not supported for stream '{stream}'")

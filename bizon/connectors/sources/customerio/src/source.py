@@ -1,6 +1,6 @@
 """Customer.io Journeys App API source: customers, campaigns, newsletters, segments and their metrics/messages.
 
-US base URL only. Bearer auth (App API key). The 10 req/s rate limit is handled by the session's retry policy.
+US base URL only; Bearer auth with an App API key.
 """
 
 from datetime import datetime, timezone
@@ -49,7 +49,7 @@ class CustomerioSourceConfig(SourceConfig):
     segment_id: Optional[int] = Field(None, description="Segment whose members the customers stream lists")
     lookback_days: int = Field(90, description="Rolling window, in days, for the time-series metrics streams")
     timezone: str = Field("UTC", description="IANA timezone the daily metrics buckets are computed in")
-    # Non-2xx responses are logged with their body before raising; check_connection reports them instead.
+    # Non-2xx bodies are logged before raising; check_connection reports them instead.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(raise_for_status=False), description="HTTP timeout/retry policy"
     )
@@ -113,26 +113,11 @@ class CustomerioSource(AbstractSource):
         return response.json()
 
     def _list_campaigns(self) -> list:
-        """Return all campaigns.
-
-        Spec-verified against the Journeys App OpenAPI spec: GET /v1/campaigns
-        takes no query params and its 200 response has no `next` field — there
-        is nothing to paginate.
-        """
+        """GET /v1/campaigns is unpaginated."""
         return self._get_json(f"{BASE_URL}/v1/campaigns").get("campaigns", [])
 
     def _list_newsletters(self) -> list:
-        """Return all newsletters, following `next` to exhaustion.
-
-        Per the Journeys App OpenAPI spec, GET /v1/newsletters accepts `limit`,
-        `sort`, `start` and its 200 response carries both `newsletters` and a
-        `next` string ("Add ?start=<next_value> to the request to get the next
-        page of results."). Not following it silently truncates the parent set
-        that seeds all 8 newsletter_* streams to the first page. `limit` is
-        deliberately not passed: the spec documents no default/max for it here,
-        an out-of-range value would 400, and a newsletter list is typically
-        small, so a handful of default-sized pages is cheap.
-        """
+        """`limit` is not passed: the spec documents no max, and an out-of-range value would 400."""
         newsletters: list = []
         start_token = None
         while True:
@@ -160,7 +145,6 @@ class CustomerioSource(AbstractSource):
         return start, end
 
     def _customer_id(self, customer: dict) -> str:
-        """Pick a stable id for a customer record."""
         for key in ("email", "cio_id", "id"):
             if customer.get(key):
                 return str(customer[key])
@@ -170,26 +154,14 @@ class CustomerioSource(AbstractSource):
         return ""
 
     def _seed_parents(self, parents: list, keys: Tuple[str, ...] = ("id",)) -> Optional[dict]:
-        """Return the initial multi-resource pagination dict, or None if no parents.
-
-        Only the listed keys are retained per parent. The pagination cursor is
-        persisted as JSON by the engine but recovered with ast.literal_eval(),
-        which only accepts Python literals — it chokes on JSON null/true/false (and
-        on NaN/Infinity) as bare ast.Name nodes. Full API objects carry those
-        tokens, so storing them poisons the cursor permanently. The builders only
-        ever read the parent's "id" (and "actions" for campaign-action streams),
-        so reducing to those keys keeps the cursor literal-safe with no behaviour
-        change. Reducing here is the single chokepoint: _advance_parents and the
-        re-stored current_parent in get_campaign_actions and the *_messages
-        handlers only ever carry these already-reduced dicts.
-        """
+        """Only `keys` are kept per parent: the engine recovers the cursor with ast.literal_eval(), which chokes on
+        the JSON null/true/false that full API objects carry, poisoning the cursor."""
         if not parents:
             return None
         reduced = [{k: p.get(k) for k in keys} for p in parents]
         return {"remaining_parents": reduced[1:], "current_parent": reduced[0]}
 
     def _advance_parents(self, remaining: list) -> dict:
-        """Build the pagination dict for the next get() call given a remaining-parents list."""
         if not remaining:
             return {}
         return {"remaining_parents": remaining[1:], "current_parent": remaining[0]}
@@ -233,20 +205,8 @@ class CustomerioSource(AbstractSource):
     def get_campaign_actions(
         self, pagination: Optional[dict] = None, updated_after_ts: Optional[int] = None
     ) -> SourceIteration:
-        # /v1/campaigns/{id}/actions paginates 10 at a time and returns a `next`
-        # token — NOT following it silently truncated every campaign to its first
-        # 10 actions in both sync modes. Pagination state mirrors
-        # get_campaign_messages: {remaining_parents, current_parent, start}, where
-        # `start` is the intra-campaign cursor. Advance to the next campaign only
-        # once the current one's actions are exhausted.
-        #
-        # /v1/campaigns and /v1/campaigns/{id}/actions have no time filter, so
-        # incremental works in two stages:
-        #   1. parent-level: drop campaigns whose `updated` <= last_run_ts —
-        #      Customer.io bumps the parent campaign's `updated` whenever any
-        #      action under it is edited, so unchanged campaigns can't have
-        #      changed actions.
-        #   2. per-action: filter actions by their own `updated` (belt & braces).
+        # Actions paginate 10 at a time via `next`. Neither endpoint has a time filter, so incremental drops
+        # campaigns whose `updated` <= last_run_ts (editing an action bumps it), then filters actions on theirs.
         if not pagination or "current_parent" not in pagination:
             campaigns = self._list_campaigns()
             if updated_after_ts is not None:
@@ -272,16 +232,10 @@ class CustomerioSource(AbstractSource):
             next_token = data.get("next")
         except requests.RequestException as e:
             if start_token is not None:
-                # Mid-walk failure (page 2+): earlier pages for this campaign are
-                # already emitted. Swallowing here would commit a partial campaign
-                # and advance the incremental watermark past it, losing the missing
-                # pages until the campaign's `updated` changes again. Fail the run
-                # instead; the session's retry policy already absorbs transient
-                # 429/5xx.
+                # Earlier pages are already emitted: swallowing would advance the watermark past a partial
+                # campaign. Transient 429/5xx are already retried by the session.
                 raise
-            # First-page failure: no partial data has been emitted for this
-            # campaign yet, so skipping it preserves the original "skip a
-            # campaign whose actions endpoint is unavailable" behaviour.
+            # Nothing emitted for this campaign yet, so skipping it is safe.
             logger.warning(f"Skipping actions for campaign {campaign_id}: {e}")
             actions = []
             next_token = None
@@ -305,7 +259,6 @@ class CustomerioSource(AbstractSource):
 
         has_more = bool(next_token and next_token != start_token)
         if has_more:
-            # More action pages for this campaign — hold the parent, advance `start`.
             next_pagination = {
                 "remaining_parents": remaining,
                 "current_parent": campaign,
@@ -313,8 +266,7 @@ class CustomerioSource(AbstractSource):
             }
         else:
             if next_token:
-                # Defensive: a non-advancing `next` would keep next_pagination
-                # non-empty forever — a hard hang.
+                # A non-advancing `next` would loop forever.
                 logger.warning(
                     f"Non-advancing next token for campaign {campaign_id} actions; moving on to the next campaign."
                 )
@@ -347,8 +299,7 @@ class CustomerioSource(AbstractSource):
             record = record_builder(campaign_id, campaign)
             records = [record] if record is not None else []
         except requests.HTTPError as e:
-            # Some campaign types (e.g., transactional, broadcast) don't support
-            # all metric endpoints — skip with a warning instead of failing the run.
+            # Some campaign types (e.g. transactional, broadcast) don't support every metric endpoint.
             if e.response is not None and e.response.status_code in (400, 404):
                 logger.warning(f"Skipping campaign {campaign_id}: HTTP {e.response.status_code}")
                 records = []
@@ -411,8 +362,7 @@ class CustomerioSource(AbstractSource):
     def get_campaign_messages(
         self, pagination: Optional[dict] = None, start_ts: Optional[int] = None
     ) -> SourceIteration:
-        # One PAGE per get() call to keep memory bounded (campaigns can have millions of msgs).
-        # Pagination state: {remaining_parents, current_parent, start (intra-campaign cursor)}
+        # One page per get() call: a campaign can have millions of messages.
         if not pagination or "current_parent" not in pagination:
             campaigns = self._list_campaigns()
             seeded = self._seed_parents(campaigns)
@@ -450,8 +400,7 @@ class CustomerioSource(AbstractSource):
             }
         else:
             if next_token:
-                # Defensive: a non-advancing `next` would keep next_pagination
-                # non-empty forever — a hard hang.
+                # A non-advancing `next` would loop forever.
                 logger.warning(
                     f"Non-advancing next token for campaign {campaign_id} messages; moving on to the next campaign."
                 )
@@ -631,7 +580,6 @@ class CustomerioSource(AbstractSource):
     def get_newsletter_messages(
         self, pagination: Optional[dict] = None, start_ts: Optional[int] = None
     ) -> SourceIteration:
-        # One PAGE per get() call to keep memory bounded.
         if not pagination or "current_parent" not in pagination:
             newsletters = self._list_newsletters()
             seeded = self._seed_parents(newsletters)
@@ -669,8 +617,7 @@ class CustomerioSource(AbstractSource):
             }
         else:
             if next_token:
-                # Defensive: a non-advancing `next` would keep next_pagination
-                # non-empty forever — a hard hang.
+                # A non-advancing `next` would loop forever.
                 logger.warning(
                     f"Non-advancing next token for newsletter {newsletter_id} messages; "
                     f"moving on to the next newsletter."
@@ -701,7 +648,6 @@ class CustomerioSource(AbstractSource):
         newsletter_id = newsletter["id"]
         remaining = pagination.get("remaining_parents", [])
 
-        # Discover variants for this newsletter
         try:
             variants_resp = self._get_json(f"{BASE_URL}/v1/newsletters/{newsletter_id}/contents")
             variants = variants_resp.get("contents") or variants_resp.get("variants") or []
@@ -757,8 +703,7 @@ class CustomerioSource(AbstractSource):
     def get_segment_used_by(
         self, pagination: Optional[dict] = None, updated_after_ts: Optional[int] = None
     ) -> SourceIteration:
-        # Filter parents by `updated_at > updated_after_ts` when running incrementally —
-        # the /used_by endpoint has no time filter, so the parent set is shrunk instead.
+        # /used_by has no time filter, so incremental shrinks the parent set instead.
         if not pagination or "current_parent" not in pagination:
             segments = self._list_segments()
             if updated_after_ts is not None:
@@ -787,8 +732,7 @@ class CustomerioSource(AbstractSource):
         return SourceIteration(records=[record], next_pagination=next_pagination)
 
     def get_segment_customer_count(self, pagination: Optional[dict] = None) -> SourceIteration:
-        # Daily snapshot: one bizon iteration emits a snapshot for every segment,
-        # stamped with snapshot_date so history can be built over time.
+        # Daily snapshot stamped with snapshot_date, so history builds up over time.
         if pagination:
             return SourceIteration(records=[], next_pagination={})
 
@@ -860,15 +804,6 @@ class CustomerioSource(AbstractSource):
     def get_records_after(
         self, source_state: SourceIncrementalState, pagination: Optional[dict] = None
     ) -> SourceIteration:
-        """Incremental sync entry point. Bizon calls this when sync_mode=incremental.
-
-        - campaign_messages / newsletter_messages: pass `start_ts` (unix) so the API
-          only returns messages sent after the last successful run.
-        - segment_used_by: filter parent segments by `updated_at > last_run_ts`.
-
-        Other streams either don't support incremental natively (full refresh) or are
-        already bounded (e.g., metrics streams already use a rolling 90-day window).
-        """
         last_run_ts = int(source_state.last_run.timestamp())
         stream = self.config.stream
 
@@ -885,5 +820,4 @@ class CustomerioSource(AbstractSource):
         if stream == CustomerioStreams.NEWSLETTERS:
             return self.get_newsletters(pagination, updated_after_ts=last_run_ts)
 
-        # Streams without an incremental path: just do the full-refresh handler.
         return self.get(pagination)

@@ -1,12 +1,6 @@
 """Tipalti accounts-payable source: payees, bills, invoice statuses, payments and balances over the SOAP APIs.
 
-SOAP API docs: https://soap-support.tipalti.com/
-Payee API: https://api.tipalti.com/v6/PayeeFunctions.asmx
-Payer API: https://api.tipalti.com/v14/PayerFunctions.asmx
-
-Authentication: HMAC-SHA256 where the message is:
-  payerName [+ idap if per-payee] + timestamp [+ EAT extra params]
-The HMAC key is the master encryption key, output is hex-encoded.
+Banking and tax identifiers are stripped from every record. Docs: https://soap-support.tipalti.com/
 """
 
 import hashlib
@@ -28,13 +22,11 @@ from bizon.source.source import AbstractSource
 PAYEE_API_URL = "https://api.tipalti.com/v6/PayeeFunctions.asmx"
 PAYER_API_URL = "https://api.tipalti.com/v14/PayerFunctions.asmx"
 
-# Both APIs share the same SOAP namespace
 TIPALTI_NS = "http://Tipalti.org/"
 
-# Additional namespace used in invoice line items responses
 V8_NS = "V8"
 
-# Keys containing these substrings (case-insensitive) are filtered from output
+# Case-insensitive substrings; any matching key is dropped.
 SENSITIVE_KEY_PATTERNS = [
     "account",
     "routing",
@@ -48,10 +40,8 @@ SENSITIVE_KEY_PATTERNS = [
     "vatnumber",
 ]
 
-# Specific fields filtered from invoice line items
 SENSITIVE_LINE_FIELDS = set(["BankingMessage", "EWalletMessage", "bankingmessage", "ewalletmessage"])
 
-# Specific fields filtered from payment details
 SENSITIVE_PAYMENT_FIELDS = set(
     [
         "PaymentAmountInWithdrawCurrency",
@@ -109,7 +99,6 @@ class TipaltiSource(AbstractSource):
         return None
 
     def check_connection(self) -> Tuple[bool, Optional[str]]:
-        """Test connection by calling GetBalances (simplest endpoint with access)."""
         try:
             resp = self._soap_request(
                 url=PAYER_API_URL,
@@ -144,19 +133,7 @@ class TipaltiSource(AbstractSource):
         return SourceIteration(next_pagination={"done": True}, records=records)
 
     def _generate_hmac(self, idap: Optional[str] = None, eat_params: Optional[List[str]] = None) -> Tuple[str, str]:
-        """Generate HMAC-SHA256 key and timestamp for Tipalti SOAP auth.
-
-        The HMAC message format is:
-          payerName [+ idap] + timestamp [+ EAT params in order]
-
-        Args:
-            idap: Payee ID (included in HMAC for per-payee endpoints).
-            eat_params: Additional parameter values appended to the HMAC message
-                       (e.g., changedSince value).
-
-        Returns:
-            (key_hex, timestamp_str)
-        """
+        """Return (hex HMAC-SHA256, timestamp) over payerName [+ idap] + timestamp [+ EAT params, in order]."""
         timestamp = str(int(time.time()))
 
         parts = [self._payer_name]
@@ -177,7 +154,6 @@ class TipaltiSource(AbstractSource):
         return key_hex, timestamp
 
     def _auth_params(self, idap: Optional[str] = None, eat_params: Optional[List[str]] = None) -> dict:
-        """Build base auth parameters dict for a SOAP call."""
         key_hex, timestamp = self._generate_hmac(idap, eat_params)
         params = {"payerName": self._payer_name, "timestamp": timestamp, "key": key_hex}
         if idap:
@@ -185,7 +161,6 @@ class TipaltiSource(AbstractSource):
         return params
 
     def _soap_request(self, url: str, action: str, params: dict) -> ET.Element:
-        """Make a SOAP request and return the parsed response body element."""
         param_xml = ""
         for k, v in params.items():
             if isinstance(v, list):
@@ -224,7 +199,6 @@ class TipaltiSource(AbstractSource):
         if response_elem is None:
             raise ValueError(f"Empty SOAP Body for {action}")
 
-        # Check for API-level errors
         error_code = self._get_error_code(response_elem)
         if error_code and error_code not in ("OK", "0"):
             raise ValueError(f"Tipalti API error for {action}: {error_code}")
@@ -233,7 +207,6 @@ class TipaltiSource(AbstractSource):
 
     @staticmethod
     def _get_error_code(elem: ET.Element) -> Optional[str]:
-        """Extract errorCode from a Tipalti response element."""
         xpath = ".//" + "{" + TIPALTI_NS + "}" + "errorCode"
         error_elem = elem.find(xpath)
         if error_elem is not None and error_elem.text:
@@ -242,14 +215,12 @@ class TipaltiSource(AbstractSource):
 
     @staticmethod
     def _strip_ns(tag: str) -> str:
-        """Strip any namespace prefix from an XML tag."""
-        # Handles both {uri}tag and ns:tag formats
         if tag.startswith("{"):
             return tag.split("}", 1)[1]
         return tag
 
     def _elem_to_dict(self, elem: ET.Element) -> dict:
-        """Recursively convert an XML element to a dict, stripping all namespaces."""
+        """A child list whose elements share one tag becomes a list; anything else a nested dict."""
         result = {}
         for child in elem:
             tag = self._strip_ns(child.tag)
@@ -266,12 +237,10 @@ class TipaltiSource(AbstractSource):
 
     @staticmethod
     def _is_sensitive_key(key: str) -> bool:
-        """Check if a key matches sensitive patterns."""
         key_lower = key.lower()
         return any(pattern in key_lower for pattern in SENSITIVE_KEY_PATTERNS)
 
     def _filter_dict(self, data: dict) -> dict:
-        """Remove sensitive keys from a dict recursively."""
         filtered = {}
         for k, v in data.items():
             if self._is_sensitive_key(k):
@@ -285,7 +254,6 @@ class TipaltiSource(AbstractSource):
         return filtered
 
     def _filter_line_items(self, data: dict) -> dict:
-        """Remove sensitive fields from invoice line items."""
         if "InvoiceLines" in data and isinstance(data["InvoiceLines"], list):
             for line in data["InvoiceLines"]:
                 if isinstance(line, dict):
@@ -294,18 +262,15 @@ class TipaltiSource(AbstractSource):
         return data
 
     def _filter_payment_fields(self, data: dict) -> dict:
-        """Remove sensitive fields from payment records."""
         for field in SENSITIVE_PAYMENT_FIELDS:
             data.pop(field, None)
         return data
 
     def _changed_since_unix(self) -> str:
-        """Return Unix timestamp string for lookback window."""
         dt = datetime.now(timezone.utc) - timedelta(days=self.config.lookback_days)
         return str(int(dt.timestamp()))
 
     def _get_payee_ids(self) -> List[str]:
-        """Fetch payee IDs changed since lookback window."""
         changed_since = self._changed_since_unix()
         params = self._auth_params(eat_params=[changed_since])
         params["changedSince"] = changed_since
@@ -322,7 +287,6 @@ class TipaltiSource(AbstractSource):
         return ids
 
     def _get_payees(self) -> List[SourceRecord]:
-        """Fetch payee details in batches."""
         payee_ids = self._get_payee_ids()
         records = []
 
@@ -339,7 +303,6 @@ class TipaltiSource(AbstractSource):
                     data = self._elem_to_dict(detail_elem)
                     data = self._filter_dict(data)
 
-                    # Extract Idap from Properties KeyValuePair list or top-level
                     idap = self._extract_payee_idap(data, batch, len(records))
                     data["Idap"] = idap
                     records.append(SourceRecord(id=str(idap), data=data))
@@ -350,24 +313,20 @@ class TipaltiSource(AbstractSource):
 
     @staticmethod
     def _extract_payee_idap(data: dict, batch: list, fallback_idx: int) -> str:
-        """Extract Idap from payee data, checking Properties KV pairs."""
-        # Check top-level
+        """Idap, else the `Alias` property, else the batch position."""
         if data.get("Idap"):
             return data["Idap"]
-        # Check Properties for Alias or Idap key
         props = data.get("Properties", [])
         if isinstance(props, list):
             for kv in props:
                 if isinstance(kv, dict) and kv.get("Key") == "Alias" and kv.get("Value"):
                     return kv["Value"]
-        # Fallback to batch position
         if fallback_idx < len(batch):
             return batch[fallback_idx]
         return f"payee_{fallback_idx}"
 
     def _get_bills(self) -> List[SourceRecord]:
-        """Fetch invoice/bill details."""
-        # Step 1: Get changed invoice ref codes (Payee API)
+        """Changed ref codes come from the Payee API, their details from the Payer API."""
         changed_since = self._changed_since_unix()
         params = self._auth_params(eat_params=[changed_since])
         params["changedSince"] = changed_since
@@ -382,7 +341,6 @@ class TipaltiSource(AbstractSource):
 
         logger.info(f"Found {len(ref_codes)} invoice ref codes")
 
-        # Step 2: Fetch details in batches of 200 (Payer API)
         records = []
         for i in range(0, max(len(ref_codes), 1), INVOICE_BATCH_SIZE):
             batch = ref_codes[i : i + INVOICE_BATCH_SIZE]
@@ -409,7 +367,6 @@ class TipaltiSource(AbstractSource):
         return records
 
     def _get_invoice_statuses(self) -> List[SourceRecord]:
-        """Fetch per-payee invoice status lists."""
         payee_ids = self._get_payee_ids()
         records = []
 
@@ -440,7 +397,6 @@ class TipaltiSource(AbstractSource):
         return records
 
     def _get_payments(self) -> List[SourceRecord]:
-        """Fetch last payment details per payee."""
         payee_ids = self._get_payee_ids()
         records = []
 
@@ -450,7 +406,6 @@ class TipaltiSource(AbstractSource):
             try:
                 resp = self._soap_request(PAYEE_API_URL, "GetLastPaymentDetailsByIdap", params)
 
-                # The response result element is inside the response
                 xpath = ".//" + "{" + TIPALTI_NS + "}" + "GetLastPaymentDetailsByIdapResult"
                 result_elem = resp.find(xpath)
                 target = result_elem if result_elem is not None else resp
@@ -460,7 +415,6 @@ class TipaltiSource(AbstractSource):
                 data = self._filter_payment_fields(data)
                 data["Idap"] = idap
 
-                # Only add if there's meaningful data
                 error_code = data.get("errorCode", "")
                 if error_code in ("OK", "0") and (data.get("RefCode") or data.get("PaymentStatus")):
                     records.append(SourceRecord(id=f"payment_{idap}", data=data))
@@ -480,7 +434,6 @@ class TipaltiSource(AbstractSource):
         return records
 
     def _get_balances(self) -> List[SourceRecord]:
-        """Fetch account balances."""
         resp = self._soap_request(PAYER_API_URL, "GetBalances", self._auth_params())
 
         records = []

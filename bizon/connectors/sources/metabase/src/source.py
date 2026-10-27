@@ -12,8 +12,6 @@ from bizon.source.source import AbstractSource
 
 
 class MetabaseStreams(str, Enum):
-    """Available streams for the Metabase API."""
-
     USERS = "users"
     CARDS = "cards"
     DASHBOARDS = "dashboards"
@@ -21,8 +19,6 @@ class MetabaseStreams(str, Enum):
 
 
 class MetabaseSourceConfig(SourceConfig):
-    """Configuration for the Metabase source connector."""
-
     stream: MetabaseStreams
 
     base_url: str = Field(
@@ -44,7 +40,7 @@ class MetabaseSourceConfig(SourceConfig):
 
 
 class MetabaseApiKeyAuth(AuthBase):
-    """Custom authenticator for Metabase API key header (no Bearer prefix)."""
+    """Sends the key raw in `x-api-key`, with no Bearer prefix."""
 
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -55,8 +51,6 @@ class MetabaseApiKeyAuth(AuthBase):
 
 
 class MetabaseSource(AbstractSource):
-    """Metabase API source connector."""
-
     def __init__(self, config: MetabaseSourceConfig):
         super().__init__(config)
         self.config: MetabaseSourceConfig = config
@@ -66,12 +60,10 @@ class MetabaseSource(AbstractSource):
 
     @property
     def api_url(self) -> str:
-        """Build API base URL from configured base_url."""
         base = self.config.base_url.rstrip("/")
         return f"{base}/api"
 
     def get_authenticator(self) -> Optional[AuthBase]:
-        """Return the authentication handler for Metabase API key."""
         if self.config.authentication is None:
             return None
 
@@ -83,16 +75,13 @@ class MetabaseSource(AbstractSource):
 
     @staticmethod
     def streams() -> List[str]:
-        """Return list of available stream names."""
         return [stream.value for stream in MetabaseStreams]
 
     @staticmethod
     def get_config_class() -> SourceConfig:
-        """Return the config class for this source."""
         return MetabaseSourceConfig
 
     def check_connection(self) -> Tuple[bool, Optional[Any]]:
-        """Test API connectivity by fetching current user."""
         try:
             response = self.session.get(f"{self.api_url}/user/current")
             response.raise_for_status()
@@ -101,7 +90,6 @@ class MetabaseSource(AbstractSource):
             return False, str(e)
 
     def get_total_records_count(self) -> Optional[int]:
-        """Return total record count if available (for users stream)."""
         if self.config.stream == MetabaseStreams.USERS:
             try:
                 response = self.session.get(f"{self.api_url}/user", params={"limit": 1, "offset": 0})
@@ -112,7 +100,6 @@ class MetabaseSource(AbstractSource):
         return None
 
     def get_users(self, pagination: dict = None) -> SourceIteration:
-        """Fetch users with offset-based pagination."""
         offset = pagination.get("offset", 0) if pagination else 0
 
         response = self.session.get(
@@ -137,7 +124,6 @@ class MetabaseSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def get_cards(self, pagination: dict = None) -> SourceIteration:
-        """Fetch all saved questions/cards. No pagination."""
         response = self.session.get(f"{self.api_url}/card")
         response.raise_for_status()
         data = response.json()
@@ -148,7 +134,6 @@ class MetabaseSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def get_dashboards(self, pagination: dict = None) -> SourceIteration:
-        """Fetch all dashboards. No pagination."""
         response = self.session.get(f"{self.api_url}/dashboard")
         response.raise_for_status()
         data = response.json()
@@ -159,7 +144,6 @@ class MetabaseSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def get_permissions_groups(self, pagination: dict = None) -> SourceIteration:
-        """Fetch all permission groups. No pagination."""
         response = self.session.get(f"{self.api_url}/permissions/group")
         response.raise_for_status()
         data = response.json()
@@ -170,7 +154,6 @@ class MetabaseSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def get(self, pagination: dict = None) -> SourceIteration:
-        """Main entry point - dispatch to stream-specific method."""
         stream = self.config.stream
 
         if stream == MetabaseStreams.USERS:

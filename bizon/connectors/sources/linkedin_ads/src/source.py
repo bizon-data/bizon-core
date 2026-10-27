@@ -1,20 +1,8 @@
 """LinkedIn ad accounts, campaign structure, conversions, lead forms and daily analytics, from the LinkedIn
-Marketing API (REST.li, versioned `/rest` endpoints).
+Marketing API (versioned `/rest` endpoints).
 
-Each run exchanges an OAuth refresh token for a fresh access token. The app needs r_ads and r_ads_reporting.
-
-Analytics notes (LinkedIn docs, Reporting, version 202609):
-- adAnalytics has no pagination and caps a response at 15,000 elements, so the
-  source halves a date window that comes back full.
-- A request may name at most 20 fields; every metric is requested in chunks of
-  18 (+ dateRange, pivotValues) and the chunks are merged back on pivot + date.
-  A chunk LinkedIn rejects is split until the offending metric is isolated and
-  dropped, so a metric invalid for one pivot does not fail the stream.
-- Professional demographic pivots (MEMBER_*) drop values with fewer than 3
-  events, keep the top 100 values per creative per day, are approximate, and
-  are retained for two years. MEMBER_COMPANY by campaign by day is the closest
-  available proxy for company-level ad engagement; the full company feed
-  (Company Intelligence API) is restricted to certified partners.
+Auth is an OAuth refresh token; the app needs r_ads and r_ads_reporting. Demographic (MEMBER_*) pivots are
+approximate, drop values with fewer than 3 events and are retained for two years.
 """
 
 import hashlib
@@ -43,8 +31,7 @@ METRICS_PER_CHUNK = MAX_FIELDS_PER_REQUEST - 2  # leave room for dateRange + piv
 MAX_ELEMENTS = 15000
 TARGETING_ENTITY_BATCH = 50
 
-# Every adAnalytics metric in the Reporting schema except revenueAttributionMetrics
-# (its own finder, see ATTRIBUTED_REVENUE) and the two projection fields.
+# Every adAnalytics metric except revenueAttributionMetrics, which has its own finder (ATTRIBUTED_REVENUE).
 # fmt: off
 ALL_METRICS = [
     "actionClicks", "adUnitClicks", "approximateMemberReach", "averageDwellTime", "audiencePenetration",
@@ -80,8 +67,7 @@ ALL_METRICS = [
     "eventWatchTime", "memberFollows", "memberProfileClicks", "videoWatchTime",
 ]
 
-# Not returned for MEMBER_* pivots (Reporting docs, "Professional Demographic Pivot
-# Fields Restrictions"), plus carousel metrics, which demographic pivots don't support.
+# Not returned for MEMBER_* pivots, plus carousel metrics, which demographic pivots don't support.
 NON_DEMOGRAPHIC_METRICS = {
     "conversionValueInLocalCurrency", "cardImpressions", "cardClicks", "viralCardImpressions",
     "viralCardClicks", "approximateMemberReach",
@@ -103,7 +89,6 @@ DEMOGRAPHIC_PIVOTS = [
 
 
 class LinkedinAdsStreams(str, Enum):
-    # Entity snapshots (full refresh)
     AD_ACCOUNTS = "ad_accounts"
     CAMPAIGN_GROUPS = "campaign_groups"
     CAMPAIGNS = "campaigns"
@@ -111,7 +96,6 @@ class LinkedinAdsStreams(str, Enum):
     CONVERSIONS = "conversions"
     LEAD_FORMS = "lead_forms"
     ORGANIZATIONS = "organizations"
-    # Daily analytics (incremental, re-read over lookback_days)
     ACCOUNT_DAILY = "account_daily"
     CAMPAIGN_GROUP_DAILY = "campaign_group_daily"
     CAMPAIGN_DAILY = "campaign_daily"
@@ -184,12 +168,7 @@ class LinkedinAdsAuth(AuthBase):
 
 
 def build_query_string(params: Dict[str, Any]) -> str:
-    """REST.li query encoding.
-
-    Lists become List(...) with url-encoded members; `fields`, `dateRange` and
-    `owner` carry REST.li syntax and pass through raw; everything else is
-    url-encoded.
-    """
+    """REST.li encoding: `fields`, `dateRange` and `owner` already carry REST.li syntax and pass through raw."""
     parts = []
     for key, value in params.items():
         if value is None:
@@ -279,7 +258,6 @@ class LinkedinAdsSource(AbstractSource):
         return response.json() if response.content else {}
 
     def _get_all(self, path: str, params: Dict[str, Any], restli_method: Optional[str] = None) -> List[dict]:
-        """Follow cursor (pageToken) or offset (start/count) pagination."""
         elements: List[dict] = []
         params = dict(params)
         seen = set()
@@ -343,7 +321,6 @@ class LinkedinAdsSource(AbstractSource):
         raise NotImplementedError(stream)
 
     def _organizations(self, account_id: str) -> List[dict]:
-        """Resolve the MEMBER_COMPANY urns seen in the last organization_lookback_days to names."""
         end = self._end_date()
         start = end - timedelta(days=self.config.organization_lookback_days)
         urns = sorted(self._member_company_urns(urn("sponsoredAccount", account_id), start, end))
@@ -357,11 +334,7 @@ class LinkedinAdsSource(AbstractSource):
         return resolved
 
     def _member_company_urns(self, account_urn: str, start: date, end: date) -> set:
-        """Organization urns with MEMBER_COMPANY activity in [start, end].
-
-        One ALL-granularity request returns at most MAX_ELEMENTS companies, which a year of activity for a large
-        advertiser can exceed, so a full response is split into two halves until each half fits.
-        """
+        """A full response (MAX_ELEMENTS companies) is split into two halves until each half fits."""
         params = {
             "q": "analytics",
             "pivot": "MEMBER_COMPANY",
@@ -403,7 +376,7 @@ class LinkedinAdsSource(AbstractSource):
     def _request_chunk(
         self, base: Dict[str, Any], metrics: List[str], start: date, end: date, granularity: str
     ) -> List[dict]:
-        """One adAnalytics call; halves the window if the 15,000-element cap is hit."""
+        """adAnalytics has no pagination, so a window that hits the element cap is halved."""
         params = dict(base)
         params["timeGranularity"] = granularity
         params["dateRange"] = date_range_literal(start, end)
@@ -424,7 +397,7 @@ class LinkedinAdsSource(AbstractSource):
     def _request_metrics(
         self, base: Dict[str, Any], metrics: List[str], start: date, end: date, granularity: str
     ) -> List[dict]:
-        """Request a metric chunk, splitting it to isolate and drop metrics LinkedIn rejects."""
+        """Splits a rejected chunk to isolate and drop the metric, so one invalid metric doesn't fail the stream."""
         cache_key = json.dumps({k: base[k] for k in sorted(base) if k in ("q", "pivot", "pivots")}, default=str)
         rejected = self._rejected_metrics.setdefault(cache_key, set())
         metrics = [m for m in metrics if m not in rejected]
@@ -436,8 +409,7 @@ class LinkedinAdsSource(AbstractSource):
             if e.status_code != 400:
                 raise
             if len(metrics) == 1:
-                # A 400 can also mean a bad date range or facet. Only blame the
-                # metric if the same query succeeds with impressions alone.
+                # A 400 can also mean a bad date range or facet; only blame the metric if impressions alone works.
                 if metrics[0] != "impressions":
                     self._request_chunk(base, ["impressions"], start, end, granularity)
                 logger.warning(f"LinkedIn rejected metric {metrics[0]} for {cache_key}; dropping it: {e}")
@@ -451,7 +423,7 @@ class LinkedinAdsSource(AbstractSource):
     def _analytics(
         self, base: Dict[str, Any], metrics: List[str], start: date, end: date, granularity: str
     ) -> List[dict]:
-        """All metrics for one query, chunked to the 20-field limit and merged on pivot + date."""
+        """Chunked to the 20-field request limit and merged back on pivot + date."""
         merged: Dict[str, dict] = {}
         for i in range(0, len(metrics), METRICS_PER_CHUNK):
             for element in self._request_metrics(base, metrics[i : i + METRICS_PER_CHUNK], start, end, granularity):
@@ -465,7 +437,6 @@ class LinkedinAdsSource(AbstractSource):
         return datetime.now(timezone.utc).date()
 
     def _work_units(self, account_id: str, window: Tuple[date, date]) -> List[Dict[str, Any]]:
-        """The adAnalytics queries one (account, window) needs for this stream."""
         stream = self.config.stream
         account_urn = urn("sponsoredAccount", account_id)
         if stream in PERFORMANCE_PIVOTS:
@@ -475,8 +446,7 @@ class LinkedinAdsSource(AbstractSource):
         if stream == LinkedinAdsStreams.MEMBER_DEMOGRAPHICS_DAILY:
             return [{"q": "analytics", "pivot": pivot, "accounts": [account_urn]} for pivot in DEMOGRAPHIC_PIVOTS]
         if stream == LinkedinAdsStreams.MEMBER_COMPANY_CAMPAIGN_DAILY:
-            # MEMBER_* pivots can't be combined with CAMPAIGN in one request, so
-            # facet by campaign: one query per campaign that served in the window.
+            # MEMBER_* pivots can't be combined with CAMPAIGN, so query once per campaign that served.
             served = self._analytics(
                 {"q": "analytics", "pivot": "CAMPAIGN", "accounts": [account_urn]},
                 ["impressions"],
@@ -503,8 +473,7 @@ class LinkedinAdsSource(AbstractSource):
         accounts = self._account_ids()
         pagination = pagination or {}
         account_idx = pagination.get("account_idx", 0)
-        # The cursor stores the window's first day, not an index: a resumed run
-        # recomputes `end` from today, so an index would point at a different window.
+        # A resumed run recomputes `end` from today, so the cursor stores a date, not an index.
         window_start = date.fromisoformat(pagination["window_start"]) if pagination.get("window_start") else start
         if account_idx >= len(accounts) or window_start > end:
             return SourceIteration(records=[], next_pagination={})
@@ -559,7 +528,7 @@ class LinkedinAdsSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def _attributed_revenue(self, pagination: Optional[dict]) -> SourceIteration:
-        """CRM-attributed revenue by campaign for the trailing year (needs a CRM linked in Business Manager)."""
+        """Needs a CRM linked in Business Manager."""
         accounts = self._account_ids()
         idx = (pagination or {}).get("account_idx", 0)
         if idx >= len(accounts):

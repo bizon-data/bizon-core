@@ -1,7 +1,4 @@
-"""nOps cloud cost source: daily costs grouped by dimension, and cost summary totals.
-
-API docs: https://app.nops.io/swagger/
-"""
+"""nOps cloud cost source: daily costs grouped by dimension, and cost summary totals. Docs: https://app.nops.io/swagger/"""
 
 from datetime import datetime, timedelta
 from enum import Enum
@@ -16,7 +13,6 @@ from bizon.source.source import AbstractSource
 
 BASE_URL = "https://app.nops.io"
 
-# Maps stream name to the dimension parameter for the dimension_daily_cost endpoint
 DIMENSION_STREAMS = {
     "dimension_daily_cost": "product_product_name",
     "dimension_daily_cost_by_account": "line_item_usage_account_id",
@@ -74,7 +70,6 @@ class NopsSource(AbstractSource):
         return NopsApiKeyAuth(self.config.api_key)
 
     def check_connection(self) -> Tuple[bool, Optional[str]]:
-        """Test connection to nOps API."""
         try:
             today = datetime.now()
             date_start = (today - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -122,7 +117,6 @@ class NopsSource(AbstractSource):
             raise ValueError(f"Unknown stream: {stream}")
 
     def _get_dimension_daily_cost(self, dimension: str, pagination: dict = None) -> SourceIteration:
-        """Fetch daily costs grouped by a specific dimension."""
         if pagination and pagination.get("done"):
             return SourceIteration(next_pagination={}, records=[])
 
@@ -151,7 +145,6 @@ class NopsSource(AbstractSource):
         return SourceIteration(next_pagination={"done": True}, records=records)
 
     def _get_cost_summary(self, pagination: dict = None) -> SourceIteration:
-        """Fetch cost summary totals."""
         if pagination and pagination.get("done"):
             return SourceIteration(next_pagination={}, records=[])
 
@@ -193,7 +186,6 @@ class NopsSource(AbstractSource):
         date_end: str,
         dimension: str,
     ) -> List[SourceRecord]:
-        """Convert dimension_daily_cost API response to SourceRecord list."""
         records = []
 
         if not isinstance(data, dict):

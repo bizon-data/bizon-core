@@ -418,8 +418,7 @@ LIMIT {self.config.batch_size}
                 start_dt = start_dt.astimezone(UTC)
 
             start_ms = self._to_epoch_ms(start_dt)
-            # Bizon incremental mode stores the previous successful job creation time as last_run.
-            # Keep a fixed upper bound for the whole run so successive jobs process disjoint [start, stop) windows.
+            # A fixed upper bound for the whole run keeps successive jobs on disjoint [start, stop) windows.
             stop_ms = self._to_epoch_ms(datetime.now(tz=UTC))
             current_pagination = self._initial_events_pagination(start_ms=start_ms, stop_ms=stop_ms)
 

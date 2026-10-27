@@ -1,9 +1,7 @@
 """Twilio source: subaccounts, messages, daily usage records, phone numbers and messaging services.
 
-A master account can own thousands of subaccounts; narrow the fan-out with `subaccount_sids`. The master Auth
-Token authorizes against every subaccount's endpoint by path substitution, so a single run iterates all
-subaccounts internally. Subaccounts that return 404 (deprovisioned or unprovisioned for the resource) are
-logged and skipped.
+One run with the master Auth Token iterates every subaccount; narrow the fan-out with `subaccount_sids`.
+Subaccounts that 404 (deprovisioned, or not provisioned for the resource) are logged and skipped.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -35,12 +33,8 @@ class TwilioStreams(str, Enum):
     SUBACCOUNTS = "subaccounts"
     MESSAGES = "messages"
     MESSAGING_SERVICES = "messaging_services"
-    # Concurrent per-subaccount fan-out for daily usage records.
     ALL_USAGE_RECORDS = "all_usage_records"
-    # Concurrent per-subaccount fan-out for owned phone numbers (snapshot/full_refresh).
     INCOMING_PHONE_NUMBERS = "incoming_phone_numbers"
-    # Concurrent per-(subaccount, messaging_service) fan-out for the phones attached
-    # to each messaging service (snapshot/full_refresh — daily diff = pool churn).
     MESSAGING_SERVICE_PHONE_NUMBERS = "messaging_service_phone_numbers"
 
 
@@ -53,10 +47,9 @@ class TwilioSourceConfig(SourceConfig):
     page_size: int = DEFAULT_PAGE_SIZE
     lag_days: int = DEFAULT_LAG_DAYS
     include_message_body: bool = False
-    # Restricts every per-subaccount stream to these SIDs, to narrow a large master account's fan-out.
+    # Restricts every per-subaccount stream to these SIDs.
     subaccount_sids: Optional[List[str]] = None
-    # Worker count for the concurrent streams (all_usage_records,
-    # incoming_phone_numbers, messaging_service_phone_numbers).
+    # Workers for all_usage_records, incoming_phone_numbers and messaging_service_phone_numbers.
     concurrency: int = DEFAULT_CONCURRENCY
     # 404s (and 401/403 on subaccount-scoped endpoints) skip the subaccount instead of failing the run.
     http: Optional[HttpConfig] = Field(
@@ -101,7 +94,6 @@ class TwilioSource(AbstractSource):
         return self._today() - timedelta(days=DEFAULT_BACKFILL_DAYS)
 
     def _resolve_window(self, pagination: Optional[dict]) -> Tuple[date, date]:
-        """Pull (start, end) from pagination if already frozen; else from config defaults."""
         if pagination and pagination.get("window_start") and pagination.get("window_end"):
             return (
                 date.fromisoformat(pagination["window_start"]),
@@ -123,7 +115,7 @@ class TwilioSource(AbstractSource):
         return start, end
 
     def _list_subaccounts(self) -> List[dict]:
-        """Fetch and cache the active subaccount list (excludes the master account)."""
+        """Active subaccounts, excluding the master account."""
         if self._subaccounts_cache is not None:
             return self._subaccounts_cache
 
@@ -189,16 +181,7 @@ class TwilioSource(AbstractSource):
         record_id_fn,
         transform_fn,
     ) -> SourceIteration:
-        """Generic page fetcher for the per-subaccount streams.
-
-        Pagination state shape:
-          {
-            "subaccount_idx": int,
-            "next_uri": str | None,   # None means "start the next subaccount"
-            "window_start": iso-date,
-            "window_end":   iso-date,
-          }
-        """
+        """A `next_uri` of None in the pagination means start the next subaccount."""
         subaccounts = self._list_subaccounts()
         if not subaccounts:
             logger.warning("No subaccounts found; nothing to fetch.")
@@ -207,7 +190,6 @@ class TwilioSource(AbstractSource):
         sub_idx = (pagination or {}).get("subaccount_idx", 0)
         next_uri = (pagination or {}).get("next_uri")
 
-        # Skip subaccounts whose index has overflowed (defensive).
         if sub_idx >= len(subaccounts):
             return SourceIteration(records=[], next_pagination={})
 
@@ -307,17 +289,7 @@ class TwilioSource(AbstractSource):
         return f"{item['account_sid']}_{item['start_date']}_{item['category']}"
 
     def _get_messaging_services(self, pagination: Optional[dict]) -> SourceIteration:
-        """Per-subaccount snapshot of Messaging Services.
-
-        Uses a different Twilio API surface: messaging.twilio.com/v1/Services.
-        Auth must be the subaccount's own (sub_sid, sub_auth_token) — the master
-        token does not grant access to subaccount-scoped messaging services.
-        The per-subaccount auth_token comes from /Accounts.json (already
-        cached in _list_subaccounts) and is passed on a per-request basis.
-
-        Pagination state:
-          { "subaccount_idx": int, "next_url": str | None }
-        """
+        """messaging.twilio.com needs each subaccount's own auth token; the master token is not accepted there."""
         subaccounts = self._list_subaccounts()
         if not subaccounts:
             return SourceIteration(records=[], next_pagination={})
@@ -376,7 +348,6 @@ class TwilioSource(AbstractSource):
         return SourceIteration(records=[], next_pagination={})
 
     def _get_all_usage_records(self, pagination: Optional[dict], window: Tuple[date, date]) -> SourceIteration:
-        """Concurrent per-subaccount fan-out for daily usage records."""
         start, end = window
         return self._concurrent_subaccount_fanout(
             pagination=pagination,
@@ -392,14 +363,6 @@ class TwilioSource(AbstractSource):
         return f"{API_HOST}{API_PATH}/Accounts/{sub_sid}/IncomingPhoneNumbers.json?PageSize={page_size}"
 
     def _get_incoming_phone_numbers(self, pagination: Optional[dict]) -> SourceIteration:
-        """Concurrent per-subaccount fan-out for owned phone numbers.
-
-        Same pagination contract as _get_all_usage_records — N workers, each
-        on one subaccount, all fired in parallel each get() call. Pagination
-        state shape:
-          {"workers": [{"sub_idx": int, "next_uri": str | None}, ...],
-           "next_unassigned_idx": int}
-        """
         return self._concurrent_subaccount_fanout(
             pagination=pagination,
             initial_uri_fn=lambda sub_sid: self._incoming_phone_numbers_initial_uri(sub_sid, self.config.page_size),
@@ -418,11 +381,7 @@ class TwilioSource(AbstractSource):
         transform_fn,
         log_label: str,
     ) -> SourceIteration:
-        """Reusable concurrent fan-out across subaccounts using master auth.
-
-        Used by both all_usage_records and incoming_phone_numbers. Twilio's
-        2010-04-01 envelope (next_page_uri as path) is assumed.
-        """
+        """One page per worker per get(), each worker on its own subaccount. Assumes the 2010-04-01 envelope."""
         subaccounts = self._list_subaccounts()
         if not subaccounts:
             return SourceIteration(records=[], next_pagination={})
@@ -506,11 +465,6 @@ class TwilioSource(AbstractSource):
         )
 
     def _list_messaging_service_units(self) -> List[dict]:
-        """Build the (sub_sid, sub_auth_token, ms_sid) work units, cached.
-
-        Iterates subaccounts in parallel (concurrency from config) and for each,
-        fetches its messaging services via the per-subaccount auth.
-        """
         if hasattr(self, "_ms_units_cache") and self._ms_units_cache is not None:
             return self._ms_units_cache
 
@@ -558,12 +512,6 @@ class TwilioSource(AbstractSource):
         return units
 
     def _get_messaging_service_phone_numbers(self, pagination: Optional[dict]) -> SourceIteration:
-        """Concurrent per-(subaccount, messaging_service) fan-out for phone pool.
-
-        Pagination state:
-          {"workers": [{"unit_idx": int, "next_url": str | None}, ...],
-           "next_unassigned_idx": int}
-        """
         units = self._list_messaging_service_units()
         if not units:
             return SourceIteration(records=[], next_pagination={})
@@ -627,7 +575,6 @@ class TwilioSource(AbstractSource):
 
                 items = (data or {}).get("phone_numbers", [])
                 for item in items:
-                    # Stamp the subaccount sid alongside so the row joins back cleanly.
                     item = {"subaccount_sid": unit["sub_sid"], **item}
                     records.append(SourceRecord(id=str(item["sid"]), data=item))
 
@@ -682,7 +629,6 @@ class TwilioSource(AbstractSource):
         stream = self.config.stream
 
         if stream == TwilioStreams.SUBACCOUNTS:
-            # Snapshot stream — always do a full refresh.
             return self._get_subaccounts(pagination)
         if stream == TwilioStreams.MESSAGING_SERVICES:
             return self._get_messaging_services(pagination)

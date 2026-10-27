@@ -17,14 +17,11 @@ REQUEST_TIMEOUT = (10, 60)
 
 FORMS_PAGE_SIZE = 200
 WORKSPACES_PAGE_SIZE = 200
-# Typeform's documented cap for /forms/{id}/responses; the docs point at it
-# indirectly ("if your typeform has more than 1000 responses, use since/until
-# or before/after") rather than stating a literal max.
+# Typeform's documented cap for /forms/{id}/responses.
 RESPONSES_PAGE_SIZE = 1000
 
-# The Responses API can take up to ~30 min to surface a just-submitted response (documented latency), so
-# without an overlap such a response could fall behind the `since` watermark and never be fetched.
-# Responses are appended, so re-fetched duplicates must be deduplicated downstream on the record id.
+# The Responses API can take ~30 min to surface a new response, so the watermark overlaps.
+# Responses are appended: dedupe the re-fetched ones downstream on the record id.
 DEFAULT_LOOKBACK_MINUTES = 60
 
 
@@ -90,10 +87,7 @@ class TypeformSource(AbstractSource):
     def get_total_records_count(self) -> Optional[int]:
         return None
 
-    # The list endpoint omits fields/logic/welcome_screens/thankyou_screens, so each form is re-fetched from
-    # GET /forms/{id}. Sequential, not threaded: Typeform caps at ~2 req/s. A form with no questions has no
-    # `fields` key even on the detail endpoint.
-
+    # The list endpoint omits fields/logic/screens, so each form is re-fetched. Sequential: Typeform caps at ~2 req/s.
     def _get_form_detail(self, form_id: str) -> Optional[dict]:
         response = self.session.get(f"{BASE_URL}/forms/{form_id}", timeout=REQUEST_TIMEOUT)
         if response.status_code == 404:
@@ -145,12 +139,6 @@ class TypeformSource(AbstractSource):
         logger.info(f"Fetched {len(records)} workspaces (page {page}/{page_count})")
         return SourceIteration(records=records, next_pagination=next_pagination)
 
-    # Outer loop: forms (small, full list loaded once). Inner loop: response
-    # pages for the form currently being drained, newest-first via `before`
-    # cursor. Both loop states live in `next_pagination` so each bizon get()
-    # call does bounded work -- one page of one form -- and the whole walk
-    # survives a pod restart mid-form.
-
     def _list_all_form_ids(self) -> List[str]:
         form_ids: List[str] = []
         page = 1
@@ -171,19 +159,8 @@ class TypeformSource(AbstractSource):
         return form_ids
 
     def _get_responses_page(self, form_id: str, since: Optional[str], before: Optional[str]) -> Tuple[list, bool]:
-        """Fetch one page of responses for a form.
-
-        has_more is True only when the page came back full (== page_size) --
-        the endpoint has no next-page link, and total_items/page_count describe
-        the whole filtered set, not "more after this cursor". A short page
-        (including empty) is therefore the only signal this form is exhausted,
-        which is what makes the inner loop provably terminate.
-        """
-        # No explicit `sort`: the API 400s with "can't use before/after param
-        # together with sort" once a cursor is present (confirmed against the
-        # live API), and the default sort for completed responses is already
-        # submitted_at,desc -- exactly the newest-first order this pagination
-        # relies on.
+        """Only a short page ends a form: there is no next link, and total_items counts the whole filtered set."""
+        # No `sort`: the API 400s on sort combined with before/after, and the default is already submitted_at,desc.
         params: dict = {"page_size": RESPONSES_PAGE_SIZE}
         if since:
             params["since"] = since

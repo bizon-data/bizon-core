@@ -207,8 +207,6 @@ class NoticeableSource(AbstractSource):
         return body
 
     def get_email_opened_events(self, pagination: dict) -> SourceIteration:
-        """Return all email opened events for the given project"""
-
         variables = {
             "first": self._page_sizes["email_opened_events"],
             "after": (pagination or {}).get("endCursor"),
@@ -225,8 +223,6 @@ class NoticeableSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def get_publications(self, pagination: dict) -> SourceIteration:
-        """Return all publications for the given project"""
-
         variables = {
             "first": self._page_sizes["publications"],
             "after": (pagination or {}).get("endCursor"),
@@ -243,8 +239,6 @@ class NoticeableSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def get_publication_comments(self, pagination: dict) -> SourceIteration:
-        """Return all the publication comments for the given project"""
-
         variables = {
             "first": self._page_sizes["publication_comments"],
             "after": (pagination or {}).get("endCursor"),
@@ -261,8 +255,6 @@ class NoticeableSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def get_email_subscriptions(self, pagination: dict) -> SourceIteration:
-        """Return all the email subscriptions for the given project"""
-
         # The API exposes no stable id for a subscription, so each record gets a random one.
         variables = {
             "first": self._page_sizes["email_subscriptions"],

@@ -1,13 +1,10 @@
 """Google Ads account structure and daily performance, from the Google Ads API (REST, GAQL).
 
-Selection is discovered at runtime, not hard-coded: every run asks GoogleAdsFieldService for the resource's selectable
-attributes (entity streams) or compatible metrics (report streams) and selects all of them. Some fields are only
-valid for certain accounts or segment combinations, and the API names them in its error; the source drops exactly
-those fields and retries, so a new metric appears without a code change and a newly prohibited one cannot break
-the run.
+Every run selects all attributes/metrics GoogleAdsFieldService reports for the resource, and drops the fields an
+error names as invalid for the account or segments, so new metrics appear without a code change.
 
-Auth is OAuth with a refresh token. API access can belong to the OAuth client's Cloud project, so the developer
-token is optional and sent only when configured.
+Auth is an OAuth refresh token. The developer token is optional, since API access can belong to the OAuth client's
+Cloud project.
 """
 
 import hashlib
@@ -36,13 +33,11 @@ CLICK_VIEW_MAX_DAYS = 89
 CHANGE_EVENT_MAX_DAYS = 29
 CHANGE_EVENT_LIMIT = 10000
 
-# How many times one query may be retried after dropping fields the API
-# rejected. Each retry removes at least one field, so this bounds the loop.
+# Each retry removes at least one field, so this bounds the loop.
 MAX_FIELD_PRUNING_ROUNDS = 40
 
 
 class GoogleAdsStreams(str, Enum):
-    # Entity snapshots (full refresh)
     CUSTOMER_CLIENTS = "customer_clients"
     CUSTOMERS = "customers"
     CAMPAIGNS = "campaigns"
@@ -57,9 +52,7 @@ class GoogleAdsStreams(str, Enum):
     ASSET_GROUPS = "asset_groups"
     LABELS = "labels"
     USER_LISTS = "user_lists"
-    # Google's location catalogue (full refresh, not per account)
     GEO_TARGET_CONSTANTS = "geo_target_constants"
-    # Daily reports (incremental, re-read over lookback_days)
     CUSTOMER_DAILY = "customer_daily"
     CAMPAIGN_DAILY = "campaign_daily"
     AD_GROUP_DAILY = "ad_group_daily"
@@ -81,8 +74,7 @@ class GoogleAdsStreams(str, Enum):
     CHANGE_EVENTS = "change_events"
 
 
-# Entity stream -> GAQL resource. Every selectable attribute of the resource is
-# selected; customer.id is added so rows join across accounts.
+# customer.id is added so rows join across accounts.
 ENTITY_RESOURCES: Dict[str, str] = {
     GoogleAdsStreams.CUSTOMER_CLIENTS: "customer_client",
     GoogleAdsStreams.CUSTOMERS: "customer",
@@ -100,10 +92,7 @@ ENTITY_RESOURCES: Dict[str, str] = {
     GoogleAdsStreams.USER_LISTS: "user_list",
 }
 
-# Report stream -> (resource, grain fields). Grain fields are always selected and
-# never pruned; every metric compatible with the resource is added on top. The
-# API rejects a metric that conflicts with a grain segment, so the metric goes,
-# not the grain.
+# Grain fields are never pruned: when a metric conflicts with a grain segment, the metric goes.
 REPORT_SPECS: Dict[str, Tuple[str, List[str]]] = {
     GoogleAdsStreams.CUSTOMER_DAILY: (
         "customer",
@@ -188,9 +177,8 @@ REPORT_SPECS: Dict[str, Tuple[str, List[str]]] = {
             "segments.date",
         ],
     ),
-    # Each geo segment drops the traffic Google cannot place at that level, so the
-    # city grain above covers about half of spend. Region and metro (DMA) alone each
-    # keep more of it.
+    # Each geo segment drops traffic Google cannot place at that level, so region and metro alone keep more
+    # spend than the city grain.
     GoogleAdsStreams.GEOGRAPHIC_REGION_DAILY: (
         "geographic_view",
         [
@@ -407,15 +395,8 @@ class GoogleAdsSource(AbstractSource):
 
     @staticmethod
     def _rejected_fields(payload: dict, selected: List[str], protected: List[str]) -> List[str]:
-        """Return the selected fields the API's error names as invalid or prohibited.
-
-        Two error shapes carry a field: a `location.fieldPathElements` path (e.g.
-        metrics.svr, CUSTOMER_NOT_ALLOWLISTED_FOR_THIS_FEATURE), and a message that
-        lists bare names after "metrics:" -- "unsupported metrics: 'a', 'b'" for a
-        grain segment, or "doesn't have access to metrics: 'a'" for
-        METRIC_ACCESS_DENIED (auction insights). Protected (grain) fields are never
-        returned, so pruning drops metrics, not grain.
-        """
+        """Fields come from `location.fieldPathElements` or bare names after "metrics:" in the message
+        (e.g. METRIC_ACCESS_DENIED). Protected (grain) fields are never returned."""
         rejected: List[str] = []
         details = (payload.get("error") or {}).get("details") or [{}]
         for error in details[0].get("errors", []):
@@ -450,7 +431,6 @@ class GoogleAdsSource(AbstractSource):
         page_token: Optional[str],
         suffix: str = "",
     ) -> Tuple[List[str], dict]:
-        """Run one page of a query, dropping fields the API rejects until it succeeds."""
         select = list(select)
         for _ in range(MAX_FIELD_PRUNING_ROUNDS):
             query = f"SELECT {', '.join(select)} FROM {resource} {where} {suffix}".strip()
@@ -485,7 +465,7 @@ class GoogleAdsSource(AbstractSource):
 
     @staticmethod
     def _record_id(stream: str, customer_id: str, row: dict) -> str:
-        """Stable id from every resource name in the row plus its segments (the row's grain)."""
+        """Every resource name in the row plus its segments: the row's grain."""
         key = {k: v.get("resourceName") for k, v in row.items() if isinstance(v, dict) and "resourceName" in v}
         key["segments"] = row.get("segments")
         key["_stream"] = stream
@@ -531,11 +511,8 @@ class GoogleAdsSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def _geo_target_constant_iteration(self, pagination: Optional[dict]) -> SourceIteration:
-        """Page through geo_target_constant: names for the location ids in the geo reports.
-
-        The catalogue is Google's, not an account's, so it is read once through the login
-        account and without customer.id, which geo_target_constant cannot select.
-        """
+        """The catalogue is Google's, not an account's: read once via the login account, without customer.id,
+        which geo_target_constant cannot select."""
         stream = self.config.stream
         pagination = pagination or {}
         login = self.config.login_customer_id.replace("-", "")
@@ -568,8 +545,7 @@ class GoogleAdsSource(AbstractSource):
 
         customers = self._customer_ids()
         customer_idx = pagination.get("customer_idx", 0)
-        # The cursor stores the window's first day, not an index: a resumed run
-        # recomputes `end` from today, so an index would point at a different window.
+        # A resumed run recomputes `end` from today, so the cursor stores a date, not an index.
         window_start = date.fromisoformat(pagination["window_start"]) if pagination.get("window_start") else start
         if customer_idx >= len(customers) or window_start > end:
             return SourceIteration(records=[], next_pagination={})

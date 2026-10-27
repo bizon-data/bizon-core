@@ -14,24 +14,21 @@ from bizon.source.source import AbstractSource
 
 BASE_URL = "https://api.anthropic.com/v1/organizations/analytics"
 
-# The report endpoints are effectively real-time, so they only need to stay on complete UTC days: a partial day
-# captured mid-flight is never re-requested once the cursor moves past it.
+# Report endpoints are real-time; stay on complete UTC days, since a partial day is never re-requested.
 REPORT_DATA_LAG_DAYS = 1
 
-# The engagement endpoints lag ~2 days and answer a too-recent date with a 400 instead of an empty result, so they
-# keep one spare day above the observed lag.
+# Engagement endpoints lag ~2 days and 400 on a too-recent date instead of returning empty; one spare day.
 ENGAGEMENT_DATA_LAG_DAYS = 3
 
 REPORT_STREAMS = frozenset({"user_cost_report", "user_usage_report", "cost_report", "usage_report"})
 
-# Re-requested on every incremental run, independently of the per-stream lag: Anthropic restates cost/usage for up
-# to 30 days, and a cursor derived from the lag would skip days whenever a lag changes. Dedup downstream on the
-# business key ordered by _bizon_loaded_at.
+# Re-read on every run, independent of the per-stream lag so a lag change never skips days; Anthropic restates
+# cost/usage for up to 30 days. Dedup downstream on the business key by _bizon_loaded_at.
 INCREMENTAL_OVERLAP_DAYS = 3
 
 TIME_REPORT_BUCKET_WIDTH = "1d"
 
-# Sent as group_by[] to the report endpoints; record ids are built from these keys (see _group_suffix).
+# Record ids are built from these keys (see _group_suffix).
 REPORT_GROUP_BY = ["model", "product"]
 
 
@@ -104,8 +101,7 @@ class AnthropicSource(AbstractSource):
 
     def check_connection(self) -> Tuple[bool, Optional[Any]]:
         try:
-            # Probes /users, an engagement endpoint, so it needs the engagement lag whatever the stream: a report
-            # stream's shorter lag would 400 here.
+            # /users is an engagement endpoint: a report stream's shorter lag would 400 here.
             check_date = (date.today() - timedelta(days=ENGAGEMENT_DATA_LAG_DAYS)).isoformat()
             response = self.session.get(
                 f"{BASE_URL}/users",
@@ -125,10 +121,7 @@ class AnthropicSource(AbstractSource):
         return date.fromisoformat(self.config.start_date)
 
     def _get_summaries(self, pagination: dict = None) -> SourceIteration:
-        """Summaries returns one entry per day for the whole range in one response; the endpoint rejects limit/page.
-
-        ending_date is exclusive in the API, hence the extra day.
-        """
+        """One response covers the whole range (the endpoint rejects limit/page); ending_date is exclusive."""
         params = {
             "starting_date": self._start_date().isoformat(),
             "ending_date": (self._end_date() + timedelta(days=1)).isoformat(),
@@ -145,7 +138,6 @@ class AnthropicSource(AbstractSource):
         return SourceIteration(records=records, next_pagination={})
 
     def _get_by_date(self, endpoint: str, pagination: dict = None) -> SourceIteration:
-        """Iterate day by day over a single-date endpoint; `page` walks multi-page results within a day."""
         if pagination and pagination.get("current_date"):
             current_date = date.fromisoformat(pagination["current_date"])
         else:
@@ -186,11 +178,10 @@ class AnthropicSource(AbstractSource):
 
     @staticmethod
     def _group_suffix(row: dict) -> str:
-        """Id fragment from the grouped dimensions; group_by returns one row per unique combination of them."""
+        """group_by returns one row per unique combination of the grouped dimensions."""
         return "_".join(str(row.get(key)) for key in REPORT_GROUP_BY)
 
     def _get_user_report(self, endpoint: str, pagination: dict = None) -> SourceIteration:
-        """Daily loop for user_cost_report / user_usage_report, one single-day range per call."""
         if pagination and pagination.get("current_date"):
             current_date = date.fromisoformat(pagination["current_date"])
         else:
@@ -234,10 +225,7 @@ class AnthropicSource(AbstractSource):
         return SourceIteration(records=records, next_pagination=next_pagination)
 
     def _get_time_report(self, endpoint: str, pagination: dict = None) -> SourceIteration:
-        """Daily loop for cost_report / usage_report, flattening data[].results[] with the bucket bounds attached.
-
-        `limit` caps buckets rather than rows here, and a single-day 1d range yields one bucket, so it is omitted.
-        """
+        """`limit` caps buckets, not rows, and a single-day range yields one bucket, so it is omitted."""
         if pagination and pagination.get("current_date"):
             current_date = date.fromisoformat(pagination["current_date"])
         else:
@@ -297,10 +285,7 @@ class AnthropicSource(AbstractSource):
     }
 
     def get_records_after(self, source_state: SourceIncrementalState, pagination: dict = None) -> SourceIteration:
-        """Resume from last_run minus INCREMENTAL_OVERLAP_DAYS up to today minus the stream's lag.
-
-        Reaching back before the previous end date picks up restatements and self-heals if a lag is changed.
-        """
+        """Reaching back before the previous end date picks up restatements and self-heals if a lag changes."""
         if self.config.starting_date:
             return self.get(pagination=pagination)
 

@@ -1,8 +1,7 @@
 """Chargebee source: incremental subscription, comment and event streams over the v2 list endpoints.
 
-Each stream filters on its own timestamp with `<field>[after]` + `sort_by[asc]`. `full_scan` ignores the cursor
-and re-fetches every record, for accumulating-snapshot tables: Chargebee does not bump `updated_at` when a
-subscription's metered usage changes.
+`full_scan` ignores the cursor and re-fetches every record, for accumulating-snapshot tables: Chargebee does not
+bump `updated_at` when a subscription's metered usage changes.
 """
 
 from datetime import datetime
@@ -19,8 +18,7 @@ from bizon.source.source import AbstractSource
 
 DEFAULT_PAGE_SIZE = 100  # Chargebee's documented max for list endpoints
 
-# `after` is exclusive on Chargebee's TimestampFilter; back off last_run so a record landing exactly on the
-# boundary isn't dropped. The streams are append-only, so a re-fetched duplicate is resolved downstream.
+# `after` is exclusive; back off so a record exactly on the boundary isn't dropped. Duplicates resolve downstream.
 CURSOR_OVERLAP_SECONDS = 60
 
 
@@ -30,8 +28,7 @@ class ChargebeeStreams(str, Enum):
     EVENT = "event"
 
 
-# Each list entry wraps its resource under the stream name, e.g.
-# GET /subscriptions -> {"list": [{"subscription": {...}, "customer": {...}}], "next_offset": ...}.
+# Each list entry wraps its resource under the stream name: {"list": [{"subscription": {...}, ...}], ...}.
 _ENDPOINTS = {
     ChargebeeStreams.SUBSCRIPTION: "subscriptions",
     ChargebeeStreams.COMMENT: "comments",
@@ -46,7 +43,7 @@ _CURSOR_FIELD = {
 
 
 class ChargebeeAuth(AuthBase):
-    """HTTP Basic auth: site API key as username, empty password."""
+    """Site API key as Basic username, empty password."""
 
     def __init__(self, api_key: str):
         self._basic = HTTPBasicAuth(api_key, "")
@@ -118,16 +115,12 @@ class ChargebeeSource(AbstractSource):
     def _get_filtered_stream(
         self, stream: ChargebeeStreams, after_epoch: Optional[int], pagination: dict = None
     ) -> SourceIteration:
-        """TimestampFilter[after] + sort_by[asc] on the stream's cursor field, offset-paginated.
-
-        after_epoch is None for a full_scan, which omits the TimestampFilter so every record is re-fetched.
-        """
+        """after_epoch is None for a full_scan, which omits the TimestampFilter."""
         cursor_field = _CURSOR_FIELD[stream]
         envelope_key = stream.value
 
-        # A full scan offset-paginates over a list that changes under it, so it must not sort by a mutating key:
-        # a record updated mid-scan would move past the offset and be missed or seen twice. created_at never
-        # changes. The incremental path keeps the cursor field because it pairs with <cursor>[after].
+        # Offset pagination over a mutating sort key would miss or repeat records updated mid-scan, so a full scan
+        # sorts on the immutable created_at. The incremental path's cursor field pairs with <cursor>[after].
         sort_field = cursor_field if after_epoch is not None else "created_at"
 
         params = {

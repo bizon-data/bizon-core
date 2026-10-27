@@ -1,8 +1,7 @@
 """Contrast.io webinar platform source: events, registrations, live/replay views and poll votes.
 
-`page` is capped at 100 (422 past it), so one startDate/endDate window tops out at ~10k rows. The four
-date-windowed streams are therefore split into quarterly sub-windows. Nested or event-scoped routes do not scope
-these collections: each record carries its own videoId/eventStartsAt/eventEndsAt for joining.
+`page` is capped at 100 (422 past it), so one date window tops out at ~10k rows; the date-windowed streams are
+split into quarterly windows. Records carry their own videoId/eventStartsAt/eventEndsAt for joining.
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -31,7 +30,6 @@ class ContrastIoStreams(str, Enum):
     REPLAY_VIEWS = "replay_views"
 
 
-# Streams requiring startDate/endDate -- everything except events.
 _DATE_WINDOWED_STREAMS = {
     ContrastIoStreams.LIVE_VIEWS,
     ContrastIoStreams.POLL_VOTES,

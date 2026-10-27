@@ -35,7 +35,7 @@ class AshbySourceConfig(SourceConfig):
 
 
 class AshbyAuth(AuthBase):
-    """Ashby API key authentication: key as Basic username, empty password."""
+    """API key as Basic username, empty password."""
 
     def __init__(self, api_key: str):
         self._basic = HTTPBasicAuth(api_key, "")

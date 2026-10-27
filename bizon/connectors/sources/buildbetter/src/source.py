@@ -26,13 +26,11 @@ from bizon.source.source import AbstractSource
 
 GRAPHQL_URL = "https://api.buildbetter.app/v1/graphql"
 PAGE_SIZE = 500
-# Re-read changes from just before the last run's start: a row committed after that
-# start can carry an earlier updated_at. Duplicates are deduped downstream on id.
+# A row committed after the last run's start can carry an earlier updated_at. Deduped downstream on id.
 INCREMENTAL_LOOKBACK = timedelta(hours=1)
 
-# Hasura's own auth webhook or Postgres connection failing server-side, on top of the
-# shared generic signatures (Hasura's bare "Internal server error" is one). Everything
-# else stays FATAL so a genuine query bug fails fast.
+# Hasura auth-webhook / Postgres failures, on top of the shared generic signatures. Everything else stays
+# FATAL so a genuine query bug fails fast.
 _TRANSIENT_GRAPHQL_MESSAGE_SIGNATURES = (
     "webhook authentication request failed",
     "connection error",
@@ -43,11 +41,7 @@ _FATAL_HASURA_CODES = ("validation-failed", "parse-failed")
 
 
 def _classify_buildbetter_graphql(response, body: dict) -> Optional[ErrorClass]:
-    """Map a BuildBetter (Hasura) GraphQL response onto the shared transport's error classes.
-
-    Non-OK statuses are left unclaimed so the session adapter's 5xx ladder isn't
-    handed a second, redundant budget.
-    """
+    """Non-OK statuses are left unclaimed so the session adapter's 5xx retries aren't doubled."""
     if not response.ok:
         return None
     errors = body.get("errors") or []
@@ -195,9 +189,8 @@ query People($limit: Int!, $cursor: bigint!) {
 """
 )
 
-# person.updated_at is a Postgres `timestamp` (naive UTC): declaring $updated_at as
-# `timestamptz!` fails Hasura validation. The (updated_at, id) tie-break keeps rows that
-# share an updated_at from being skipped at a page boundary.
+# person.updated_at is a naive `timestamp`: `timestamptz!` fails Hasura validation. The (updated_at, id)
+# tie-break keeps rows sharing an updated_at from being skipped at a page boundary.
 PEOPLE_INCREMENTAL_QUERY = (
     """
 query PeopleIncremental($limit: Int!, $updated_at: timestamp!, $id: bigint!) {
@@ -382,11 +375,6 @@ class BuildBetterSource(AbstractSource):
 
     @staticmethod
     def _keyset_pagination(rows: list, page_size: int) -> dict:
-        """Return next_pagination dict for keyset pagination.
-
-        If we got a full page, the cursor is the last row's id.
-        Otherwise, empty dict signals completion.
-        """
         if len(rows) >= page_size:
             return {"cursor": rows[-1]["id"]}
         return {}
@@ -478,7 +466,7 @@ class BuildBetterSource(AbstractSource):
         if person.get("first_name") or person.get("last_name"):
             speaker_name = f"{person.get('first_name', '')} {person.get('last_name', '')}".strip()
 
-        # exact_quote — may be a JSONB array or have sub-fields; store as JSON string
+        # exact_quote may be a JSONB array or object
         exact_quote = row.get("exact_quote")
         if exact_quote is not None and not isinstance(exact_quote, str):
             exact_quote = json.dumps(exact_quote)

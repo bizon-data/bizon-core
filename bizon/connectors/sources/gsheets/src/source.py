@@ -122,7 +122,7 @@ class GsheetsSource(AbstractSource):
             gc = self.get_gspread_client()
             sh = self._retry(gc.open_by_url)(self.config.spreadsheet_url)
         except PermissionError as e:
-            # str(e) is empty here, so name the type and the identity the sheet must be shared with
+            # str(e) is empty here, so name the identity the sheet must be shared with.
             identity = self._identity_email()
             account = repr(identity) if identity else "the pipeline's service account"
             return False, (

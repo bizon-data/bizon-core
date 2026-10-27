@@ -1,7 +1,4 @@
-"""Vitally source: REST resources (accounts, users, notes, custom objects, ...) plus the app custom-fields API.
-
-Every stream emits the raw Vitally JSON object as the record data.
-"""
+"""Vitally source: REST resources (accounts, users, notes, custom objects, ...) plus the app custom-fields API."""
 
 from enum import Enum
 from typing import Any, List, Optional, Tuple
@@ -34,11 +31,9 @@ class VitallyStreams(str, Enum):
     USER_CUSTOM_FIELDS = "user_custom_fields"
 
 
-# customFields (the metadata stream, not the paginated app-token one) has no cursor, so walk this fixed model
-# list once each.
+# The customFields metadata endpoint has no cursor, so each model is walked once.
 _CUSTOM_FIELDS_MODELS = ["users", "accounts"]
 
-# app.vitally.io model param per bizon stream name.
 _APP_MODEL_BY_STREAM = {
     VitallyStreams.ACCOUNT_CUSTOM_FIELDS.value: "Customer",
     VitallyStreams.USER_CUSTOM_FIELDS.value: "User",
@@ -51,8 +46,7 @@ class VitallySourceConfig(SourceConfig):
     api_key: Optional[str] = Field(
         None, description="rest.vitally.io Basic-auth key, used by every stream except the *_custom_fields ones"
     )
-    # app.vitally.io issues no stable API key for this endpoint, so this is a short-lived browser session token
-    # that has to be refreshed by hand.
+    # app.vitally.io issues no API key for this endpoint: this is a short-lived browser session token.
     app_api_key: Optional[str] = Field(
         None, description="app.vitally.io Bearer token for account_custom_fields and user_custom_fields"
     )

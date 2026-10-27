@@ -14,7 +14,7 @@ from bizon.source.source import AbstractSource
 
 BASE_URL = "https://rest.ripplingapis.com"
 
-# (connect, read) seconds. Without a read timeout a stalled socket never becomes a retryable event.
+# Without a read timeout a stalled socket never becomes a retryable event.
 REQUEST_TIMEOUT = (10, 60)
 
 # v2 caps `limit` at 100 (400 above).
@@ -48,7 +48,6 @@ class StreamSpec:
     expand: Optional[str] = None
 
 
-# Stream names are decoupled from API paths (e.g. `employees` maps to `/workers/`), hence a registry.
 STREAM_SPECS: dict[RipplingStreams, StreamSpec] = {
     RipplingStreams.EMPLOYEES: StreamSpec(
         path="/workers/",

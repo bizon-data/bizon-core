@@ -22,16 +22,12 @@ from bizon.source.source import AbstractSource
 GRAPHQL_URL = "https://api.linear.app/graphql"
 
 
-# Matched case-insensitively against each error's `extensions.type` and
-# `extensions.code` -- NOT the top-level `type`, which Linear doesn't populate.
-# RATE_LIMITED is included even though HTTP-400 rate limits have their own
-# long-backoff ladder: Linear can also surface one as an HTTP-200 `errors[]`
-# entry, which only this path covers.
+# Matched against `extensions.type`/`extensions.code`; Linear doesn't populate the top-level `type`.
+# RATE_LIMITED is here because Linear can also send one as an HTTP-200 `errors[]` entry.
 _TRANSIENT_GRAPHQL_ERROR_TYPES = ("INTERNAL", "SERVICE_UNAVAILABLE", "RATE_LIMITED")
 _TRANSIENT_GRAPHQL_TYPE_FIELDS = ("extensions.type", "extensions.code")
 
-# Lowercased substring match on `err["message"]`. "internal server error" is the
-# signature Linear sends for a transient resolver failure on an HTTP 200.
+# "internal server error" is Linear's signature for a transient resolver failure on an HTTP 200.
 _TRANSIENT_GRAPHQL_MESSAGE_SIGNATURES = (
     "internal server error",
     "something went wrong",
@@ -40,24 +36,14 @@ _TRANSIENT_GRAPHQL_MESSAGE_SIGNATURES = (
     "service unavailable",
 )
 
-# Linear's history page-size ladder. Differs from the transport's default
-# (25, 10, 5, 1): a history page starts at 100, and at historyFirst=10 the
-# default would insert a 5 rung this stream has never used.
+# A history page starts at 100, so the transport's default ladder doesn't fit.
 HISTORY_SHRINK_STEPS = (100, 50, 10, 1)
 
 
 def _classify_linear_graphql(response, body: dict) -> Optional[ErrorClass]:
-    """Map a Linear GraphQL response onto the shared transport's error classes.
-
-    Linear reports rate limits as HTTP 400 with a RATELIMITED extension rather
-    than a 429, so urllib3's status_forcelist never sees them. Every other
-    non-OK status is left unclaimed: the session adapter has already retried
-    5xx, so it must surface as HTTPError instead of earning a second ladder.
-
-    Conservative on TRANSIENT: only the signatures above match, so
-    a genuine query bug (bad field, validation) is FATAL and fails fast rather
-    than burning every retry attempt.
-    """
+    """Linear rate-limits with HTTP 400 + a RATELIMITED extension, not a 429. Other non-OK statuses are left
+    unclaimed (the adapter already retried 5xx), and only the signatures above are TRANSIENT so a query bug
+    fails fast."""
     errors = body.get("errors") or []
     if response.status_code == 400 and errors_match(
         errors, types=("RATELIMITED",), type_fields=_TRANSIENT_GRAPHQL_TYPE_FIELDS
@@ -198,9 +184,8 @@ query Issues($first: Int!, $after: String, $filter: IssueFilter) {
 """
 
 
-# Linear's Query type does NOT expose a root `issueHistories` field — history is a
-# subfield of Issue. History is batched by fetching N issues plus their first M entries
-# in a single request, then paginating any issue whose history overflows M.
+# There is no root `issueHistories` field: fetch N issues with their first M history entries per request, then
+# paginate any issue whose history overflows M.
 
 HISTORY_FIELDS = """
 actor { id }
@@ -324,9 +309,8 @@ query IssueHistoryPage($issueId: String!, $first: Int!, $after: String) {{
 }}
 """
 
-# id-only projection of the issues connection -- no `history` subfield, so it cannot
-# hit an unresolvable history node. `_fetch_history_batch`'s last-resort floor uses it to
-# advance the batch cursor past a parent whose history fails even at first=1/historyFirst=1.
+# No `history` subfield, so it can't hit an unresolvable history node; `_fetch_history_batch`'s last-resort
+# floor uses it to advance past a parent whose history fails even at first=1/historyFirst=1.
 ISSUES_IDONLY_QUERY = """
 query IssuesIdOnly($first: Int!, $after: String, $filter: IssueFilter) {
   issues(first: $first, after: $after, filter: $filter, includeArchived: true) {
@@ -337,9 +321,7 @@ query IssuesIdOnly($first: Int!, $after: String, $filter: IssueFilter) {
 """
 
 
-# Same constraint as issue history: Linear's Query type has no root
-# `projectHistories` field — history is a subfield of Project. Same
-# batched-parent-plus-overflow-fallback approach as issues above.
+# No root `projectHistories` field either; batched like issue history.
 
 PROJECT_HISTORY_FIELDS = """
 id
@@ -376,7 +358,7 @@ query ProjectHistoryPage($projectId: String!, $first: Int!, $after: String) {{
 }}
 """
 
-# id-only projection of the projects connection; see ISSUES_IDONLY_QUERY.
+# See ISSUES_IDONLY_QUERY.
 PROJECTS_IDONLY_QUERY = """
 query ProjectsIdOnly($first: Int!, $after: String, $filter: ProjectFilter) {
   projects(first: $first, after: $after, filter: $filter, includeArchived: true) {
@@ -387,8 +369,7 @@ query ProjectsIdOnly($first: Int!, $after: String, $filter: ProjectFilter) {
 """
 
 
-# Same constraint again: no root `initiativeHistories` field — history is a
-# subfield of Initiative only.
+# No root `initiativeHistories` field either.
 
 INITIATIVE_HISTORY_FIELDS = """
 id
@@ -425,7 +406,7 @@ query InitiativeHistoryPage($initiativeId: String!, $first: Int!, $after: String
 }}
 """
 
-# id-only projection of the initiatives connection; see ISSUES_IDONLY_QUERY.
+# See ISSUES_IDONLY_QUERY.
 INITIATIVES_IDONLY_QUERY = """
 query InitiativesIdOnly($first: Int!, $after: String, $filter: InitiativeFilter) {
   initiatives(first: $first, after: $after, filter: $filter, includeArchived: true) {
@@ -436,9 +417,7 @@ query InitiativesIdOnly($first: Int!, $after: String, $filter: InitiativeFilter)
 """
 
 
-# Full-refresh streams below emit a fixed column set per stream. Some of those columns
-# no longer exist in the current Linear GraphQL schema (e.g. user.role,
-# organization.allowedAuthServices); they are emitted as null so the schema stays stable.
+# Fixed column sets: columns Linear has since removed (e.g. user.role) are emitted as null to keep the schema stable.
 
 ORGANIZATION_QUERY = """
 query OrganizationSingleton {
@@ -478,7 +457,7 @@ query Teams($first: Int!, $after: String) {
 }
 """
 
-# team_keys has no root query; it is derived as one record per team from the teams list.
+# team_keys has no root query; it is derived from the teams list.
 TEAM_KEYS_QUERY = """
 query TeamKeys($first: Int!, $after: String) {
   teams(first: $first, after: $after, includeArchived: true) {
@@ -699,7 +678,7 @@ class LinearSourceConfig(SourceConfig):
 
 
 class LinearAuth(AuthBase):
-    """Linear personal API key auth — plain token in Authorization header (no Bearer prefix)."""
+    """Personal API key in the Authorization header, without a Bearer prefix."""
 
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -715,8 +694,7 @@ class LinearSource(AbstractSource):
         super().__init__(config)
         self.config: LinearSourceConfig = config
         self._start_date: Optional[datetime] = None
-        # Log the raw rate-limit headers once per run, to show which cap (request count or
-        # complexity) is binding without repeating it on every throttle event.
+        # Logged once per run, to show which cap (request count or complexity) is binding.
         self._ratelimit_headers_logged = False
         if config.start_date:
             self._start_date = datetime.fromisoformat(config.start_date.replace("Z", "+00:00"))
@@ -747,13 +725,7 @@ class LinearSource(AbstractSource):
         return None
 
     def _graphql_post(self, query: str, variables: dict = None) -> dict:
-        """POST through the shared GraphQL transport with Linear's own attempt budgets.
-
-        The two failure modes keep separate counters: HTTP-200 `errors[]` blips get a short
-        retry, HTTP-400 rate limits a long one. `retry_exceptions` is deliberately empty: the
-        session adapter already retries 5xx, and once it gives up the classifier leaves the
-        response unclaimed so it surfaces as an HTTPError.
-        """
+        """`retry_exceptions` is empty: the session adapter already retries 5xx."""
         return graphql_post(
             self.session,
             GRAPHQL_URL,
@@ -784,20 +756,8 @@ class LinearSource(AbstractSource):
 
     @staticmethod
     def _rate_limit_reset_wait_seconds(response) -> Optional[float]:
-        """Best-effort parse of Linear's rate-limit reset hint, so the backoff sleep matches the
-        actual window instead of a blind guess.
-
-        Tries, in order, and returns the first that parses:
-
-          1. `Retry-After` -- standard HTTP hint, plain seconds.
-          2. `X-RateLimit-Requests-Reset` -- epoch **milliseconds** at which the request-count
-             window (rolling 1h) resets. Request count, not complexity, is usually the binding cap.
-          3. `X-RateLimit-Complexity-Reset` -- the same shape for the complexity budget, used only
-             if the requests-reset header is absent.
-
-        Returns None (caller falls back to the blind exponential backoff) if none parse. Never
-        raises -- a malformed or missing header must not break the retry loop.
-        """
+        """Seconds until reset from Retry-After, else X-RateLimit-Requests-Reset, else
+        X-RateLimit-Complexity-Reset (both epoch milliseconds); None if none parse. Never raises."""
         retry_after = response.headers.get("Retry-After")
         if retry_after:
             try:
@@ -826,18 +786,7 @@ class LinearSource(AbstractSource):
         min_size: int = 1,
         label: str = "",
     ) -> Tuple[dict, int]:
-        """Post a GraphQL query, adaptively shrinking `variables["first"]` on a
-        persistent TransientGraphQLError instead of only retrying the same page size.
-
-        Returns `(result, effective_size)` -- the page size that actually
-        succeeded, which the caller carries forward as the next page's
-        `start_size` (a page that shrank once is likely to need it again). At
-        `min_size` the last error re-raises so the engine's fail-closed handling
-        fires and the watermark does NOT advance past the un-fetched window.
-
-        No phantom probe: Linear has not shown the pageInfo-only cursor asymmetry the
-        probe exists for, so the ladder's floor stays purely fail-closed.
-        """
+        """No phantom probe: Linear hasn't shown the pageInfo-only asymmetry, so the floor stays fail-closed."""
         return graphql_post_adaptive(
             self.session,
             GRAPHQL_URL,
@@ -862,39 +811,11 @@ class LinearSource(AbstractSource):
         history_first: int,
         label: str,
     ) -> Tuple[dict, int]:
-        """Fetch one page of a batched parents+history query, shrinking on a persistent
-        TransientGraphQLError from an unresolvable history node instead of crashing the stream.
+        """An unresolvable history node would otherwise wedge the stream, since `after` only advances on success.
 
-        Such a node inside the batch's own `historyFirst` window would otherwise raise on every
-        attempt and wedge the stream at an unmoving cursor, since `after` only advances on a
-        successful batch. One rung at a time, always retrying the SAME `after` cursor:
-
-          1. the batch at full `first`/`historyFirst` (no change for healthy batches)
-          2. shrink `historyFirst` down HISTORY_SHRINK_STEPS (the bad node is
-             not the head parent -- it now overflows into a `hasNextPage=true`
-             tail that `_paginate_*` already handles)
-          3. shrink `first` to 1 too (the bad node IS the head parent's, but not
-             reachable via `id` alone -- the producer re-calls for the rest of
-             the window on the next iteration)
-          4. id-only floor: fetch a single parent id (a scalar `id` selection
-             can't hit a history node) plus its real `pageInfo`, and
-             synthesize an empty-history result so the `after` cursor still
-             advances and this parent's history is dropped
-
-        `variables` is mutated in place across rungs -- safe because the caller
-        builds it fresh each call and only reads the returned `result`, never
-        `variables` itself afterwards.
-
-        Returns `(result, skipped_head)`: `result` is shaped like a normal
-        `_graphql_post` response (`result["data"][connection]` has
-        `nodes`/`pageInfo`), so callers are unchanged. `skipped_head` is 1 only
-        when the id-only floor had to synthesize an empty history for the head
-        parent, else 0.
-
-        Fail-closed: if even the id-only floor query raises
-        TransientGraphQLError, it propagates unswallowed -- that signals a
-        genuinely different outage (a scalar `id` selection can't hit a
-        history node) and the watermark must not advance past unseen parents.
+        Retrying the same `after`, it shrinks `historyFirst`, then `first` to 1, then falls back to an id-only
+        query that synthesizes an empty history for the head parent (`skipped_head` = 1) so the cursor advances.
+        If even the id-only query fails it is a different outage, and the error propagates.
         """
         try:
             return self._graphql_post(batch_query, variables), 0
@@ -985,7 +906,6 @@ class LinearSource(AbstractSource):
 
     @staticmethod
     def _transform_issue_history(node: dict) -> dict:
-        """Add flattened IDs while preserving all selected GraphQL fields."""
         out = dict(node)
         issue = out.get("issue")
         out["issueId"] = issue["id"] if issue else None
@@ -995,7 +915,6 @@ class LinearSource(AbstractSource):
 
     @staticmethod
     def _transform_issue(node: dict) -> dict:
-        """Flatten GraphQL issue node: extract relation IDs and array IDs."""
         RELATION_FIELDS = [
             "parent",
             "project",
@@ -1058,21 +977,14 @@ class LinearSource(AbstractSource):
         logger.info(f"Fetched {len(records)} project labels (hasNextPage={page_info.get('hasNextPage')})")
         return SourceIteration(records=records, next_pagination=next_pagination)
 
-    # Tuning knobs for the batched issues-with-history query. Linear's binding cap is usually the
-    # request count per rolling hour, not query complexity, so a bigger batch saves round-trips.
-    # Each IssueHistory node selects ~80 fields, so 25 x 10 keeps a request's cost modest. Lowering
-    # HISTORY_FIRST would push more issues into the per-issue overflow fallback and add requests back.
+    # The binding cap is usually requests per hour, not complexity, so batches are large; an IssueHistory node
+    # selects ~80 fields, so 25 x 10 keeps a request's cost modest.
     ISSUES_BATCH_SIZE = 25
     HISTORY_FIRST = 10
     HISTORY_PAGE_SIZE = 100
 
     def _paginate_issue_history(self, issue_id: str, after: str) -> Tuple[List[dict], int]:
-        """Fallback: fetch remaining history pages for one issue when the batched
-        query returned hasNextPage=true for its nested history connection.
-
-        Returns `(nodes, skipped)` -- `skipped` is 1 if the overflow tail was
-        abandoned mid-pagination, else 0.
-        """
+        """Overflow history pages for one issue; `skipped` is 1 if the tail was abandoned."""
         nodes: List[dict] = []
         cursor = after
         size = self.HISTORY_PAGE_SIZE
@@ -1083,9 +995,8 @@ class LinearSource(AbstractSource):
                     ISSUE_HISTORY_PAGE_QUERY, variables, start_size=size, label=f"issue_history:{issue_id}"
                 )
             except TransientGraphQLError:
-                # A supplementary page for an already-known parent; the batch query stays fail-closed.
-                # Dropping the unfetchable tail beats wedging the stream on one cursor, but the run
-                # then reports success: this ERROR and skipped_overflow= are the only signal.
+                # Dropping the tail beats wedging the stream, but the run then reports success: this ERROR and
+                # skipped_overflow= are the only signal. The batch query itself stays fail-closed.
                 logger.error(
                     f"SKIPPING unfetchable overflow history page for issue_history:{issue_id} "
                     f"(after={cursor}) after exhausting retries+shrink; dropping the remaining "
@@ -1105,12 +1016,6 @@ class LinearSource(AbstractSource):
         return nodes, 0
 
     def get_issue_history(self, pagination: dict = None) -> SourceIteration:
-        """Fetch a batch of issues + their history in one query, with fallback
-        pagination for long-tail issues whose history exceeds HISTORY_FIRST.
-
-        Uses `self._start_date` as the cutoff — seeded from `config.start_date` and
-        temporarily overridden to `source_state.last_run` during incremental runs.
-        """
         variables: dict = {"first": self.ISSUES_BATCH_SIZE, "historyFirst": self.HISTORY_FIRST}
         if pagination and pagination.get("endCursor"):
             variables["after"] = pagination["endCursor"]
@@ -1156,8 +1061,7 @@ class LinearSource(AbstractSource):
         next_pagination = page_info if page_info.get("hasNextPage") else {}
         return SourceIteration(records=records, next_pagination=next_pagination)
 
-    # ProjectHistory/InitiativeHistory nodes are far lighter than IssueHistory and there are far
-    # fewer parents, so these batches can be much more generous. Kept separate per stream.
+    # Project/initiative history nodes are far lighter than IssueHistory, so these batches are larger.
     PROJECTS_BATCH_SIZE = 50
     PROJECT_HISTORY_FIRST = 50
     PROJECT_HISTORY_PAGE_SIZE = 100
@@ -1168,19 +1072,13 @@ class LinearSource(AbstractSource):
 
     @staticmethod
     def _transform_project_history(node: dict) -> dict:
-        """Flatten `project { id } -> projectId`."""
         out = dict(node)
         project = out.pop("project", None)
         out["projectId"] = project["id"] if project else None
         return out
 
     def _paginate_project_history(self, project_id: str, after: str) -> Tuple[List[dict], int]:
-        """Fallback: fetch remaining history pages for one project when the batched
-        query returned hasNextPage=true for its nested history connection.
-
-        Returns `(nodes, skipped)` -- `skipped` is 1 if the overflow tail was
-        abandoned mid-pagination, else 0.
-        """
+        """Overflow history pages for one project; `skipped` is 1 if the tail was abandoned."""
         nodes: List[dict] = []
         cursor = after
         size = self.PROJECT_HISTORY_PAGE_SIZE
@@ -1191,9 +1089,8 @@ class LinearSource(AbstractSource):
                     PROJECT_HISTORY_PAGE_QUERY, variables, start_size=size, label=f"project_history:{project_id}"
                 )
             except TransientGraphQLError:
-                # A supplementary page for an already-known parent; the batch query stays fail-closed.
-                # Dropping the unfetchable tail beats wedging the stream on one cursor, but the run
-                # then reports success: this ERROR and skipped_overflow= are the only signal.
+                # Dropping the tail beats wedging the stream, but the run then reports success: this ERROR and
+                # skipped_overflow= are the only signal. The batch query itself stays fail-closed.
                 logger.error(
                     f"SKIPPING unfetchable overflow history page for project_history:{project_id} "
                     f"(after={cursor}) after exhausting retries+shrink; dropping the remaining "
@@ -1213,12 +1110,6 @@ class LinearSource(AbstractSource):
         return nodes, 0
 
     def get_project_history(self, pagination: dict = None) -> SourceIteration:
-        """Fetch a batch of projects + their history in one query, with fallback
-        pagination for long-tail projects whose history exceeds PROJECT_HISTORY_FIRST.
-
-        Uses `self._start_date` as the cutoff — seeded from `config.start_date` and
-        temporarily overridden to `source_state.last_run` during incremental runs.
-        """
         variables: dict = {"first": self.PROJECTS_BATCH_SIZE, "historyFirst": self.PROJECT_HISTORY_FIRST}
         if pagination and pagination.get("endCursor"):
             variables["after"] = pagination["endCursor"]
@@ -1266,19 +1157,13 @@ class LinearSource(AbstractSource):
 
     @staticmethod
     def _transform_initiative_history(node: dict) -> dict:
-        """Flatten `initiative { id } -> initiativeId`."""
         out = dict(node)
         initiative = out.pop("initiative", None)
         out["initiativeId"] = initiative["id"] if initiative else None
         return out
 
     def _paginate_initiative_history(self, initiative_id: str, after: str) -> Tuple[List[dict], int]:
-        """Fallback: fetch remaining history pages for one initiative when the batched
-        query returned hasNextPage=true for its nested history connection.
-
-        Returns `(nodes, skipped)` -- `skipped` is 1 if the overflow tail was
-        abandoned mid-pagination, else 0.
-        """
+        """Overflow history pages for one initiative; `skipped` is 1 if the tail was abandoned."""
         nodes: List[dict] = []
         cursor = after
         size = self.INITIATIVE_HISTORY_PAGE_SIZE
@@ -1292,9 +1177,8 @@ class LinearSource(AbstractSource):
                     label=f"initiative_history:{initiative_id}",
                 )
             except TransientGraphQLError:
-                # A supplementary page for an already-known parent; the batch query stays fail-closed.
-                # Dropping the unfetchable tail beats wedging the stream on one cursor, but the run
-                # then reports success: this ERROR and skipped_overflow= are the only signal.
+                # Dropping the tail beats wedging the stream, but the run then reports success: this ERROR and
+                # skipped_overflow= are the only signal. The batch query itself stays fail-closed.
                 logger.error(
                     f"SKIPPING unfetchable overflow history page for "
                     f"initiative_history:{initiative_id} (after={cursor}) after exhausting "
@@ -1314,12 +1198,6 @@ class LinearSource(AbstractSource):
         return nodes, 0
 
     def get_initiative_history(self, pagination: dict = None) -> SourceIteration:
-        """Fetch a batch of initiatives + their history in one query, with fallback
-        pagination for long-tail initiatives whose history exceeds INITIATIVE_HISTORY_FIRST.
-
-        Uses `self._start_date` as the cutoff — seeded from `config.start_date` and
-        temporarily overridden to `source_state.last_run` during incremental runs.
-        """
         variables: dict = {"first": self.INITIATIVES_BATCH_SIZE, "historyFirst": self.INITIATIVE_HISTORY_FIRST}
         if pagination and pagination.get("endCursor"):
             variables["after"] = pagination["endCursor"]
@@ -1418,7 +1296,6 @@ class LinearSource(AbstractSource):
         source_state: SourceIncrementalState,
         pagination: dict = None,
     ) -> SourceIteration:
-        """Incremental entry point — override `_start_date` with last_run and delegate."""
         since = source_state.last_run
         if since.tzinfo is None:
             since = since.replace(tzinfo=timezone.utc)
@@ -1438,15 +1315,8 @@ class LinearSource(AbstractSource):
         relation_fields: Optional[List[str]] = None,
         array_fields: Optional[dict] = None,
     ) -> dict:
-        """Build a flat record whose keys match `expected_fields` exactly.
-
-        - Direct scalar fields are copied through.
-        - `relation_fields` map a nested object `foo { id }` to scalar `fooId`.
-        - `array_fields` map a connection `foos { nodes { id } }` to `fooIds`
-          via a `{graphql_name: output_name}` mapping.
-        - Any expected field absent from `node` is emitted as `None` so the
-          record schema stays stable across runs.
-        """
+        """Keys match `expected_fields` exactly; `relation_fields` map `foo { id }` to `fooId`, `array_fields` map
+        `foos { nodes { id } }` to an output name, and absent fields are None."""
         relations = set(relation_fields or [])
         arrays = array_fields or {}
         out: dict = {}
@@ -1470,7 +1340,6 @@ class LinearSource(AbstractSource):
         transform,
         first: int = 50,
     ) -> SourceIteration:
-        """Run a single page of a standard `(first, after)` Linear connection query."""
         variables: dict = {"first": first}
         if pagination and pagination.get("endCursor"):
             variables["after"] = pagination["endCursor"]
@@ -1483,8 +1352,6 @@ class LinearSource(AbstractSource):
         logger.info(f"Fetched {len(records)} {connection_name} (hasNextPage={page_info.get('hasNextPage')})")
         return SourceIteration(records=records, next_pagination=next_pagination)
 
-    # Fixed column set per stream. Fields the current Linear schema no longer exposes are emitted
-    # as null by `_flatten_node`.
     _ORGANIZATION_FIELDS = [
         "allowedAuthServices",
         "archivedAt",
@@ -1737,7 +1604,6 @@ class LinearSource(AbstractSource):
     ]
 
     def get_organizations(self, pagination: dict = None) -> SourceIteration:
-        """Singleton — Linear's root `organization` returns the current org only."""
         result = self._graphql_post(ORGANIZATION_QUERY)
         node = result["data"]["organization"]
         if node is None:
@@ -1769,10 +1635,7 @@ class LinearSource(AbstractSource):
         )
 
     def get_team_keys(self, pagination: dict = None) -> SourceIteration:
-        """Derived stream: one record per team, with `id = name = team.key` and `teamId = team.id`.
-
-        The team's timestamps are propagated so joins against `teams` stay consistent.
-        """
+        """`id = name = team.key`; the team's timestamps are kept so joins against `teams` stay consistent."""
         variables: dict = {"first": 50}
         if pagination and pagination.get("endCursor"):
             variables["after"] = pagination["endCursor"]

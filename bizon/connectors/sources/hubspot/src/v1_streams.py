@@ -79,11 +79,7 @@ class HubSpotFormSubmissionsSourceConfig(HubSpotBaseSourceConfig):
 
 
 class HubSpotFormSubmissionsSource(HubSpotBaseSource):
-    """Submissions of every form, from `form-integrations/v1/submissions/forms/{form_id}`.
-
-    The API only returns newest-first and has no timestamp filter, so a form is walked until a page reaches a
-    submission at or before the cutoff. Pagination is (form index, per-form `after`).
-    """
+    """The API is newest-first with no timestamp filter, so each form is walked until a page reaches the cutoff."""
 
     def __init__(self, config: HubSpotFormSubmissionsSourceConfig):
         super().__init__(config)

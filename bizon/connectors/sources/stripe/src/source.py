@@ -46,7 +46,6 @@ class StripeSource(AbstractSource):
         self._last_request_at: float = 0.0
 
     def get_authenticator(self) -> AuthBase:
-        # Stripe uses HTTP Basic auth with the secret key as username, blank password.
         return HTTPBasicAuth(self.config.api_key, "")
 
     @staticmethod
@@ -91,14 +90,13 @@ class StripeSource(AbstractSource):
     def _epoch(dt: datetime) -> int:
         return int(dt.astimezone(timezone.utc).timestamp())
 
-    # Charges mutate after creation, so stamp fetch time: a refetched charge must sort after its earlier copy
-    # when deduplicating on the source timestamp.
+    # Charges mutate, so stamp fetch time: a refetched charge must sort after its earlier copy on dedup.
     @staticmethod
     def _charge_records(charges: List[dict]) -> List[SourceRecord]:
         fetched_at = datetime.now(timezone.utc)
         return [SourceRecord(id=str(c["id"]), data=c, timestamp=fetched_at) for c in charges]
 
-    # Immutable objects -- no events-phase re-fetch needed, unlike charges below.
+    # Immutable objects, so no events-phase re-fetch is needed.
     def _get_created_windowed(
         self, path: str, label: str, pagination: dict, created_gte: Optional[int]
     ) -> SourceIteration:
@@ -115,9 +113,8 @@ class StripeSource(AbstractSource):
         logger.info(f"{label}: fetched {len(records)} (has_more={bool(next_pagination)})")
         return SourceIteration(records=records, next_pagination=next_pagination)
 
-    # Coupons mutate (times_redeemed, valid) and a list never returns deleted ones, so every run lists
-    # everything and ignores the cursor. Run it incremental so a full_refresh doesn't truncate coupons that
-    # have since been deleted in Stripe. `applies_to` is absent from the default response.
+    # Coupons mutate and the list never returns deleted ones, so every run lists everything; run it incremental
+    # so deleted coupons are not truncated away. `applies_to` is absent from the default response.
     COUPONS_LIST_PARAMS = {"expand[]": "data.applies_to"}
 
     def _get_coupons(self, pagination: dict) -> SourceIteration:
@@ -129,11 +126,8 @@ class StripeSource(AbstractSource):
         logger.info(f"coupons: fetched {len(records)} (has_more={bool(next_pagination)})")
         return SourceIteration(records=records, next_pagination=next_pagination)
 
-    # get() skips the events phase -- a Charge fetch always returns live state, so a
-    # backfill needs no separate refetch. get_records_after() adds it: a created[gte]
-    # window alone would never catch a refund or dispute landing on an old charge.
-    #
-    # expand[]=refunds: an account's default Stripe-Version may omit `refunds` otherwise.
+    # Incremental runs add an events phase: a created[gte] window alone misses refunds and disputes on old
+    # charges. expand[]=refunds because an account's default Stripe-Version may omit `refunds`.
     CHARGES_LIST_PARAMS = {"expand[]": "data.refunds"}
     CHARGES_GET_PARAMS = {"expand[]": "refunds"}
 
@@ -163,9 +157,8 @@ class StripeSource(AbstractSource):
         page = self._list_page("/events", params, (pagination or {}).get("starting_after"))
         events_raw = page.get("data", [])
 
-        # charge.dispute.* events embed a Dispute, not a Charge -- its `.charge` field
-        # is the id. Re-fetch by id either way: a snapshot can't carry expand[]=refunds,
-        # and re-fetching dedups N events on one charge into one GET.
+        # charge.dispute.* events embed a Dispute, whose `.charge` is the id. Re-fetch either way: a snapshot
+        # can't carry expand[]=refunds, and N events on one charge collapse into one GET.
         charge_ids: set = set()
         for event in events_raw:
             obj = (event.get("data") or {}).get("object") or {}

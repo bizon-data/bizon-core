@@ -1,9 +1,7 @@
 """OpenAI ChatGPT Compliance Platform source (`api.chatgpt.com`).
 
-- chatgpt_costs: ChatGPT Enterprise COSTS compliance log files (org-scoped, needs a compliance-scoped key and
-  organization_id), downloaded and parsed as JSON Lines, one file per iteration.
-- workspace_daily_usage: per-user-per-day ChatGPT+Codex usage from the Daily Usage analytics endpoint
-  (workspace-scoped, needs scope `enterprise.analytics.usage.read` and workspace_id).
+chatgpt_costs reads the Enterprise COSTS compliance logs and needs a compliance-scoped key plus organization_id;
+workspace_daily_usage reads per-user daily usage and needs scope `enterprise.analytics.usage.read` plus workspace_id.
 """
 
 import hashlib
@@ -68,9 +66,8 @@ class OpenaiSourceConfig(SourceConfig):
     )
     organization_id: Optional[str] = Field(None, description="Required for the chatgpt_costs stream")
     workspace_id: Optional[str] = Field(None, description="Required for the workspace_daily_usage stream")
-    # Errors are raised by hand so the API's 4xx body, which carries the actionable reason, reaches the message.
-    # 520-524 are Cloudflare edge errors the API returns transiently on wide-window list calls. A 524 means the
-    # origin ran past 100s, so the read timeout has to sit above that rather than at the 60s default.
+    # Errors are raised by hand so the 4xx body reaches the message. 520-524 are transient Cloudflare edge errors;
+    # a 524 means the origin ran past 100s, so the read timeout must sit above that.
     http: Optional[HttpConfig] = Field(
         default_factory=lambda: HttpConfig(
             timeout=(10, 300),
@@ -149,11 +146,7 @@ class OpenaiSource(AbstractSource):
 
     @staticmethod
     def _raise_for_status_with_body(response: requests.Response) -> None:
-        """raise_for_status() with the (truncated) response body folded into the error.
-
-        The API puts the actionable reason (missing scope, invalid event_type, disabled feature) in the 4xx body,
-        which the stock HTTPError message drops.
-        """
+        """raise_for_status() that keeps the 4xx body, where the API puts the actionable reason."""
         try:
             response.raise_for_status()
         except HTTPError as e:
@@ -163,10 +156,7 @@ class OpenaiSource(AbstractSource):
     def _list_compliance_log_files(
         self, after: str, before: Optional[str] = None, limit: int = 100
     ) -> Tuple[List[dict], bool, Optional[str]]:
-        """List COSTS log files ordered by end_time; returns (files, has_more, last_end_time).
-
-        `after` is required by the API and is exclusive on end_time; paginate with after=last_end_time.
-        """
+        """Return (files, has_more, last_end_time). `after` is required and exclusive on end_time."""
         params: dict = {"event_type": COSTS_EVENT_TYPE, "after": after, "limit": limit}
         if before:
             params["before"] = before
@@ -177,10 +167,9 @@ class OpenaiSource(AbstractSource):
         return data.get("data", []) or [], bool(data.get("has_more", False)), data.get("last_end_time")
 
     def _download_compliance_file(self, log_file_id: str) -> List[dict]:
-        """Download and parse one compliance log file (JSON Lines). A failure at either stage skips the file.
+        """Download one JSONL log file, or skip it on failure.
 
-        The authed GET answers a 307 to a short-lived pre-signed storage URL, which is fetched without the
-        session: the storage host does not expect, and may reject, the API's Authorization header.
+        The 307 target is pre-signed and fetched without the session: the storage host may reject the API's auth header.
         """
         try:
             response = self.session.get(
@@ -254,11 +243,7 @@ class OpenaiSource(AbstractSource):
         return SourceRecord(id=str(event_id), data=row)
 
     def _get_compliance_log(self, pagination: dict) -> SourceIteration:
-        """Download one compliance log file per call.
-
-        Pagination: `after` (listing anchor), `files` (remaining file ids of the current listing page),
-        `last_end_time` and `has_more` (to seed the next listing page). Callers always seed `after`.
-        """
+        """Download one log file per call; `files` holds the rest of the current listing page."""
         if "files" not in pagination:
             files_data, has_more, last_end_time = self._list_compliance_log_files(after=pagination["after"])
             file_ids = [f["id"] for f in files_data if f.get("id")]
@@ -315,10 +300,7 @@ class OpenaiSource(AbstractSource):
     _analytics_hash_id_warned = False
 
     def _analytics_record_id(self, stream: "OpenaiStreams", row: dict) -> str:
-        """`<stream>_<start_time>_<user_id or 'workspace'>`, stable across re-fetches of a revised daily row.
-
-        Falls back to a content hash if `start_time` is missing, which is not stable across revisions.
-        """
+        """Stable across revisions of a daily row; the content-hash fallback is not."""
         start = row.get("start_time")
         if start is not None:
             user = row.get("user_id") or "workspace"
@@ -338,10 +320,7 @@ class OpenaiSource(AbstractSource):
         return f"{stream.value}_{row_hash}"
 
     def _get_workspace_daily_usage(self, pagination: dict) -> SourceIteration:
-        """Cursor-paginated GET over a fixed [start_time, end_time) window; callers always seed the window.
-
-        `group` is never sent, so the API returns per-user rows rather than the workspace aggregate.
-        """
+        """`group` is never sent, so the API returns per-user rows rather than the workspace aggregate."""
         params: dict = {
             "start_time": pagination["start_time"],
             "end_time": pagination["end_time"],
