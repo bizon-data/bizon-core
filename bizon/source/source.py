@@ -6,17 +6,17 @@ from requests.adapters import Retry
 from requests.auth import AuthBase
 
 from .callback import AbstractSourceCallback, NoOpSourceCallback
-from .config import SourceConfig
+from .config import HttpConfig, SourceConfig
 from .models import SourceIncrementalState, SourceIteration
-from .session import CappedRetry, Session
+from .session import CappedRetry, Session, harden_session
 
 
 class AbstractSource(ABC):
     def __init__(self, config: SourceConfig):
         self.config = config
-        self.session = self.get_session()
+        self.session = harden_session(self.get_session())
 
-        if config.http is not None and type(self).get_session is not AbstractSource.get_session:
+        if "http" in config.model_fields_set and type(self).get_session is not AbstractSource.get_session:
             logger.warning(
                 "source.http has no effect: this source overrides get_session(). "
                 "Override get_retry_policy() instead to keep the default session."
@@ -107,11 +107,9 @@ class AbstractSource(ABC):
     def get_retry_policy(self) -> Optional[Retry]:
         """Retry policy of the default session. Override to tune retries without replacing the session.
 
-        None keeps the legacy policy.
+        None falls back to the legacy policy.
         """
-        http = self.config.http
-        if http is None:
-            return None
+        http = self.config.http or HttpConfig()
 
         return CappedRetry(
             total=http.retries.total,
@@ -127,9 +125,7 @@ class AbstractSource(ABC):
 
     def get_session(self) -> Session:
         """Return a new session"""
-        http = self.config.http
-        if http is None:
-            return Session(retries=self.get_retry_policy())
+        http = self.config.http or HttpConfig()
         return Session(retries=self.get_retry_policy(), timeout=http.timeout, raise_for_status=http.raise_for_status)
 
     def commit(self):

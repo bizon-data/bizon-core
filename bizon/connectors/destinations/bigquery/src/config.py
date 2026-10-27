@@ -297,6 +297,14 @@ class BigQueryConfigDetails(AbstractDestinationDetailsConfig):
         "table ACLs, policy tags).",
     )
 
+    job_timeout_seconds: Optional[float] = Field(
+        default=600,
+        gt=0,
+        description="Seconds to wait for a load or copy job before cancelling it and failing the stream. "
+        "BigQuery jobs occasionally stall for an hour or more; without a bound the run waits until its "
+        "deadline kills it. None waits forever.",
+    )
+
     # Async / batched load jobs (throughput + load-job quota optimization).
     # When enabled, buffer flushes upload to GCS and submit load jobs without blocking,
     # batching multiple GCS files into a single load job. Cursors are created only once a

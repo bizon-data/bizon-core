@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-27
+
+### Changed
+
+- **A source that sets no `source.http` block now gets the `http` defaults instead of the legacy policy.**
+  This applies only to sources that do not override `get_session()`. They now:
+  - time out after `(10, 60)` seconds instead of never;
+  - retry 429, 5xx and Cloudflare 52x responses without needing a `Retry-After`;
+  - raise a `requests.HTTPError` once retries run out.
+  A source that relied on a 5xx failing fast, or on waiting indefinitely, should set `source.http`.
+- **Every source session gets a default timeout and retries truncated bodies, whoever built it.** Most
+  `get_session()` overrides return a plain `requests.Session`, so this is applied where the engine stores
+  the session (`AbstractSource.__init__`), by wrapping the instance's `request`. bizon's own `Session` does
+  the same natively, and is not wrapped twice.
+  - A request that passes no `timeout` gets `(10, 300)`. The read timeout bounds an idle socket, not the
+    whole request, so it only fires on a stalled connection. An explicit `timeout=` still wins, and
+    `source.http` keeps its `(10, 60)`.
+  - A body cut off mid-read (`ChunkedEncodingError`, urllib3 `ProtocolError`) is retried up to 3 times
+    with backoff, for non-stream requests whose method the mounted retry policy allows (GET and POST when
+    the adapter has none). urllib3's `Retry` cannot do this, because it returns before the body is read.
+  - The adapters, retry policy and hooks of an overridden session are untouched: a source that inspects
+    4xx/5xx responses itself sees them exactly as before.
+- **`source.http` set on a source that overrides `get_session()` warns only when the block is explicitly
+  set.** A config class that defaults `http` no longer triggers it.
+
+### Added
+
+- **`job_timeout_seconds` on the `bigquery` destination, 600 by default.** Load and copy jobs are waited on
+  for at most that long, then cancelled (best effort) and the stream fails with a `TimeoutError`. A
+  stalled BigQuery job used to block the run until its pod deadline killed it, which left no stream error
+  and no `stream_retries` budget. `null` waits forever, as before.
+
+### Fixed
+
+- **A custom source using `from __future__ import annotations` failed to validate its config.**
+  `source_file_path` modules were executed without being registered in `sys.modules`, so pydantic could
+  not resolve a string annotation naming a type from the same file. The module is now registered as
+  `bizon_custom_source_<source>_<path hash>` before it runs, which also lets a forked worker pickle its
+  functions. It is also loaded once instead of once per class in the file.
+
 ## [0.6.4] - 2026-10-08
 
 ### Added

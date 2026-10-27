@@ -1,10 +1,19 @@
+import time
 from typing import Optional, Tuple, Union
 
 import requests
 from loguru import logger
 from requests.adapters import HTTPAdapter, Retry
-from requests.exceptions import HTTPError
+from requests.exceptions import ChunkedEncodingError, HTTPError
 from requests.models import Response
+from urllib3.exceptions import ProtocolError
+
+# The read timeout bounds an idle socket, not the whole request: it exists so a stalled connection fails
+# and becomes retryable instead of hanging until the pod deadline.
+DEFAULT_TIMEOUT = (10, 300)
+TRUNCATED_BODY_RETRIES = 3
+# For sessions whose adapter carries no retry policy, which is what a plain requests.Session mounts.
+TRUNCATED_BODY_METHODS = frozenset({"GET", "POST"})
 
 
 # Define a named function instead of using a lambda to be able to pickle it
@@ -47,6 +56,56 @@ def legacy_retry_policy() -> Retry:
     )
 
 
+def _truncated_body_policy(session: requests.Session, url) -> Tuple[Optional[frozenset], float]:
+    retry = session.get_adapter(url).max_retries
+    if not isinstance(retry, Retry) or retry.total == 0:
+        return TRUNCATED_BODY_METHODS, 1
+    return retry.allowed_methods, retry.backoff_factor
+
+
+def request_retrying_truncated_body(session: requests.Session, send, method, url, *args, **kwargs):
+    """Call `send`, retrying a response whose body was cut off mid-read.
+
+    urllib3's Retry never sees the body: a connection dropped mid-body only surfaces when requests reads
+    .content, after every retry layer has already returned.
+    """
+    attempt = 0
+    while True:
+        try:
+            return send(method, url, *args, **kwargs)
+        except (ChunkedEncodingError, ProtocolError) as e:
+            if kwargs.get("stream") or attempt >= TRUNCATED_BODY_RETRIES:
+                raise
+            allowed_methods, backoff_factor = _truncated_body_policy(session, url)
+            if allowed_methods is not None and method.upper() not in allowed_methods:
+                raise
+            delay = min(backoff_factor * (2**attempt), 120)
+            attempt += 1
+            logger.warning(f"Truncated response body for {method} {url}, retry {attempt} in {delay}s: {e}")
+            time.sleep(delay)
+
+
+def harden_session(session):
+    """Give a session that is not bizon's own the default timeout and the truncated-body retry.
+
+    Only `request` is wrapped: the adapters, retry policy and hooks a source chose are left as they are.
+    """
+    if not isinstance(session, requests.Session) or isinstance(session, Session):
+        return session
+    if getattr(session, "_bizon_hardened", False):
+        return session
+
+    send = session.request
+
+    def request(method, url, *args, **kwargs):
+        kwargs.setdefault("timeout", DEFAULT_TIMEOUT)
+        return request_retrying_truncated_body(session, send, method, url, *args, **kwargs)
+
+    session.request = request
+    session._bizon_hardened = True
+    return session
+
+
 class Session(requests.Session):
     # requests.Session pickles only the attributes listed here.
     __attrs__ = requests.Session.__attrs__ + ["timeout"]
@@ -58,7 +117,7 @@ class Session(requests.Session):
         raise_for_status: bool = True,
     ):
         super().__init__()
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else DEFAULT_TIMEOUT
 
         if raise_for_status:
             self.hooks["response"] = [raise_for_status_hook]
@@ -78,7 +137,8 @@ class Session(requests.Session):
     def request(self, method, url, *args, **kwargs) -> requests.Response:
         if self.timeout is not None:
             kwargs.setdefault("timeout", self.timeout)
-        return super().request(method, url, *args, **kwargs)
+
+        return request_retrying_truncated_body(self, super().request, method, url, *args, **kwargs)
 
     def call(
         self,

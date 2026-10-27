@@ -284,16 +284,11 @@ Common `SourceConfig` fields (`bizon/source/config.py`); each connector adds its
 | `max_iterations` | `None` | Cap iterations per run (default: run until source is exhausted) |
 | `api_config.retry_limit` | `10` | Retries before giving up on an API call |
 | `source_file_path` | `None` | Path to a custom source file (same as `--custom-source`) |
-| `http` | `None` | Opt-in HTTP policy for the default session ([details](#http-retries-and-timeouts)) |
+| `http` | `None` | HTTP policy for the default session ([details](#http-retries-and-timeouts)) |
 
 ### HTTP retries and timeouts
 
-Without an `http` block, the default session keeps its historical policy:
-- there is no timeout;
-- urllib3 only retries 413, 429 and 503, and only when the response carries a `Retry-After` header;
-- a 500, 502 or 504 fails the request immediately.
-
-Setting the block, even as `http: {}`, switches the source to these defaults:
+The default session applies these defaults, and an `http` block overrides them:
 
 ```yaml
 source:
@@ -314,6 +309,14 @@ Once retries run out, the request raises a `requests.HTTPError` carrying the las
 To tune retries in code, override `get_retry_policy()` and return a `Retry` (or `bizon.source.session.CappedRetry`
 for the `Retry-After` cap). Overriding `get_session()` replaces the session entirely: that drops the
 `raise_for_status` hook, and `http` is then ignored with a warning.
+
+Whatever `get_session()` returns, including a plain `requests.Session`, the engine also:
+- gives requests that pass no `timeout` a `(10, 300)` one; an explicit `timeout=` wins;
+- retries a response whose body was cut off mid-read (`ChunkedEncodingError`) up to 3 times, for the
+  methods the mounted retry policy allows (GET and POST when there is none). urllib3's `Retry` cannot,
+  because it returns before the body is read.
+
+It does this by wrapping the session's `request`; its adapters, retry policy and hooks are left alone.
 
 ### Annotated example
 
