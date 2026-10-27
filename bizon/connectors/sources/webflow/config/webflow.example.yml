@@ -1,0 +1,13 @@
+name: webflow collection items to logger
+
+source:
+  name: webflow
+  stream: collection_items
+  api_token: <YOUR_WEBFLOW_V1_SITE_TOKEN>
+  site_id: <YOUR_SITE_ID>
+  collection_id: <YOUR_COLLECTION_ID>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

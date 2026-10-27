@@ -1,0 +1,11 @@
+name: lattice users to logger
+
+source:
+  name: lattice
+  stream: users
+  api_key: <YOUR_LATTICE_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

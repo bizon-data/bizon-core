@@ -1,0 +1,14 @@
+name: openai workspace daily usage to logger
+
+source:
+  name: openai
+  stream: workspace_daily_usage
+  sync_mode: incremental
+  # Needs the enterprise.analytics.usage.read scope.
+  api_key: <YOUR_API_KEY>
+  workspace_id: <YOUR_WORKSPACE_ID>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

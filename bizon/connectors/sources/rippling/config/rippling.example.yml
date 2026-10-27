@@ -1,0 +1,11 @@
+name: rippling employees to logger
+
+source:
+  name: rippling
+  stream: employees
+  api_key: <YOUR_RIPPLING_API_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,13 @@
+name: tipalti payees to logger
+
+source:
+  name: tipalti
+  stream: payees
+  api_key: <YOUR_TIPALTI_MASTER_KEY>
+  payer_name: <YOUR_PAYER_NAME>
+  lookback_days: 730
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

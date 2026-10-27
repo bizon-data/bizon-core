@@ -1,0 +1,12 @@
+name: nops dimension daily cost to logger
+
+source:
+  name: nops
+  stream: dimension_daily_cost
+  api_key: <YOUR_NOPS_API_KEY>
+  start_date: "2025-01-01"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
