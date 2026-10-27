@@ -1,0 +1,17 @@
+name: chargebee subscription daily snapshot to logger
+
+# full_scan re-fetches every subscription on each run. Keep sync_mode incremental so the destination
+# appends one snapshot per run instead of truncating.
+source:
+  name: chargebee
+  stream: subscription
+  sync_mode: incremental
+  full_scan: true
+  site: <YOUR_SITE>
+  api_key: <YOUR_API_KEY>
+  start_date: "2025-01-01T00:00:00Z"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

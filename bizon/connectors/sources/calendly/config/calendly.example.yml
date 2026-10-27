@@ -1,0 +1,14 @@
+name: calendly scheduled events incremental to logger
+
+source:
+  name: calendly
+  stream: scheduled_events
+  sync_mode: incremental
+  api_key: <YOUR_API_KEY>
+  organization_uri: https://api.calendly.com/organizations/<YOUR_ORGANIZATION_UUID>
+  start_date: "2024-01-01T00:00:00Z"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

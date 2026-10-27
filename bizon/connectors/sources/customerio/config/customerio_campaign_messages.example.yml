@@ -1,0 +1,13 @@
+name: customerio campaign messages incremental to logger
+
+source:
+  name: customerio
+  stream: campaign_messages
+  sync_mode: incremental
+  api_key: <YOUR_APP_API_KEY>
+  segment_id: 12345  # <YOUR_SEGMENT_ID>; only read by the customers stream
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,13 @@
+name: storeleads domains to logger
+
+source:
+  name: storeleads
+  stream: domains
+  api_token: <YOUR_API_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
+    # A 2000-domain page can reach ~60 MB.
+    buffer_size: 200

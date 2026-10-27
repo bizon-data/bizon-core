@@ -1,0 +1,13 @@
+name: storeleads app reviews to logger
+
+source:
+  name: storeleads
+  stream: app_reviews
+  api_token: <YOUR_API_TOKEN>
+  # Caps the up-front all/app scan for a quick test; leave unset in production.
+  max_review_scan_pages: 2
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

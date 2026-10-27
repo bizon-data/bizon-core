@@ -1,0 +1,14 @@
+name: customerio campaign metrics to logger
+
+source:
+  name: customerio
+  stream: campaign_metrics
+  api_key: <YOUR_APP_API_KEY>
+  segment_id: 12345  # <YOUR_SEGMENT_ID>; only read by the customers stream
+  lookback_days: 90
+  timezone: UTC
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

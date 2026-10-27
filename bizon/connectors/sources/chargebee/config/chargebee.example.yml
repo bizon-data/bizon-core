@@ -1,0 +1,15 @@
+name: chargebee subscription incremental to logger
+
+source:
+  name: chargebee
+  stream: subscription
+  sync_mode: incremental
+  cursor_field: updated_at
+  site: <YOUR_SITE>
+  api_key: <YOUR_API_KEY>
+  start_date: "2025-01-01T00:00:00Z"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

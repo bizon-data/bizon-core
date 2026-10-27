@@ -1,0 +1,11 @@
+name: vitally notes to logger
+
+source:
+  name: vitally
+  stream: notes
+  api_key: <YOUR_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

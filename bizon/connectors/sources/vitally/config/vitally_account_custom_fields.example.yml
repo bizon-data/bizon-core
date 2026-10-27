@@ -1,0 +1,12 @@
+name: vitally account custom fields to logger
+
+# The *_custom_fields streams read app.vitally.io with a short-lived session token instead of api_key.
+source:
+  name: vitally
+  stream: account_custom_fields
+  app_api_key: <YOUR_APP_SESSION_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
