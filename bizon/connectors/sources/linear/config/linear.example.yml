@@ -1,0 +1,15 @@
+name: linear issues incremental to logger
+
+source:
+  name: linear
+  stream: issues
+  sync_mode: incremental
+  cursor_field: updatedAt
+  api_key: <YOUR_API_KEY>
+  # Initial cutoff for the first run; later runs start from the previous run.
+  start_date: "2020-01-01"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

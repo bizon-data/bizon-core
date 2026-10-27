@@ -1,0 +1,15 @@
+name: metabase cards to logger
+
+source:
+  name: metabase
+  stream: cards
+  base_url: https://metabase.example.com
+  authentication:
+    type: api_key
+    params:
+      token: <YOUR_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,14 @@
+name: rootly incidents to logger
+
+source:
+  name: rootly
+  stream: incidents
+  authentication:
+    type: api_key
+    params:
+      token: <YOUR_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

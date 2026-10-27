@@ -1,0 +1,16 @@
+name: noticeable publications to logger
+
+source:
+  name: noticeable
+  stream: publications
+  project_id: <YOUR_PROJECT_ID>
+  authentication:
+    type: api_key
+    params:
+      auth_method: Apikey
+      token: <YOUR_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
