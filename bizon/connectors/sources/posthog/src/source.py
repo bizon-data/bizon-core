@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, List, Optional, Tuple
@@ -14,6 +15,7 @@ from bizon.source.models import SourceIncrementalState, SourceIteration, SourceR
 from bizon.source.source import AbstractSource
 
 UTC = timezone.utc
+_FRACTION = re.compile(r"\.(\d+)")
 
 DEFAULT_BASE_URL = "https://us.posthog.com"
 DEFAULT_BATCH_SIZE = 10_000
@@ -171,7 +173,8 @@ class PostHogSource(AbstractSource):
 
     @staticmethod
     def _parse_datetime(value: str) -> datetime:
-        normalized = value.replace("Z", "+00:00")
+        # Before Python 3.11, fromisoformat rejects a trailing Z and fractions that are not 3 or 6 digits.
+        normalized = _FRACTION.sub(lambda m: "." + m.group(1)[:6].ljust(6, "0"), value.replace("Z", "+00:00"), count=1)
         parsed = datetime.fromisoformat(normalized)
         if parsed.tzinfo is None:
             return parsed.replace(tzinfo=UTC)

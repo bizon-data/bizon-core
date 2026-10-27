@@ -5,6 +5,7 @@
 
 import gzip
 import json
+import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -22,6 +23,7 @@ from bizon.source.source import AbstractSource
 GZIP_MAGIC = b"\x1f\x8b"
 CONNECT_TIMEOUT_SECONDS = 10
 SOURCE_KEYS = ("bucket", "objectName", "generation", "rowNumber")
+_FRACTION = re.compile(r"\.(\d+)")
 
 
 class CloudflareAiGatewayStreams(str, Enum):
@@ -265,9 +267,10 @@ class CloudflareAiGatewaySource(AbstractSource):
 
     @staticmethod
     def _fromisoformat(value: str) -> datetime:
-        # datetime.fromisoformat only accepts a trailing Z from Python 3.11.
+        # Before Python 3.11, fromisoformat rejects a trailing Z and fractions that are not 3 or 6 digits.
         if value.endswith("Z"):
             value = value[:-1] + "+00:00"
+        value = _FRACTION.sub(lambda m: "." + m.group(1)[:6].ljust(6, "0"), value, count=1)
         return datetime.fromisoformat(value)
 
     @classmethod
