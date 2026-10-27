@@ -47,7 +47,7 @@ staying small enough to read end to end.
 - **Queue-system agnostic** — a single `Queue` interface that any broker can be written against.
   The in-process Python queue is the maintained implementation; the RabbitMQ and Kafka/Redpanda
   adapters are currently **unmaintained** (see [Queue types](#queue-types)).
-- **Pluggable connectors** — 10 built-in sources and 5 destinations, all behind clean
+- **Pluggable connectors** — 50 built-in sources and 5 destinations, all behind clean
   `AbstractSource` / `AbstractDestination` interfaces. Sources are **auto-discovered** — no
   registration needed.
 - **Multiple sync modes** — `full_refresh`, `incremental` (append-only), and continuous `stream`.
@@ -365,7 +365,7 @@ All sources are auto-discovered. Run `bizon source list` to see what's installed
 
 | Source | Connects to | Example streams | Auth | Incremental | Extra |
 |--------|-------------|-----------------|------|:-----------:|-------|
-| `hubspot` | HubSpot CRM (v3) | `contacts`, `companies`, `deals` | api_key, oauth | — | — |
+| `hubspot` | HubSpot CRM (v3 + v1) | `contacts`, `contacts_search`, `custom_object`, `owners`, `email_events` | api_key, oauth | ✅ | — |
 | `notion` | Notion API | `pages`, `databases`, `data_sources`, `blocks`, `blocks_markdown`, `users` (+ `all_*`) | api_key | ✅ | — |
 | `kafka` | Kafka / Redpanda | `topic` (Avro + Schema Registry) | basic (SASL) | stream | `kafka` |
 | `gsheets` | Google Sheets | `worksheet` | service account, ADC | — | `gsheets` |
@@ -375,6 +375,46 @@ All sources are auto-discovered. Run `bizon source list` to see what's installed
 | `pokeapi` | PokéAPI (public) | `pokemon`, `berry`, `item` | none | — | — |
 | `gbif` | GBIF biodiversity (public) | `occurrence` | none | — | — |
 | `dummy` | Mock source (testing/demos) | `creatures`, `plants` | api_key, oauth | — | — |
+| `airtable` | Airtable | `table` | api_token | — | — |
+| `anthropic` | Anthropic Admin & Analytics API | `users`, `summaries`, `chat_projects`, `skills` | admin api_key | ✅ | — |
+| `ashby` | Ashby ATS | `jobs`, `job_postings` | api_key | — | — |
+| `bing_ads` | Microsoft Advertising (Bing Ads) | `accounts`, `bulk_entities`, `account_performance` | oauth refresh token | ✅ | — |
+| `buildbetter` | BuildBetter (GraphQL) | `calls`, `signals`, `people`, `companies` | api_key | ✅ | — |
+| `calendly` | Calendly | `users`, `scheduled_events`, `scheduled_event_invitees` | personal access token | ✅ | — |
+| `chargebee` | Chargebee | `subscription`, `comment`, `event` | api_key | ✅ | — |
+| `circle` | Circle community | `members`, `spaces`, `posts`, `comments` | api_token | — | — |
+| `cloudflare_ai_gateway` | Cloudflare AI Gateway Logpush (from GCS) | `logs` | GCP ADC | ✅ | — |
+| `contrast_io` | Contrast webinars | `events`, `registrations`, `live_views` | api_key | — | — |
+| `customerio` | Customer.io App API | `customers`, `campaigns`, `campaign_metrics` | api_key | ✅ | — |
+| `deel` | Deel | `people`, `managers`, `time_offs` | api_key | — | — |
+| `exchange_rates` | apilayer exchange rates | `exchange_rates` | access_key | ✅ | — |
+| `github` | GitHub (REST + GraphQL) | `repositories`, `pull_requests`, `pull_request_reviews` | GitHub App | ✅ | `github` |
+| `gong` | Gong | `calls`, `calls_extensive`, `transcripts`, `users` | basic (access key) | ✅ | — |
+| `google_ads` | Google Ads (GAQL) | `campaigns`, `ad_groups`, `campaign_performance` | oauth refresh token | ✅ | — |
+| `harness_fme` | Harness FME (Split) | `feature_flags`, `segments`, `segment_keys` | api_key | — | — |
+| `lattice` | Lattice | `departments`, `feedbacks`, `review_cycles` | api_key | — | — |
+| `linear` | Linear (GraphQL) | `issues`, `projects`, `issue_history` | api_key | ✅ | — |
+| `linkedin_ads` | LinkedIn Marketing API | `ad_accounts`, `campaigns`, `creatives` | oauth refresh token | ✅ | — |
+| `metabase` | Metabase | `users`, `cards`, `dashboards` | api_key | — | — |
+| `nops` | nOps cloud cost | `dimension_daily_cost`, `dimension_daily_cost_by_account` | api_key | — | — |
+| `noticeable` | Noticeable (GraphQL) | `publications`, `email_opened_events` | api_key | — | — |
+| `openai` | OpenAI Admin & Compliance API | `chatgpt_costs`, `workspace_daily_usage` | admin api_key | ✅ | — |
+| `openai_ads` | OpenAI Ads | `campaigns`, `ad_groups`, `ads` | api_key | ✅ | — |
+| `partnerstack` | PartnerStack | `customers`, `deals`, `leads` | basic (public/private key) | — | — |
+| `posthog` | PostHog | `events`, `persons`, `cohorts` | personal api_key | ✅ | — |
+| `rippling` | Rippling | `employees`, `levels`, `leave_requests` | api_key | — | — |
+| `rootly` | Rootly | `incidents`, `post_mortems`, `services` | api_key | — | — |
+| `slack` | Slack Web API | `users`, `public_channels`, `external_users` | bot token | — | — |
+| `spotdraft` | SpotDraft contracts | `contracts` | client credentials | — | `spotdraft` |
+| `storeleads` | Store Leads | `domains`, `apps`, `technologies` | api_token | — | — |
+| `stripe` | Stripe | `charges`, `balance_transactions`, `events` | api_key | ✅ | — |
+| `tipalti` | Tipalti (SOAP) | `payees`, `bills`, `payments` | api_key | — | — |
+| `tropic` | Tropic | `contracts` | api_key | — | — |
+| `twilio` | Twilio (master + subaccounts) | `messages`, `subaccounts`, `all_usage_records` | basic (account sid) | ✅ | — |
+| `typeform` | Typeform | `forms`, `workspaces`, `responses` | personal access token | ✅ | — |
+| `vitally` | Vitally | `accounts`, `users`, `admins` | api_key | — | — |
+| `webflow` | Webflow CMS | `collection_items` | api_token | — | — |
+| `wistia` | Wistia | `medias`, `events`, `stats_media` | api_key | ✅ | — |
 
 **`notion` is the reference incremental source** — see
 `bizon/connectors/sources/notion/src/source.py` for `get_records_after()`.
