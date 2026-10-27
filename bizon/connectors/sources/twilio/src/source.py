@@ -27,6 +27,8 @@ DEFAULT_BACKFILL_DAYS = 90
 DEFAULT_PAGE_SIZE = 1000
 DEFAULT_LAG_DAYS = 1
 DEFAULT_CONCURRENCY = 10
+# Each failure has already exhausted the session's own retries, so a worker that keeps failing is a persistent error.
+MAX_WORKER_FAILURES = 5
 
 
 class TwilioStreams(str, Enum):
@@ -467,8 +469,11 @@ class TwilioSource(AbstractSource):
                         next_idx += 1
                     continue
                 if err is not None:
+                    failures = worker.get("failures", 0) + 1
+                    if failures >= MAX_WORKER_FAILURES:
+                        raise RuntimeError(f"[{log_label}] {sub_sid}: {err}; giving up after {failures} attempts")
                     logger.warning(f"[{log_label}] {sub_sid}: {err}; will retry")
-                    new_workers.append(worker)
+                    new_workers.append({**worker, "failures": failures})
                     continue
 
                 items = (data or {}).get(records_key, [])
@@ -611,8 +616,13 @@ class TwilioSource(AbstractSource):
                         next_idx += 1
                     continue
                 if err is not None:
+                    failures = worker.get("failures", 0) + 1
+                    if failures >= MAX_WORKER_FAILURES:
+                        raise RuntimeError(
+                            f"[ms_phone_numbers] {unit['ms_sid']}: {err}; giving up after {failures} attempts"
+                        )
                     logger.warning(f"[ms_phone_numbers] {unit['ms_sid']}: {err}; will retry")
-                    new_workers.append(worker)
+                    new_workers.append({**worker, "failures": failures})
                     continue
 
                 items = (data or {}).get("phone_numbers", [])
