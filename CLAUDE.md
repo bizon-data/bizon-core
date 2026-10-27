@@ -114,8 +114,8 @@ YAML Config → RunnerFactory → Producer → Queue → Consumer → Destinatio
 
 ### Built-in Connectors
 
-**Sources** (`bizon/connectors/sources/`) — auto-discovered, run `bizon source list`:
-`cycle`, `dummy`, `gbif`, `gsheets`, `hubspot`, `kafka`, `notion`, `periscope`, `pokeapi`, `sana_ai`.
+**Sources** (`bizon/connectors/sources/`) — auto-discovered, run `bizon source list`; the full catalog
+is the README's source table. GraphQL sources share `bizon/source/graphql.py`.
 `notion` is the reference incremental source (implements `get_records_after()`); `kafka` is the
 reference streaming source.
 

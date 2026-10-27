@@ -1,0 +1,15 @@
+name: wistia events to logger
+
+source:
+  name: wistia
+  stream: events
+  sync_mode: incremental
+  cursor_field: received_at
+  api_key: <YOUR_WISTIA_API_TOKEN>
+  start_date: "2024-01-01"
+  lookback_days: 2
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

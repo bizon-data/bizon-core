@@ -1,0 +1,13 @@
+name: twilio incoming phone numbers to logger
+
+source:
+  name: twilio
+  stream: incoming_phone_numbers
+  account_sid: <YOUR_MASTER_ACCOUNT_SID>
+  auth_token: <YOUR_AUTH_TOKEN>
+  concurrency: 10
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,18 @@
+# Same shape for the accounts stream.
+name: bing ads bulk entities to logger
+
+source:
+  name: bing_ads
+  stream: bulk_entities
+  client_id: <YOUR_OAUTH_CLIENT_ID>
+  client_secret: <YOUR_OAUTH_CLIENT_SECRET>
+  refresh_token: <YOUR_REFRESH_TOKEN>
+  developer_token: <YOUR_DEVELOPER_TOKEN>
+  customer_id: "<YOUR_CUSTOMER_ID>"
+  # Google when you sign in to Microsoft Advertising with Google, Microsoft for an Entra app.
+  identity_provider: Google
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

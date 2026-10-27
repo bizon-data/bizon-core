@@ -1,0 +1,12 @@
+name: tropic contracts to logger
+
+source:
+  name: tropic
+  stream: contracts
+  api_key: <YOUR_API_KEY>
+  page_size: 50
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

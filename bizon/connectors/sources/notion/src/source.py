@@ -2,10 +2,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, List, Optional, Tuple
 
 from loguru import logger
-from requests import Session
-from requests.adapters import HTTPAdapter
 from requests.auth import AuthBase
-from urllib3.util.retry import Retry
 
 from bizon.source.auth.builder import AuthBuilder
 from bizon.source.auth.config import AuthType
@@ -23,25 +20,12 @@ class NotionSource(AbstractSource):
     def __init__(self, config: NotionSourceConfig):
         super().__init__(config)
         self.config: NotionSourceConfig = config
-
-    def get_session(self) -> Session:
-        """Create a session with retry logic and required Notion headers."""
-        session = Session()
-        retries = Retry(
-            total=10,
-            backoff_factor=2,  # Exponential backoff: 2, 4, 8, 16, 32... seconds
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "POST", "PATCH"],  # Retry on POST/PATCH too
-            respect_retry_after_header=True,  # Honor Notion's Retry-After header
-        )
-        session.mount("https://", HTTPAdapter(max_retries=retries))
-        session.headers.update(
+        self.session.headers.update(
             {
                 "Notion-Version": NOTION_API_VERSION,
                 "Content-Type": "application/json",
             }
         )
-        return session
 
     def get_authenticator(self) -> AuthBase:
         if self.config.authentication.type.value in [AuthType.API_KEY, AuthType.BEARER]:
@@ -95,16 +79,14 @@ class NotionSource(AbstractSource):
         return response.json()
 
     def get_databases(self, pagination: dict = None) -> SourceIteration:
-        """Fetch databases for the configured database_ids."""
-        if not self.config.database_ids:
-            logger.warning("No database_ids configured, returning empty results")
-            return SourceIteration(records=[], next_pagination={})
-
+        """Fetch databases for the configured database_ids, plus any discovered under page_ids."""
         # Track progress through database_ids list
         if pagination:
             remaining_ids = pagination.get("remaining_ids", [])
         else:
-            remaining_ids = list(self.config.database_ids)
+            remaining_ids = self._database_ids_with_discovered()
+            if not remaining_ids:
+                logger.warning("No database_ids configured, returning empty results")
 
         if not remaining_ids:
             return SourceIteration(records=[], next_pagination={})
@@ -128,17 +110,15 @@ class NotionSource(AbstractSource):
 
     def get_data_sources(self, pagination: dict = None) -> SourceIteration:
         """
-        Fetch data sources from databases.
+        Fetch data sources from databases, including any discovered under page_ids.
         In the 2025-09-03 API, databases contain a data_sources array.
         """
-        if not self.config.database_ids:
-            logger.warning("No database_ids configured, returning empty results")
-            return SourceIteration(records=[], next_pagination={})
-
         if pagination:
             remaining_ids = pagination.get("remaining_ids", [])
         else:
-            remaining_ids = list(self.config.database_ids)
+            remaining_ids = self._database_ids_with_discovered()
+            if not remaining_ids:
+                logger.warning("No database_ids configured, returning empty results")
 
         if not remaining_ids:
             return SourceIteration(records=[], next_pagination={})
@@ -209,8 +189,14 @@ class NotionSource(AbstractSource):
             data_sources_loaded = False
 
         # First, load all data sources from databases if not done
-        if not data_sources_loaded and self.config.database_ids:
-            for db_id in self.config.database_ids:
+        if not data_sources_loaded:
+            all_database_ids = list(self.config.database_ids)
+            if self.config.full_recursive_search and self.config.page_ids:
+                discovered_db_ids, discovered_page_ids = self.discover_children_from_pages(self.config.page_ids)
+                all_database_ids.extend(discovered_db_ids)
+                remaining_page_ids.extend(discovered_page_ids)
+
+            for db_id in all_database_ids:
                 try:
                     db_data = self.get_database(db_id)
                     for ds in db_data.get("data_sources", []):
@@ -584,8 +570,88 @@ class NotionSource(AbstractSource):
     # ==================== HELPERS ====================
 
     def get_filter_for_database(self, database_id: str) -> Optional[dict]:
-        """Get the filter configured for a database, if any."""
-        return self.config.database_filters.get(database_id)
+        """Get the filter configured for a database, AND-combined with the start_date filter if set."""
+        db_filter = self.config.database_filters.get(database_id)
+        created_time_filter = (
+            {"timestamp": "created_time", "created_time": {"on_or_after": self.config.start_date}}
+            if self.config.start_date
+            else None
+        )
+
+        if db_filter and created_time_filter:
+            return {"and": [db_filter, created_time_filter]}
+        return db_filter or created_time_filter
+
+    def _database_ids_with_discovered(self) -> List[str]:
+        database_ids = list(self.config.database_ids)
+        if self.config.full_recursive_search and self.config.page_ids:
+            discovered_db_ids, _ = self.discover_children_from_pages(self.config.page_ids)
+            database_ids.extend(discovered_db_ids)
+        return database_ids
+
+    def discover_children_from_pages(self, page_ids: List[str]) -> Tuple[List[str], List[str]]:
+        """Return (database_ids, child_page_ids) found under page_ids, up to max_recursion_depth.
+
+        Pages of a discovered database are walked for deeper children but not returned.
+        """
+        discovered_db_ids: List[str] = []
+        discovered_child_page_ids: List[str] = []
+        seen_ids = set(page_ids)
+
+        def _discover_in_page(page_id: str, depth: int):
+            if depth >= self.config.max_recursion_depth:
+                logger.warning(f"Discovery: max recursion depth {self.config.max_recursion_depth} reached at {page_id}")
+                return
+
+            cursor = None
+            while True:
+                try:
+                    result = self.get_block_children(page_id, cursor)
+                except Exception as e:
+                    logger.error(f"Discovery: failed to get children of {page_id}: {e}")
+                    break
+
+                for block in result.get("results") or []:
+                    if not block:
+                        continue
+                    block_type = block.get("type")
+                    child_id = block.get("id")
+
+                    if block_type == "child_database" and child_id not in seen_ids:
+                        seen_ids.add(child_id)
+                        discovered_db_ids.append(child_id)
+                        logger.info(f"Discovery: found inline database {child_id} at depth {depth}")
+                        try:
+                            for pid in self.get_pages_from_database(child_id):
+                                if pid not in seen_ids:
+                                    seen_ids.add(pid)
+                                    _discover_in_page(pid, depth + 1)
+                        except Exception as e:
+                            logger.error(f"Discovery: failed to get pages from database {child_id}: {e}")
+
+                    elif block_type == "child_page" and child_id not in seen_ids:
+                        seen_ids.add(child_id)
+                        discovered_child_page_ids.append(child_id)
+                        logger.info(f"Discovery: found child page {child_id} at depth {depth}")
+                        _discover_in_page(child_id, depth + 1)
+
+                    elif block.get("has_children") and block_type not in ("child_page", "child_database"):
+                        # Container blocks are not a page/database boundary, so they keep the same depth
+                        _discover_in_page(child_id, depth)
+
+                if result.get("has_more"):
+                    cursor = result.get("next_cursor")
+                else:
+                    break
+
+        for page_id in page_ids:
+            _discover_in_page(page_id, 0)
+
+        logger.info(
+            f"Discovery complete: found {len(discovered_db_ids)} databases and "
+            f"{len(discovered_child_page_ids)} child pages from {len(page_ids)} input pages"
+        )
+        return discovered_db_ids, discovered_child_page_ids
 
     def _extract_title(self, database_data: dict) -> str:
         """Extract plain text title from database object."""
@@ -811,7 +877,7 @@ class NotionSource(AbstractSource):
                 parent_input_database_id=item_info["input_db_id"],
                 parent_input_page_id=item_info["input_page_id"],
                 source_page_id=item_info["source_page_id"],
-                fetch_child_databases=False,
+                fetch_child_databases=self.config.full_recursive_search,
             )
 
             # Convert each block to markdown record

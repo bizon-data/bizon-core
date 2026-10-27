@@ -1,0 +1,15 @@
+name: typeform responses incremental to logger
+
+source:
+  name: typeform
+  stream: responses
+  sync_mode: incremental
+  cursor_field: submitted_at
+  access_token: <YOUR_ACCESS_TOKEN>
+  start_date: "2024-01-01T00:00:00Z"
+  lookback_minutes: 60
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

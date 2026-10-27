@@ -1,0 +1,14 @@
+name: gong answered_scorecards to logger
+
+# answered_scorecards is full refresh only.
+source:
+  name: gong
+  stream: answered_scorecards
+  access_key: <YOUR_ACCESS_KEY>
+  access_key_secret: <YOUR_ACCESS_KEY_SECRET>
+  start_date: "2024-01-01T00:00:00Z"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,14 @@
+name: partnerstack leads to logger
+
+source:
+  name: partnerstack
+  stream: leads
+  public_key: <YOUR_PARTNERSTACK_PUBLIC_KEY>
+  private_key: <YOUR_PARTNERSTACK_PRIVATE_KEY>
+  # Optional: only leads created at or after this Unix timestamp (ms).
+  leads_min_created: 1704067200000
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

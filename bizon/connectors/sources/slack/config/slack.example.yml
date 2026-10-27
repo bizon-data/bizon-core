@@ -1,0 +1,13 @@
+name: slack public channels to logger
+
+# The token needs users:read (users), channels:read (public_channels, external_users)
+# and users:read.email (emails on external_users rows).
+source:
+  name: slack
+  stream: public_channels
+  api_key: <YOUR_SLACK_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

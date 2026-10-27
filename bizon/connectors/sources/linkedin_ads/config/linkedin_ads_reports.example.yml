@@ -1,0 +1,17 @@
+name: linkedin ads campaign daily to logger
+
+source:
+  name: linkedin_ads
+  stream: campaign_daily
+  sync_mode: incremental
+  client_id: <YOUR_APP_CLIENT_ID>
+  client_secret: <YOUR_APP_CLIENT_SECRET>
+  refresh_token: <YOUR_REFRESH_TOKEN>
+  start_date: "2024-01-01"
+  # Each incremental run re-reads this many days so conversion restatements land.
+  lookback_days: 30
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

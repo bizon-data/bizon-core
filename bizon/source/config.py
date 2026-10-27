@@ -2,7 +2,7 @@ from abc import ABC
 from enum import Enum
 from typing import List, Optional, Tuple, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .auth.config import AuthConfig
 
@@ -101,6 +101,21 @@ class SourceConfig(BaseModel, ABC):
         "sources that override get_session().",
         default=None,
     )
+
+    @field_validator("http", mode="before")
+    @classmethod
+    def _merge_http_over_source_default(cls, value):
+        # A source may ship its own http default (e.g. raise_for_status: false). A partial user block must
+        # tune that default, not silently replace it with HttpConfig's.
+        if not isinstance(value, dict):
+            return value
+        default = cls.model_fields["http"].get_default(call_default_factory=True)
+        if default is None:
+            return value
+        merged = {**default.model_dump(), **value}
+        if isinstance(value.get("retries"), dict):
+            merged["retries"] = {**default.retries.model_dump(), **value["retries"]}
+        return merged
 
     init_pipeline: bool = Field(
         description="[Used for testing] Whether to initialize the source to run pipeline directly.",

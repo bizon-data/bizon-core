@@ -1,0 +1,11 @@
+name: deel time offs to logger
+
+source:
+  name: deel
+  stream: time_offs
+  api_key: <YOUR_DEEL_API_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

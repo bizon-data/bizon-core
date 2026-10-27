@@ -1,0 +1,11 @@
+name: buildbetter calls to logger
+
+source:
+  name: buildbetter
+  stream: calls
+  api_key: <YOUR_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

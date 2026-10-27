@@ -1,0 +1,14 @@
+name: anthropic user cost report to logger
+
+source:
+  name: anthropic
+  stream: user_cost_report
+  sync_mode: incremental
+  api_key: <YOUR_ANTHROPIC_ADMIN_API_KEY>
+  start_date: "2026-01-01"
+  page_size: 100
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

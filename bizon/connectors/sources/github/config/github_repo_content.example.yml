@@ -1,0 +1,13 @@
+name: github repo_content to logger
+
+source:
+  name: github
+  stream: repo_content
+  app_id: <YOUR_GITHUB_APP_ID>
+  private_key: <YOUR_GITHUB_APP_PRIVATE_KEY_PEM>
+  blobs_per_batch: 50
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -284,3 +284,17 @@ def test_bizon_session_is_not_wrapped_twice():
     source = make_source()
 
     assert "request" not in vars(source.session)
+
+
+def test_call_logs_a_non_json_error_body_instead_of_masking_the_http_error():
+    import pytest
+    import requests_mock as rm
+    from requests.exceptions import HTTPError
+
+    from bizon.source.session import Session
+
+    session = Session(retries=None)
+    with rm.Mocker() as m:
+        m.get("https://api.example.test/x", status_code=502, text="<html>Bad gateway</html>")
+        with pytest.raises(HTTPError):
+            session.call("GET", "https://api.example.test/x")

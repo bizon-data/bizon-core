@@ -1,0 +1,13 @@
+name: spotdraft contracts to logger
+
+source:
+  name: spotdraft
+  stream: contracts
+  client_id: <YOUR_SPOTDRAFT_CLIENT_ID>
+  client_secret: <YOUR_SPOTDRAFT_CLIENT_SECRET>
+  extract_pdf_text: true
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,21 @@
+name: hubspot custom object to logger
+
+source:
+  name: hubspot
+  stream: custom_object
+  object_type: <YOUR_OBJECT_TYPE_ID>  # e.g. 2-1234567, from GET /crm/v3/schemas
+  associations_types:
+    - companies
+    - contacts
+  authentication:
+    type: oauth
+    params:
+      token_refresh_endpoint: https://api.hubapi.com/oauth/v1/token
+      client_id: <YOUR_CLIENT_ID>
+      client_secret: <YOUR_CLIENT_SECRET>
+      refresh_token: <YOUR_REFRESH_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

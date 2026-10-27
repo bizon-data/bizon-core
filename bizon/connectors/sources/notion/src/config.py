@@ -1,9 +1,9 @@
 from enum import Enum
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from pydantic import Field
+from pydantic import ConfigDict, Field
 
-from bizon.source.config import SourceConfig
+from bizon.source.config import HttpConfig, SourceConfig
 
 
 class NotionStreams(str, Enum):
@@ -21,14 +21,18 @@ class NotionStreams(str, Enum):
 
 
 class NotionSourceConfig(SourceConfig):
+    model_config = ConfigDict(populate_by_name=True)
+
     stream: NotionStreams
 
     database_ids: List[str] = Field(
         default_factory=list,
+        validation_alias="notion_database_ids",
         description="List of Notion database IDs to fetch. Required for databases, data_sources, pages, and blocks streams.",
     )
     page_ids: List[str] = Field(
         default_factory=list,
+        validation_alias="notion_page_ids",
         description="List of Notion page IDs to fetch. Used for pages and blocks streams.",
     )
     fetch_blocks_recursively: bool = Field(
@@ -55,5 +59,17 @@ class NotionSourceConfig(SourceConfig):
     )
     database_filters: Dict[str, Any] = Field(
         default_factory=dict,
+        validation_alias="notion_database_filters",
         description="Map of database_id -> Notion filter object. Filters are passed directly to Notion API.",
     )
+    start_date: Optional[str] = Field(
+        default=None,
+        description="Only sync pages created on or after this date (ISO format, e.g. 2024-01-01). "
+        "Applied as a created_time filter, AND-combined with any database_filters entry.",
+    )
+    full_recursive_search: bool = Field(
+        default=False,
+        description="Discover child databases and child pages under page_ids, up to max_recursion_depth. "
+        "Applies to the pages, databases and data_sources streams; blocks_markdown also follows child databases.",
+    )
+    http: Optional[HttpConfig] = Field(default_factory=HttpConfig, description="HTTP timeout/retry policy")

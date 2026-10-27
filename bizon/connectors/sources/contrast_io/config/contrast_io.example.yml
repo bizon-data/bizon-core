@@ -1,0 +1,11 @@
+name: contrast_io registrations to logger
+
+source:
+  name: contrast_io
+  stream: registrations
+  api_key: <YOUR_CONTRAST_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

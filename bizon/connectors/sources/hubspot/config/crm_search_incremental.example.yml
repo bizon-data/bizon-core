@@ -1,0 +1,25 @@
+name: hubspot deals search incremental to logger
+
+# Search-based sync paged by id, so large windows are not capped at 10,000 results.
+# The first run fetches deals modified since start_date; later runs fetch those modified since the last run.
+# Set full_scan: true to re-fetch every deal on every run instead.
+source:
+  name: hubspot
+  stream: deals_search  # or contacts_search, companies_search
+  sync_mode: incremental
+  start_date: "2025-01-01T00:00:00Z"
+  max_requests_per_second: 5
+  properties:
+    strategy: all
+  authentication:
+    type: oauth
+    params:
+      token_refresh_endpoint: https://api.hubapi.com/oauth/v1/token
+      client_id: <YOUR_CLIENT_ID>
+      client_secret: <YOUR_CLIENT_SECRET>
+      refresh_token: <YOUR_REFRESH_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,11 @@
+name: ashby job postings to logger
+
+source:
+  name: ashby
+  stream: job_postings
+  api_key: <YOUR_ASHBY_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

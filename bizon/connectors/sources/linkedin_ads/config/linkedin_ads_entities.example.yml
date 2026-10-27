@@ -1,0 +1,16 @@
+# Same shape for every entity stream and for attributed_revenue.
+name: linkedin ads campaigns to logger
+
+source:
+  name: linkedin_ads
+  stream: campaigns
+  client_id: <YOUR_APP_CLIENT_ID>
+  client_secret: <YOUR_APP_CLIENT_SECRET>
+  refresh_token: <YOUR_REFRESH_TOKEN>
+  # Empty = every non-test account the token can see.
+  account_ids: []
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

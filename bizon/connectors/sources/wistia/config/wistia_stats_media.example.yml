@@ -1,0 +1,12 @@
+name: wistia stats media to logger
+
+source:
+  name: wistia
+  stream: stats_media
+  api_key: <YOUR_WISTIA_API_TOKEN>
+  start_date: "2024-01-01"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

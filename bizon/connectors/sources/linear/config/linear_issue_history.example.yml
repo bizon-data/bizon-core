@@ -1,0 +1,13 @@
+name: linear issue history to logger
+
+source:
+  name: linear
+  stream: issue_history
+  api_key: <YOUR_API_KEY>
+  # A full history walk is long on a large workspace; bound it for a quick local check.
+  max_iterations: 2
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

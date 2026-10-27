@@ -1,0 +1,16 @@
+name: hubspot email events incremental to logger
+
+source:
+  name: hubspot
+  stream: email_events  # form_submissions takes the same fields
+  sync_mode: incremental
+  start_date: "2025-01-01T00:00:00Z"
+  authentication:
+    type: api_key
+    params:
+      token: <YOUR_PRIVATE_APP_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,15 @@
+# Same shape for the event_definitions and property_definitions streams.
+name: posthog cohorts to logger
+
+source:
+  name: posthog
+  stream: cohorts
+  api_key: <YOUR_PERSONAL_API_KEY>
+  project_id: 12345
+  base_url: https://us.posthog.com
+  metadata_page_size: 100
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

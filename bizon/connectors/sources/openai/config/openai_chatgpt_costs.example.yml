@@ -1,0 +1,13 @@
+name: openai chatgpt costs to logger
+
+source:
+  name: openai
+  stream: chatgpt_costs
+  sync_mode: incremental
+  api_key: <YOUR_COMPLIANCE_API_KEY>
+  organization_id: <YOUR_ORGANIZATION_ID>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

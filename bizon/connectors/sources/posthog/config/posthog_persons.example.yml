@@ -1,0 +1,14 @@
+name: posthog persons to logger
+
+source:
+  name: posthog
+  stream: persons
+  api_key: <YOUR_PERSONAL_API_KEY>
+  project_id: 12345
+  base_url: https://us.posthog.com
+  batch_size: 10000
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **40 new source connectors**, each running in production before landing here: airtable, anthropic, ashby,
+  bing_ads, buildbetter, calendly, chargebee, circle, cloudflare_ai_gateway, contrast_io, customerio, deel,
+  exchange_rates, github, gong, google_ads, harness_fme, lattice, linear, linkedin_ads, metabase, nops,
+  noticeable, openai, openai_ads, partnerstack, posthog, rippling, rootly, slack, spotdraft, storeleads,
+  stripe, tipalti, tropic, twilio, typeform, vitally, webflow, wistia. Each ships an example config under
+  `config/`. Sources that read non-2xx bodies default `raise_for_status: false`, and a few tune their retry
+  list or read timeout; none overrides `get_session()`.
+- **A partial `source.http` block is merged over the connector's own default**, so tuning one key (say the
+  timeout) no longer silently resets a connector's `raise_for_status: false` or retry list.
+- **New extras**: `github` (PyJWT, cryptography) and `spotdraft` (PyMuPDF, AGPL-3.0, capped below 2.0).
+- **`bizon.source.graphql`**: a shared GraphQL transport for sources: bounded-retry POST, a same-cursor
+  page-size shrink ladder, and an optional probe that skips index entries the API can no longer resolve.
+- **hubspot**:
+  - New streams: `*_search` incremental streams that page by id past the 10k search cap, and a generic
+    `custom_object` stream driven by `object_type`.
+  - Also new: owners, archived objects, associations, v1 `email_events` / `form_submissions`,
+    `engagements_emails`, `contacts_merged_audit` and the simple v3 streams.
+  - `HubSpotObjectsSource` now implements `get_records_after`, so `sync_mode: incremental` on
+    `contacts`/`companies`/`deals` is actually incremental.
+  - Opt-in `max_requests_per_second` for apps whose rate budget is shared.
+- **notion**:
+  - Recursive child database and page discovery from `page_ids` (`full_recursive_search`).
+  - A `start_date` created-time filter, AND-ed with any per-database filter.
+  - `notion_database_ids` / `notion_page_ids` / `notion_database_filters` are accepted as aliases.
+- **sana_ai**: `report_job_max_wait_seconds` (default 600).
+- **gsheets**: `request_max_time_seconds` (default 300).
+
+### Fixed
+
+- **hubspot**: the last page of a list was dropped, because `parse_response` returned a tuple rather than a
+  `SourceIteration`. Also fixed:
+  - GETs sent a `"null"` body;
+  - `associations=` was sent even when empty;
+  - requests had no timeout;
+  - a token that expired mid-run failed the run (it is now refreshed and the request replayed once).
+- **sana_ai**: a failed report job was polled forever. It now raises, as does a job still pending after
+  `report_job_max_wait_seconds`. Requests also get a timeout and a retry on 429/5xx.
+- **gsheets**: transient 408/429/5xx and network errors from gspread failed the run. Every call now
+  retries with exponential backoff. `check_connection` returns the error instead of raising, and a 403
+  names the account the sheet must be shared with.
+- **notion**: requests had no timeout.
+- **`Session.call`** raised a `JSONDecodeError` instead of the `HTTPError` when an error body was not JSON.
+
 ## [0.7.0] - 2026-10-27
 
 ### Changed

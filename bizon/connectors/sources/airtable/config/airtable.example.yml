@@ -1,0 +1,13 @@
+name: airtable table to logger
+
+source:
+  name: airtable
+  stream: table
+  api_token: <YOUR_PERSONAL_ACCESS_TOKEN>
+  base_id: <YOUR_BASE_ID>
+  table_id: <YOUR_TABLE_ID>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

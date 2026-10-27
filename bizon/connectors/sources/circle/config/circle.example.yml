@@ -1,0 +1,11 @@
+name: circle posts to logger
+
+source:
+  name: circle
+  stream: posts
+  api_token: <YOUR_CIRCLE_ADMIN_API_TOKEN>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

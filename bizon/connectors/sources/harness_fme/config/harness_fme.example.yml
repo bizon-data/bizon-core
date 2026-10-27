@@ -1,0 +1,14 @@
+name: harness_fme segment_keys to logger
+
+source:
+  name: harness_fme
+  stream: segment_keys
+  api_key: <YOUR_SERVICE_ACCOUNT_TOKEN>
+  workspace_id: <YOUR_WORKSPACE_ID>
+  environments:
+    - Prod-Default
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

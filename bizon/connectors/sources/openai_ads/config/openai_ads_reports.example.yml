@@ -1,0 +1,15 @@
+name: openai ads campaign daily to logger
+
+source:
+  name: openai_ads
+  stream: campaign_daily
+  sync_mode: incremental
+  api_key: <YOUR_ADS_API_KEY>
+  start_date: "2026-01-01"
+  # Each incremental run re-reads this many days (the default click attribution window).
+  lookback_days: 30
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
