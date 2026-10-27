@@ -1,0 +1,20 @@
+name: cloudflare ai gateway logs to logger
+
+source:
+  name: cloudflare_ai_gateway
+  stream: logs
+  sync_mode: incremental
+  cursor_field: updated
+  bucket_name: <YOUR_LOGPUSH_BUCKET>
+  prefix: ""
+  lookback_seconds: 300
+  request_timeout_seconds: 60
+  # Must include nextPageToken, or pagination would stop after the first page.
+  list_fields: items(name,generation,updated,size),nextPageToken
+  max_iteration_bytes: 64000000
+  download_threads: 8
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

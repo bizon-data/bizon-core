@@ -1,0 +1,13 @@
+# Same shape for every snapshot stream (ad_account, ad_groups, ads, conversion_event_settings, ...).
+name: openai ads campaigns to logger
+
+source:
+  name: openai_ads
+  stream: campaigns
+  # One API key = one ad account.
+  api_key: <YOUR_ADS_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,17 @@
+# Same shape for every entity stream, and for geo_target_constants.
+name: google ads campaigns to logger
+
+source:
+  name: google_ads
+  stream: campaigns
+  client_id: <YOUR_OAUTH_CLIENT_ID>
+  client_secret: <YOUR_OAUTH_CLIENT_SECRET>
+  refresh_token: <YOUR_REFRESH_TOKEN>
+  # Only needed when API access is not granted to the OAuth client's Cloud project.
+  # developer_token: <YOUR_DEVELOPER_TOKEN>
+  login_customer_id: "<YOUR_MANAGER_CUSTOMER_ID>"
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

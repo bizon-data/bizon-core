@@ -1,0 +1,18 @@
+name: posthog events to logger
+
+source:
+  name: posthog
+  stream: events
+  sync_mode: incremental
+  cursor_field: timestamp
+  api_key: <YOUR_PERSONAL_API_KEY>
+  project_id: 12345
+  base_url: https://us.posthog.com
+  start_date: "2024-01-01T00:00:00Z"
+  batch_size: 2000
+  events_window_minutes: 60
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
