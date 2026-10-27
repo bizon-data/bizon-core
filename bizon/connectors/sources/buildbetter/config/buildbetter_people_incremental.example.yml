@@ -1,0 +1,13 @@
+name: buildbetter people incremental to logger
+
+source:
+  name: buildbetter
+  stream: people
+  sync_mode: incremental
+  cursor_field: updated_at
+  api_key: <YOUR_API_KEY>
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,17 @@
+name: github pull_requests incremental to logger
+
+source:
+  name: github
+  stream: pull_requests
+  sync_mode: incremental
+  cursor_field: updated_at
+  app_id: <YOUR_GITHUB_APP_ID>
+  private_key: <YOUR_GITHUB_APP_PRIVATE_KEY_PEM>
+  start_date: "2024-01-01"
+  lookback_days: 2
+  concurrent_repos: 1
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

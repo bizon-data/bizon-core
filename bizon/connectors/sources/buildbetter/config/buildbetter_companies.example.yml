@@ -1,0 +1,14 @@
+name: buildbetter companies to logger
+
+source:
+  name: buildbetter
+  stream: companies
+  api_key: <YOUR_API_KEY>
+  company_metadata_fields:
+    arr: arr
+    status: status
+
+destination:
+  name: logger
+  config:
+    dummy: dummy

@@ -1,0 +1,18 @@
+name: github commits to logger
+
+source:
+  name: github
+  stream: commits
+  app_id: <YOUR_GITHUB_APP_ID>
+  private_key: <YOUR_GITHUB_APP_PRIVATE_KEY_PEM>
+  start_date: "2024-01-01"
+  # Optional: restrict to these repos instead of every repo the app's installations can see.
+  # repos:
+  #   - <OWNER>/<REPO>
+  # Commit pages return full commit objects; a smaller page avoids occasional 500s on large repos.
+  per_page: 50
+
+destination:
+  name: logger
+  config:
+    dummy: dummy
