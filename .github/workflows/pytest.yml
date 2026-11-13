@@ -52,7 +52,7 @@ jobs:
 
     - name: Run tests
       run: |
-        uv run --locked --no-dev pytest tests/ --ignore=tests/e2e/ -m "not live"
+        uv run --locked --no-dev --all-extras --group test pytest tests/ --ignore=tests/e2e/ -m "not live"
       env:
         POSTGRES_HOST: postgres
         POSTGRES_PORT: 5432

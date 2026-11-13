@@ -25,4 +25,4 @@ lint:
 	uv run ruff check .
 
 test:
-	uv run --no-dev --group test pytest tests/
+	uv run --locked --no-dev --all-extras --group test pytest tests/

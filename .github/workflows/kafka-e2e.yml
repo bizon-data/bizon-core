@@ -91,7 +91,7 @@ jobs:
     - name: Verify Kafka connection
       run: |
         echo "Verifying Kafka connection with retries..."
-        uv run --locked --no-dev python -c "
+        uv run --locked --no-dev --all-extras --group test python -c "
         from confluent_kafka import Producer
         import time
         import sys
@@ -119,7 +119,7 @@ jobs:
 
     - name: Create test topics and produce data
       run: |
-        uv run --locked --no-dev python -c "
+        uv run --locked --no-dev --all-extras --group test python -c "
         import json
         import time
         from confluent_kafka import Producer
@@ -199,7 +199,7 @@ jobs:
         KAFKA_E2E_TESTS: "1"
       run: |
         echo "🔐 Running Kafka authentication failure tests..."
-        uv run --locked --no-dev pytest tests/e2e/kafka/test_e2e_kafka_auth_failures.py -v --tb=short
+        uv run --locked --no-dev --all-extras --group test pytest tests/e2e/kafka/test_e2e_kafka_auth_failures.py -v --tb=short
         echo "✅ Authentication failure tests completed!"
 
     - name: Run Standard Kafka E2E Tests
