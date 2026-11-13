@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -52,7 +56,14 @@ jobs:
         with:
           version: "0.13.8"
           python-version: ${{ matrix.python-version }}
-      - name: Export locked dependencies including extras and development tools
-        run: uv export --locked --all-extras --all-groups --no-emit-project --output-file requirements-audit.txt
+      - name: Export locked dependencies supported by this Python version
+        env:
+          AUDIT_PYTHON: ${{ matrix.python-version }}
+        run: |
+          groups=(--all-groups)
+          if [[ "$AUDIT_PYTHON" == "3.10" ]]; then
+            groups=(--no-dev --group test)
+          fi
+          uv export --locked --all-extras "${groups[@]}" --no-emit-project --output-file requirements-audit.txt
       - name: Audit resolved versions without installing application dependencies
         run: uvx --from pip-audit==2.10.1 pip-audit --disable-pip --no-deps --requirement requirements-audit.txt
