@@ -508,13 +508,9 @@ duplicate stream names and `table_id`s; `table_id` must be `project.dataset.tabl
 - `engine.queue` defaults to `python_queue`; `engine.runner` defaults to `thread`.
 - `source.sync_mode` defaults to `full_refresh`; `api_config.retry_limit` defaults to `10`.
 - `BizonConfig` and `EngineConfig` are `extra="forbid"` — unknown keys raise validation errors.
-- `pyproject.toml` declares `requires-python = ">=3.9,<3.15"`, but the code **does not actually run on
-  3.9**: PEP 604 unions (`X | None`) are used in `def` signatures without
-  `from __future__ import annotations`, and those are evaluated at import. The core SQLAlchemy backend
-  is affected (`adapters/sqlalchemy/backend.py`), as are 8 of the bundled sources, so this is not a
-  niche path. Nothing in CI runs 3.9 (`pytest.yml` runs 3.10, 3.12, 3.13 and 3.14, `kafka-e2e.yml` 3.10,
-  `publish.yml` 3.11), which is why it goes unnoticed. Treat **3.10** as the real minimum until either the
-  annotations or the declared floor are fixed.
+- Python 3.10-3.14 is supported and tested in CI. The full `dev` group requires Python 3.11+
+  for patched notebook/profiler and pre-commit dependencies. On Python 3.10, run tests with
+  `uv run --no-dev --group test pytest`.
 
 ### Key Patterns
 

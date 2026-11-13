@@ -498,9 +498,7 @@ class TestKafkaDecodeErrorLogging:
 class TestKafkaSurrogateSanitization:
     """Test handling of lone Unicode surrogates in Kafka JSON messages."""
 
-    def create_mock_message(
-        self, key=None, value=None, headers=None, topic="test-topic", partition=0, offset=12345
-    ):
+    def create_mock_message(self, key=None, value=None, headers=None, topic="test-topic", partition=0, offset=12345):
         """Create a mock Kafka message."""
         message = Mock(spec=Message)
         message.key.return_value = key

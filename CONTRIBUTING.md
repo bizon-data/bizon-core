@@ -20,7 +20,10 @@ make format && uv run pytest
 ## Development Setup
 
 ### Prerequisites
-- Python 3.9-3.12
+- Python 3.10-3.14
+- Use Python 3.11 or newer for the full development group (notebooks, profiling, and pre-commit).
+  Python 3.10 can run the test suite with `uv sync --no-dev --all-extras --group test`
+  and `uv run --no-dev --group test pytest`.
 - uv (`pip install uv` or `curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - Docker (optional, for queue testing)
 

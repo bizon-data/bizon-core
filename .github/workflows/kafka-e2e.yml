@@ -3,6 +3,8 @@ name: Kafka Connector E2E Tests
 on:
   pull_request:
     paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
       - 'bizon/connectors/sources/kafka/**'
       - 'tests/e2e/kafka/**'
       - 'tests/connectors/sources/kafka/**'
@@ -19,10 +21,10 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Set up Python 3.10
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
       with:
         python-version: '3.10'
 
@@ -79,15 +81,17 @@ jobs:
         echo "Kafka should be ready!"
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v10.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      with:
+        version: "0.13.8"
 
     - name: Install dependencies
-      run: uv sync --all-extras --group test
+      run: uv sync --locked --no-dev --all-extras --group test
 
     - name: Verify Kafka connection
       run: |
         echo "Verifying Kafka connection with retries..."
-        uv run python -c "
+        uv run --locked --no-dev python -c "
         from confluent_kafka import Producer
         import time
         import sys
@@ -115,7 +119,7 @@ jobs:
 
     - name: Create test topics and produce data
       run: |
-        uv run python -c "
+        uv run --locked --no-dev python -c "
         import json
         import time
         from confluent_kafka import Producer
@@ -195,7 +199,7 @@ jobs:
         KAFKA_E2E_TESTS: "1"
       run: |
         echo "🔐 Running Kafka authentication failure tests..."
-        uv run pytest tests/e2e/kafka/test_e2e_kafka_auth_failures.py -v --tb=short
+        uv run --locked --no-dev pytest tests/e2e/kafka/test_e2e_kafka_auth_failures.py -v --tb=short
         echo "✅ Authentication failure tests completed!"
 
     - name: Run Standard Kafka E2E Tests

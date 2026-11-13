@@ -2,6 +2,7 @@ import uuid
 from unittest.mock import patch
 
 import pytest
+from pytest_lazy_fixtures import lf
 from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Session
 
@@ -9,12 +10,12 @@ from bizon.engine.backend.adapters.sqlalchemy.backend import SQLAlchemyBackend
 from bizon.engine.backend.models import Base, CursorStatus, JobStatus, SourceCursor
 
 
-@pytest.mark.parametrize("backend", [pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("my_sqlite_backend")])
+@pytest.mark.parametrize("backend", [lf("my_pg_backend"), lf("my_sqlite_backend")])
 def test_backend_client_instance(backend: SQLAlchemyBackend):
     assert backend.config.syncCursorInDBEvery == 2
 
 
-@pytest.mark.parametrize("backend", [pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("my_sqlite_backend")])
+@pytest.mark.parametrize("backend", [lf("my_pg_backend"), lf("my_sqlite_backend")])
 def test_create_all_then_check_prerequisites(backend: SQLAlchemyBackend):
     backend.create_all_tables()
     all_entities_exist = backend.check_prerequisites()
@@ -51,8 +52,8 @@ def test_create_all_tables_still_raises_when_tables_are_missing(my_sqlite_backen
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_create_stream_job(backend: SQLAlchemyBackend, session: Session):
@@ -74,8 +75,8 @@ def test_create_stream_job(backend: SQLAlchemyBackend, session: Session):
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_update_stream_job_status(backend: SQLAlchemyBackend, session: Session):
@@ -110,8 +111,8 @@ def test_update_stream_job_status(backend: SQLAlchemyBackend, session: Session):
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_stream_job_create_and_get(backend: SQLAlchemyBackend, session: Session):
@@ -134,8 +135,8 @@ def test_stream_job_create_and_get(backend: SQLAlchemyBackend, session: Session)
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_create_source_cursor(backend: SQLAlchemyBackend, session: Session):
@@ -169,8 +170,8 @@ def test_create_source_cursor(backend: SQLAlchemyBackend, session: Session):
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_create_failed_cursor(backend: SQLAlchemyBackend, session: Session):
@@ -205,8 +206,8 @@ def test_create_failed_cursor(backend: SQLAlchemyBackend, session: Session):
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_update_source_cursor(backend: SQLAlchemyBackend, session: Session):
@@ -247,8 +248,8 @@ def test_update_source_cursor(backend: SQLAlchemyBackend, session: Session):
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_get_last_iteration_cursor(backend: SQLAlchemyBackend, session: Session):
@@ -288,8 +289,8 @@ def test_get_last_iteration_cursor(backend: SQLAlchemyBackend, session: Session)
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_create_destination_cursor(backend: SQLAlchemyBackend, session: Session):
@@ -324,8 +325,8 @@ def test_create_destination_cursor(backend: SQLAlchemyBackend, session: Session)
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_number_of_rows_written(backend: SQLAlchemyBackend, session: Session):
@@ -370,8 +371,8 @@ def test_number_of_rows_written(backend: SQLAlchemyBackend, session: Session):
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_stream_reset_request_and_consume(backend: SQLAlchemyBackend, session: Session):
@@ -402,8 +403,8 @@ def test_stream_reset_request_and_consume(backend: SQLAlchemyBackend, session: S
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_stream_reset_is_scoped_to_its_stream(backend: SQLAlchemyBackend, session: Session):
@@ -423,8 +424,8 @@ def test_stream_reset_is_scoped_to_its_stream(backend: SQLAlchemyBackend, sessio
 @pytest.mark.parametrize(
     "backend,session",
     [
-        (pytest.lazy_fixture("my_pg_backend"), pytest.lazy_fixture("pg_db_session")),
-        (pytest.lazy_fixture("my_sqlite_backend"), pytest.lazy_fixture("sqlite_db_session")),
+        (lf("my_pg_backend"), lf("pg_db_session")),
+        (lf("my_sqlite_backend"), lf("sqlite_db_session")),
     ],
 )
 def test_cancel_pending_stream_resets(backend: SQLAlchemyBackend, session: Session):
