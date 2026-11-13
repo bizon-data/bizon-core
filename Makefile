@@ -9,13 +9,13 @@ help:
 	@echo "test:         Run tests with pytest"
 
 install:
-	pip install uv
+	pip install uv==0.13.8
 	uv sync --all-extras --all-groups
 	uv run pre-commit install
 
 install-ci:
-	pip install uv
-	uv sync --all-extras --group test
+	pip install uv==0.13.8
+	uv sync --locked --no-dev --all-extras --group test
 
 format:
 	uv run ruff format .
@@ -25,4 +25,4 @@ lint:
 	uv run ruff check .
 
 test:
-	uv run pytest tests/
+	uv run --locked --no-dev --all-extras --group test pytest tests/

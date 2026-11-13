@@ -2,12 +2,6 @@ name: Pytest bizon
 
 on:
   pull_request:
-    paths:
-      - 'bizon/**'
-      - 'tests/**'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - '.github/workflows/pytest.yml'
   # Releases are tagged on main, so main itself must be green, not only the PRs that reached it.
   push:
     branches: [main]
@@ -15,6 +9,10 @@ on:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -25,7 +23,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.12', '3.13', '3.14']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
 
     container: python:${{ matrix.python-version }}
 
@@ -45,18 +43,20 @@ jobs:
           --health-retries 10
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v10.2.0
+      uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      with:
+        version: "0.13.8"
 
     - name: Install dependencies
       run: |
-        uv sync --all-extras --group test
+        uv sync --locked --no-dev --all-extras --group test
 
     - name: Run tests
       run: |
-        uv run pytest tests/ --ignore=tests/e2e/ -m "not live"
+        uv run --locked --no-dev --all-extras --group test pytest tests/ --ignore=tests/e2e/ -m "not live"
       env:
         POSTGRES_HOST: postgres
         POSTGRES_PORT: 5432

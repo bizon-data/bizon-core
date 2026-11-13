@@ -96,10 +96,7 @@ indefinitely, since the run never reaches the final iteration that swaps the tab
 
 ## Installation
 
-Requires **Python ≥ 3.10, < 3.13**.
-
-> **Note:** package metadata currently declares `>=3.9`, but bizon does not import on 3.9 — parts of
-> the codebase use `X | None` annotations that Python 3.9 evaluates at import time. Use 3.10 or newer.
+Requires **Python ≥ 3.10, < 3.15**. CI tests every supported minor version.
 
 ```bash
 pip install bizon

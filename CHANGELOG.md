@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Upgrade vulnerable runtime, optional connector, test, and development dependencies,
+  including the certificate trust bundle, and refresh the lockfile.
+- Add weekly Dependabot updates, dependency audits and review, CodeQL scanning,
+  and enforced lint/format checks in CI. Pin workflow actions to commit hashes.
+
+### Changed
+
+- Declare the actual supported Python range as 3.10-3.14 and test every minor version.
+  Full development tooling requires Python 3.11 or newer.
+- Upgrade pytest and replace the legacy lazy-fixture plugin with pytest-lazy-fixtures.
+
 ## [0.7.1] - 2026-10-27
 
 ### Added
